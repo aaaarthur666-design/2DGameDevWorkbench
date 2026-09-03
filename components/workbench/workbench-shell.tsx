@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
-  Bot,
   Box,
   Check,
   ChevronDown,
@@ -55,7 +54,7 @@ type Task = {
 
 type Message = {
   id: string;
-  role: 'agent' | 'user';
+  role: 'workbench' | 'user';
   content: string;
 };
 
@@ -94,9 +93,9 @@ const promptIdeas: Record<string, string[]> = {
 const initialMessages: Message[] = [
   {
     id: 'welcome',
-    role: 'agent',
+    role: 'workbench',
     content:
-      '工作台已经连接到当前项目。你可以直接描述目标，我会选择合适的能力、整理输入并把产物留在项目里。',
+      '这是工作台的人工直调控制台。主 Agent 运行在打开本项目的 WorkBuddy、Codex 等客户端中，并通过 MCP 或 CLI 驱动同一套能力与任务记录。',
   },
 ];
 
@@ -121,7 +120,8 @@ const capabilityAssets = [
   { name: 'Skill', detail: '项目级工作流', state: 'ready' },
   { name: 'Expert', detail: '2D 生产专家', state: 'ready' },
   { name: 'Connector', detail: 'HTTP 适配器', state: 'config' },
-  { name: 'Agent tools', detail: '2 个页面工具', state: 'ready' },
+  { name: 'MCP Server', detail: '5 个客户端工具', state: 'ready' },
+  { name: 'WebMCP', detail: '2 个页面工具', state: 'ready' },
   { name: 'Workflow', detail: '5 步预置流程', state: 'ready' },
 ] as const;
 
@@ -200,8 +200,8 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
         { id: `${taskId}-user`, role: 'user', content: trimmed },
         {
           id: `${taskId}-agent`,
-          role: 'agent',
-          content: `已选择「${targetModule.name}」。我会先校验输入，再通过统一适配器执行；任务 ${taskId} 已加入右侧队列。`,
+          role: 'workbench',
+          content: `控制台已选择「${targetModule.name}」，并将输入交给统一适配器校验；任务 ${taskId} 已加入右侧队列。`,
         },
       ]);
       setTasks((current) => [nextTask, ...current]);
@@ -250,7 +250,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
             ...current,
             {
               id: `${taskId}-configuration`,
-              role: 'agent',
+              role: 'workbench',
               content: `任务已按能力协议准备完成。配置 ${result.requiredEnvironment ?? '对应的 API 地址'} 后即可执行，当前没有伪造生成结果。`,
             },
           ]);
@@ -259,7 +259,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
             ...current,
             {
               id: `${taskId}-error`,
-              role: 'agent',
+              role: 'workbench',
               content:
                 result.error ?? '连接器调用失败，请检查 API 配置后重试。',
             },
@@ -398,7 +398,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 variant="outline"
                 className="hidden h-5 border-emerald-300/20 bg-emerald-400/7 px-1.5 text-[11px] font-normal text-emerald-200 sm:inline-flex"
               >
-                Agent ready
+                Client bridge ready
               </Badge>
             </div>
           </div>
@@ -447,7 +447,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                   </p>
                   <button className="nav-item w-full bg-white/[0.045] text-white/88">
                     <LayoutDashboard className="size-4 text-white/55" />
-                    <span>Agent 协作台</span>
+                    <span>任务控制台</span>
                   </button>
                   <button className="nav-item w-full text-white/48">
                     <FolderOpen className="size-4" />
@@ -547,12 +547,12 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h1 className="truncate text-sm font-semibold text-white/92">
-                      {activeModule?.name ?? 'Agent 协作台'}
+                      {activeModule?.name ?? '任务控制台'}
                     </h1>
                     <ChevronDown className="size-3.5 text-white/28" />
                   </div>
                   <p className="truncate text-xs text-white/35">
-                    主 Agent · 项目上下文已载入
+                    外部主 Agent · MCP / CLI 已就绪
                   </p>
                 </div>
               </div>
@@ -567,7 +567,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                   className="hidden border-white/10 bg-white/[0.025] text-white/55 hover:bg-white/5 hover:text-white md:inline-flex"
                 >
                   <Play className="size-3.5" />
-                  运行工具
+                  直接运行
                 </Button>
                 <Button
                   aria-label="切换上下文面板"
@@ -588,6 +588,27 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                   <span className="h-px flex-1 bg-white/7" />
                 </div>
 
+                <section className="mb-7 flex flex-col gap-3 rounded-xl border border-cyan-300/12 bg-cyan-400/[0.035] p-3.5 sm:flex-row sm:items-center">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/18 bg-cyan-400/8 text-cyan-200">
+                    <TerminalSquare className="size-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white/78">
+                      主 Agent 在外部客户端运行
+                    </p>
+                    <p className="mt-0.5 text-xs leading-5 text-white/38">
+                      WorkBuddy、Codex 等客户端从项目对话通过 MCP 或 CLI
+                      调用；本页负责人工直调与任务监控。
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="w-fit border-cyan-300/18 bg-cyan-400/6 text-[10px] font-normal text-cyan-200/75"
+                  >
+                    MCP STDIO
+                  </Badge>
+                </section>
+
                 <div className="space-y-7">
                   {messages.map((message) => (
                     <article
@@ -597,15 +618,15 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                         message.role === 'user' && 'justify-end',
                       )}
                     >
-                      {message.role === 'agent' ? (
+                      {message.role === 'workbench' ? (
                         <div className="agent-avatar mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-violet-300/20 bg-violet-500/12 text-violet-200">
-                          <Bot className="size-4" />
+                          <TerminalSquare className="size-4" />
                         </div>
                       ) : null}
                       <div
                         className={cn(
                           'max-w-[82%] text-[15px] leading-6',
-                          message.role === 'agent'
+                          message.role === 'workbench'
                             ? 'text-white/72'
                             : 'rounded-2xl rounded-tr-md border border-white/9 bg-white/[0.045] px-4 py-2.5 text-white/82',
                         )}
@@ -658,8 +679,8 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                       runPrompt();
                     }
                   }}
-                  placeholder={`告诉 Agent 你想用${activeModule?.shortName ?? '工作台'}完成什么…`}
-                  aria-label="给工作台 Agent 的指令"
+                  placeholder={`直接向${activeModule?.shortName ?? '工作台'}提交任务…`}
+                  aria-label="直接提交工作台任务"
                   className="min-h-[66px] resize-none border-0 bg-transparent px-2.5 py-2 text-[15px] leading-6 text-white/85 shadow-none placeholder:text-white/25 focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
                 />
                 <div className="flex items-center justify-between gap-2 px-1 pt-1">
@@ -699,7 +720,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 </div>
               </form>
               <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-white/22">
-                Agent 会先校验输入；外部能力仅通过已配置的连接器调用
+                人工直调会校验输入；主 Agent 请在外部客户端的项目对话中使用
               </p>
             </div>
           </section>
@@ -782,7 +803,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                       能力资产
                     </h3>
                     <span className="text-[10px] text-white/24">
-                      共享给 Agent
+                      共享给 Agent 客户端
                     </span>
                   </div>
                   <div className="overflow-hidden rounded-xl border border-white/8 bg-white/[0.018]">

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "2d-game-workbench": {
+      "command": "node",
+      "args": ["scripts/workbench-mcp.mjs"]
+    }
+  }
+}
