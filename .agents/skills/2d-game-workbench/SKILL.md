@@ -5,9 +5,23 @@ description: Drive this repository's reusable 2D game production capabilities wh
 
 # 2D Game Workbench
 
-Use the repository capability registry and runner so Agent-driven work follows the same contract as the visible workbench.
+You are the main Agent running in an external client. Use the repository capability registry and bridge so your conversation drives the same task contract shown by the visual workbench. The web page is a control and monitoring surface, not another Agent to delegate reasoning to.
 
-## Workflow
+## Choose the bridge
+
+- Prefer the `2d-game-workbench` MCP server when the host exposes it. It provides typed discovery, task execution, and status tools over STDIO.
+- If MCP is unavailable, use the equivalent `npm run workbench -- ...` CLI commands from the repository root.
+
+## Workflow with MCP
+
+1. Call `workbench_list_capabilities`. Do not infer an unregistered capability.
+2. Call `workbench_describe_capability` and shape the request to its declared input schema.
+3. Keep user source files in place. Pass repository-relative paths when possible and never overwrite source assets.
+4. Call `workbench_prepare_task` when a connector is not configured, an external call could incur unapproved cost, or the user only requested a plan.
+5. Call `workbench_run_task` only when execution is authorized.
+6. Read the returned task record with `workbench_get_task` and report the exact output paths.
+
+## CLI fallback
 
 1. Run `npm run workbench -- list --json` to discover available capabilities. Do not infer an unregistered capability.
 2. Run `npm run workbench -- describe <capability-id> --json` and shape the request to its declared input schema.
@@ -19,6 +33,7 @@ Use the repository capability registry and runner so Agent-driven work follows t
 ## Guardrails
 
 - Treat `workbench/manifest.json` as the source of truth shared with the web interface.
+- Do not claim that text entered in the web console was processed by an LLM; it is a direct manual task submission path.
 - Never invent a successful API response or claim an asset was generated when a task is only prepared or awaiting configuration.
 - Read connector URLs and tokens from environment variables named in the manifest. Never write secrets to the repository, task record, command output, or chat.
 - If required input is missing, ask only for those fields. If the connector is unavailable, preserve the prepared request and explain the single configuration step needed.

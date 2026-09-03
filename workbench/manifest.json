@@ -6,8 +6,22 @@
     "outputDirectory": "outputs"
   },
   "agentAssets": {
+    "role": "external-client",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",
     "expert": "workbench/experts/2d-production-expert.md",
+    "clientConfigs": [".mcp.json", ".codex/config.toml"],
+    "mcpServer": {
+      "transport": "stdio",
+      "command": "node",
+      "args": ["scripts/workbench-mcp.mjs"],
+      "tools": [
+        "workbench_list_capabilities",
+        "workbench_describe_capability",
+        "workbench_prepare_task",
+        "workbench_run_task",
+        "workbench_get_task"
+      ]
+    },
     "browserTools": ["list_workbench_capabilities", "start_workbench_task"]
   },
   "capabilities": [
