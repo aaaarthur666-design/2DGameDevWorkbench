@@ -928,7 +928,7 @@ export function MapEditor() {
               </header>
               <div className="inspector-status">
                 <span>{layerName(editableLayer)}图层</span>
-                <strong>{selectedTile.layers[editableLayer] ? '已上传' : '待补全'}</strong>
+                <strong className={selectedTile.layers[editableLayer] ? 'status-ready' : 'status-waiting'}>{selectedTile.layers[editableLayer] ? '已上传' : '待补全'}</strong>
               </div>
               <div className="inspector-grid">
                 <Button variant="outline" onClick={() => tileInputRef.current?.click()}><Upload /> 上传</Button>
