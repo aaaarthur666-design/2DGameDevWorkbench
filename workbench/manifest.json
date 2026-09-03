@@ -22,7 +22,7 @@
         "workbench_get_task"
       ]
     },
-    "browserTools": ["list_workbench_capabilities", "start_workbench_task"]
+    "browserTools": ["read_scene_summary", "set_scene_view"]
   },
   "capabilities": [
     {
@@ -35,7 +35,9 @@
       "ui": {
         "icon": "frames",
         "accent": "violet",
-        "status": "ready",
+        "status": "beta",
+        "route": "/tools/sprite-generator",
+        "surface": "preview",
         "capabilities": ["角色动作", "帧序管理", "精灵表导出"]
       },
       "connector": {
@@ -89,6 +91,8 @@
         "icon": "map",
         "accent": "cyan",
         "status": "ready",
+        "route": "/tools/map-stitcher",
+        "surface": "editor",
         "capabilities": ["切片编排", "边界预览", "地图导出"]
       },
       "connector": {
