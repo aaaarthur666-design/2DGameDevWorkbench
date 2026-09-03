@@ -14,10 +14,10 @@
 
 ## 首批工具
 
-| 工具 | 用途 | 当前接入策略 |
-| --- | --- | --- |
+| 工具          | 用途                                         | 当前接入策略                           |
+| ------------- | -------------------------------------------- | -------------------------------------- |
 | 2D 序列帧生成 | 从角色与动作描述组织动画帧、预览并导出精灵表 | 接入已完成的外部功能，工作台提供适配层 |
-| 地图拼接 | 编排地图切片、检查边界并导出完整关卡画布 | 接入已完成的外部功能，工作台提供适配层 |
+| 地图拼接      | 编排地图切片、检查边界并导出完整关卡画布     | 接入已完成的外部功能，工作台提供适配层 |
 
 本仓库不会复制两项工具的内部算法；工作台负责发现、调度、进度、错误和产物交接。
 
@@ -55,24 +55,28 @@
 
 ### Agent 驱动层
 
-仓库将提供：
+仓库已经提供：
 
 - 根目录 `AGENTS.md`：告诉主 Agent 如何发现、调用和验证工作台能力。
 - `.agents/skills/`：封装 2D 游戏生产工作流，使 Codex 从本项目启动时可自动发现。
 - 统一工作台命令：列出能力、检查输入、发起任务、查询状态和定位产物。
 - 机器可读模块清单：保证网页与 Agent 使用同一来源，避免行为漂移。
 
-## 计划中的目录
+## 项目目录
 
 ```text
-app/                       Web 工作台页面
-components/workbench/      Harness 风格界面组件
-lib/workbench/             模块注册、任务协议与共享状态
-features/                  两项现成功能的薄适配层
-adapters/                  外部 API / 本地流程接入
-.agents/skills/            项目级 Agent Skills
-AGENTS.md                  仓库级 Agent 使用约定
-workspace/                 输入、任务记录与输出产物
+app/                         Web 工作台与连接器网关
+components/workbench/        Harness 风格界面组件
+lib/workbench/               前端模块映射
+workbench/manifest.json       网页与 Agent 的统一能力清单
+workbench/experts/            专家角色约定
+workbench/workflows/          预置生产流程
+scripts/workbench.mjs         Agent 可调用的工作台命令
+.agents/skills/               项目级 Agent Skill
+examples/requests/            可直接验证的请求样例
+docs/connector-contract.md    外接 API 协议
+work/                         本地任务记录（不提交）
+outputs/                      本地产物目录（不提交）
 ```
 
 ## 本地运行
@@ -91,6 +95,37 @@ npm run build
 npm run lint
 ```
 
+## 通过 Agent 使用
+
+从本仓库目录启动 Codex 后，根目录 `AGENTS.md` 与 `.agents/skills/2d-game-workbench` 会提供项目级工作流。也可以直接执行同一套命令：
+
+```bash
+# 发现能力并检查连接器
+npm run workbench -- list --json
+npm run workbench -- doctor --json
+
+# 不调用外部 API，只验证并生成任务记录
+npm run workbench -- prepare sprite-generator --input examples/requests/sprite-generator.json --json
+
+# 已配置连接器后执行真实任务
+npm run workbench -- run sprite-generator --input examples/requests/sprite-generator.json --json
+```
+
+任务记录保存在 `work/tasks/`。成功调用连接器后，原始结构化结果保存在 `outputs/<task-id>/result.json`。
+
+## 连接现有工具
+
+复制 `.env.example` 为本地环境文件，填写对应的 API 地址和可选令牌：
+
+- `SPRITE_GENERATOR_API_URL`
+- `SPRITE_GENERATOR_API_TOKEN`
+- `MAP_STITCHER_API_URL`
+- `MAP_STITCHER_API_TOKEN`
+
+网页通过服务端网关调用这些地址，令牌不会进入浏览器。Agent runner 使用相同变量和请求结构。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
+
+工作台页面还声明了两个页面级 Agent 工具：读取能力清单、启动可见任务。支持 WebMCP 的宿主可以直接调用它们，并与人工操作共享页面状态。
+
 ## 接入原则
 
 1. 主工作台不包含具体工具算法，只依赖稳定的能力协议。
@@ -101,4 +136,4 @@ npm run lint
 
 ## 当前状态
 
-项目正在搭建。首个实现版本将交付工作台主界面、Agent 驱动入口、统一能力协议，以及序列帧生成与地图拼接的可替换适配接口。
+首个工作台骨架已经完成：主界面、项目级 Agent 入口、统一能力协议、任务 runner、服务端 API 网关和两项可替换适配接口均可使用。未配置外部 API 时，任务会明确停在 `awaiting_configuration`，不会伪造生成结果。

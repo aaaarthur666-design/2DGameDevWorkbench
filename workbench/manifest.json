@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "workspace": {
+    "name": "2D Game Dev Workbench",
+    "taskDirectory": "work/tasks",
+    "outputDirectory": "outputs"
+  },
+  "agentAssets": {
+    "skill": ".agents/skills/2d-game-workbench/SKILL.md",
+    "expert": "workbench/experts/2d-production-expert.md",
+    "browserTools": ["list_workbench_capabilities", "start_workbench_task"]
+  },
+  "capabilities": [
+    {
+      "id": "sprite-generator",
+      "name": "2D 序列帧生成",
+      "shortName": "序列帧",
+      "description": "从角色设定或动作描述出发，组织并生成可用于游戏的动画帧。",
+      "category": "production",
+      "workflow": "workbench/workflows/sprite-production.json",
+      "ui": {
+        "icon": "frames",
+        "accent": "violet",
+        "status": "ready",
+        "capabilities": ["角色动作", "帧序管理", "精灵表导出"]
+      },
+      "connector": {
+        "type": "http",
+        "urlEnv": "SPRITE_GENERATOR_API_URL",
+        "tokenEnv": "SPRITE_GENERATOR_API_TOKEN"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["prompt"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "角色、动作、画风和导出目标。"
+          },
+          "referenceImages": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "仓库内参考图路径。"
+          },
+          "frameCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "description": "期望帧数。"
+          },
+          "frameWidth": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 2048
+          },
+          "frameHeight": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 2048
+          }
+        }
+      },
+      "outputs": ["orderedFrames", "spriteSheet", "metadata"]
+    },
+    {
+      "id": "map-stitcher",
+      "name": "地图拼接",
+      "shortName": "地图拼接",
+      "description": "组合地图切片，预览边界衔接，并输出完整的 2D 关卡画布。",
+      "category": "production",
+      "workflow": "workbench/workflows/map-production.json",
+      "ui": {
+        "icon": "map",
+        "accent": "cyan",
+        "status": "ready",
+        "capabilities": ["切片编排", "边界预览", "地图导出"]
+      },
+      "connector": {
+        "type": "http",
+        "urlEnv": "MAP_STITCHER_API_URL",
+        "tokenEnv": "MAP_STITCHER_API_TOKEN"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["prompt"],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "地图拼接目标、布局要求和导出目标。"
+          },
+          "sourceDirectory": {
+            "type": "string",
+            "minLength": 1,
+            "description": "仓库内地图切片目录。"
+          },
+          "columns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256,
+            "description": "输出地图列数。"
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256,
+            "description": "可选输出地图行数。"
+          },
+          "tileSize": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 2048,
+            "description": "单个地图块的像素尺寸。"
+          },
+          "checkSeams": {
+            "type": "boolean",
+            "description": "是否执行边界衔接检查。"
+          }
+        }
+      },
+      "outputs": ["stitchedMap", "seamReport", "metadata"]
+    }
+  ]
+}

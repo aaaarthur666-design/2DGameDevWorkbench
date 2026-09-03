@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "sprite-production",
+  "capabilityId": "sprite-generator",
+  "name": "序列帧生产流水线",
+  "steps": [
+    { "id": "validate", "name": "校验动作描述与尺寸", "kind": "validation" },
+    { "id": "prepare", "name": "整理帧序与循环点", "kind": "expert" },
+    { "id": "execute", "name": "调用序列帧连接器", "kind": "connector" },
+    { "id": "verify", "name": "核对帧数与输出清单", "kind": "validation" },
+    { "id": "handoff", "name": "写入项目产物目录", "kind": "handoff" }
+  ]
+}

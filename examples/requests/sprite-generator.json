@@ -1,0 +1,7 @@
+{
+  "prompt": "为 32×32 像素骑士制作 8 帧可循环待机动画，保持盔甲轮廓与调色板一致。",
+  "referenceImages": ["assets/knight/reference.png"],
+  "frameCount": 8,
+  "frameWidth": 32,
+  "frameHeight": 32
+}

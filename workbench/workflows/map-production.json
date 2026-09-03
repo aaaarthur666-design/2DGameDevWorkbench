@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "map-production",
+  "capabilityId": "map-stitcher",
+  "name": "地图拼接流水线",
+  "steps": [
+    { "id": "validate", "name": "校验切片目录与网格", "kind": "validation" },
+    { "id": "prepare", "name": "整理布局与边界规则", "kind": "expert" },
+    { "id": "execute", "name": "调用地图拼接连接器", "kind": "connector" },
+    { "id": "verify", "name": "核对接缝报告与画布", "kind": "validation" },
+    { "id": "handoff", "name": "写入项目产物目录", "kind": "handoff" }
+  ]
+}

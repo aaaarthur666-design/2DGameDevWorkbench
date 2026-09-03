@@ -1,0 +1,4 @@
+interface:
+  display_name: "2D Game Workbench"
+  short_description: "Drive reusable 2D game production tools"
+  default_prompt: "Use the 2D game workbench to complete this asset task."
