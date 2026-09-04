@@ -2,25 +2,26 @@
 
 面向 2D 游戏开发流程的可复用 AI 生产工作台，也是 2026 腾讯云黑客松总决赛赛题一「生产工作台」方向的参赛项目。
 
-项目把分散的 AI 能力、外部 API 和固定流程收进同一个工作台，让创作者既可以在网页控制台中直接操作，也可以让 WorkBuddy、Codex 等外部 Agent 客户端把本仓库作为项目，通过自然语言驱动同一套工具链。
+项目把地图编辑器、序列帧能力、本地适配器、可选外部 API 和固定流程收进同一个工作台。创作者可以从统一控制台进入具体工具，也可以让 WorkBuddy、Codex 等外部 Agent 客户端把本仓库作为项目，通过 MCP 驱动同一套工具链。控制台会同步显示真实任务状态与产物。
 
 ## 核心目标
 
-- **一个工作台主界面**：以 Harness 风格的三栏工作区呈现工具、任务进度、运行上下文和产物。
+- **一个统一控制台**：提供序列帧与地图拼接入口，并监控共享任务与产物。
 - **外部主 Agent**：主 Agent 运行在打开本项目的 WorkBuddy、Codex 等客户端中，不由网页伪装或替代。
-- **两种操作入口**：网页人工直调与外部 Agent 对话共享模块注册、任务协议和输出目录。
+- **两种操作入口**：网页工具与外部 Agent 共享模块注册、任务协议和输出目录。
+- **结构化人工直调**：首页可以提交符合 Manifest schema 的 JSON，并写入与 MCP 相同的任务记录。
 - **可插拔能力层**：工具可以是本地流程、项目 Skill、命令行适配器或外接 API。
 - **可复用于其他游戏**：项目约定、能力说明和接入接口都随仓库交付，不依赖原作者现场操作。
-- **真实产物落盘**：每次任务都有可追踪状态，结果写入项目目录，便于游戏引擎继续消费。
+- **明确的产物边界**：Agent 任务写入项目目录；浏览器编辑器导出到用户下载目录，不伪造落盘状态。
 
 ## 首批工具
 
-| 工具          | 用途                                         | 当前接入策略                           |
-| ------------- | -------------------------------------------- | -------------------------------------- |
-| 2D 序列帧生成 | 从角色与动作描述组织动画帧、预览并导出精灵表 | 接入已完成的外部功能，工作台提供适配层 |
-| 地图拼接      | 编排地图切片、检查边界并导出完整关卡画布     | 接入已完成的外部功能，工作台提供适配层 |
+| 工具          | 用途                                               | 当前接入策略                                 |
+| ------------- | -------------------------------------------------- | -------------------------------------------- |
+| 2D 序列帧生成 | 从角色与动作描述组织动画帧、检查、修补并导出精灵表 | 已整合 NativeFramesGeneration 本地完整工作台 |
+| 地图拼接      | 编排地图切片、检查边界并导出完整关卡画布           | 浏览器编辑器已完整并入主应用                 |
 
-本仓库不会复制两项工具的内部算法；工作台负责发现、调度、进度、错误和产物交接。
+地图拼接的本地编辑、补全与导出逻辑位于本仓库；Agent 通过本地适配器执行确定性拼接，外部图片生成只作为 `generate-layer` 的可选步骤。
 
 ## 架构概览
 
@@ -33,11 +34,11 @@ WorkBuddy / Codex / 其他 Agent 客户端（主 Agent）
                      Workbench Capability Registry
                      模块清单 · 输入约束 · 任务协议
                                 ▲
-Web 可视化控制台 ── 服务端网关 ─┘
+Web 可视化控制台 ── 共享任务 API ─┘
                                 │
                  ┌──────────────┴──────────────┐
                  ▼                             ▼
-           外部 API 适配器                本地工作流/脚本
+          本地协议适配器                 可选外部图片 API
                  └──────────────┬──────────────┘
                                 ▼
                      统一任务状态与项目产物目录
@@ -45,7 +46,7 @@ Web 可视化控制台 ── 服务端网关 ─┘
 
 ### 台面层
 
-用户能看到和操作的工作台：工具切换、人工直调、运行队列、进度、日志摘要和产物预览。网页中的命令区不是内置大模型；主 Agent 对话发生在外部 Agent 客户端中。
+用户首先进入统一控制台，可以打开序列帧工作区和地图拼接编辑器，也可以提交结构化能力输入。网页不是内置大模型；主 Agent 对话仍发生在外部 Agent 客户端中。控制台轮询 `work/tasks/`，因此所有入口共享任务状态。
 
 ### 能力资产层
 
@@ -53,7 +54,7 @@ Web 可视化控制台 ── 服务端网关 ─┘
 
 - 项目 Skill / 提示词
 - 专家角色与上下文模板
-- API Connector
+- 本地协议 Adapter 与可选 API Connector
 - MCP 或本地工具
 - 预置工作流
 
@@ -69,9 +70,13 @@ Web 可视化控制台 ── 服务端网关 ─┘
 ## 项目目录
 
 ```text
-app/                         Web 工作台与连接器网关
-components/workbench/        Harness 风格界面组件
-lib/workbench/               前端模块映射
+app/                         开始页、工具路由与连接器网关
+components/workbench/        公共导航、首页与 AI 预览组件
+components/map-stitcher/      地图拼接编辑器与隔离样式
+components/sprite-generator/  序列帧管线连接与嵌入工作区
+features/map-stitcher/        地图类型、图片处理与导出逻辑
+Tools/SpritePipeline/          本地生成、检查、修补与导出管线
+lib/workbench/                Manifest 驱动的前端模块映射
 lib/workbench/runtime.mjs    MCP 与 CLI 共享运行时
 workbench/manifest.json       网页与 Agent 的统一能力清单
 workbench/experts/            专家角色约定
@@ -89,12 +94,27 @@ outputs/                      本地产物目录（不提交）
 
 ## 本地运行
 
-环境要求：Node.js 22.13 或更高版本。
+环境要求：Node.js 22.13 或更高版本；完整序列帧工作区还需要 Python 3.11 或更高版本。
 
 ```bash
 npm install
 npm run dev
 ```
+
+`npm run dev` 会同时启动 Vinext 页面和仅监听 `127.0.0.1:8790` 的 Workbench Runtime Bridge；网页通过该桥读取与 MCP/CLI 相同的 `work/tasks` 和 `outputs`。只调试页面时可分别运行 `npm run workbench:http` 与 `npm run dev:web`。
+
+首次使用序列帧工作区时，安装并在另一个终端启动本地管线：
+
+```powershell
+npm run sprite-pipeline:setup
+npm run sprite-pipeline
+```
+
+页面入口：
+
+- `/`：统一任务控制与监控台
+- `/tools/sprite-generator`：完整序列帧生成、检查、修补与导出工作区
+- `/tools/map-stitcher`：完整地图拼接编辑器
 
 生产构建与代码检查：
 
@@ -110,18 +130,18 @@ npm run lint
 MCP 提供以下工具：`workbench_list_capabilities`、`workbench_describe_capability`、`workbench_prepare_task`、`workbench_run_task`、`workbench_get_task`。不支持 MCP 时，也可以直接执行同一套 CLI：
 
 ```bash
-# 发现能力并检查连接器
+# 发现能力并检查适配器
 npm run workbench -- list --json
 npm run workbench -- doctor --json
 
-# 不调用外部 API，只验证并生成任务记录
+# 不调用适配器或外部 API，只验证并生成任务记录
 npm run workbench -- prepare sprite-generator --input examples/requests/sprite-generator.json --json
 
-# 已配置连接器后执行真实任务
+# 授权后执行真实任务；SpritePipeline 生成可能调用收费服务
 npm run workbench -- run sprite-generator --input examples/requests/sprite-generator.json --json
 ```
 
-任务记录保存在 `work/tasks/`。成功调用连接器后，原始结构化结果保存在 `outputs/<task-id>/result.json`。
+任务记录保存在 `work/tasks/`。本地适配器的标准化结果保存在 `outputs/<task-id>/result.json`，地图拼接及引擎包也写入同一个任务目录。首页控制台读取这些真实记录，因此 MCP、CLI 与网页看到的是同一任务队列。
 
 完整的客户端接入方式和角色边界见 [`docs/agent-clients.md`](docs/agent-clients.md)。Codex 的项目指令、仓库 Skill 和 MCP 分层方式参见 [OpenAI 官方自定义文档](https://learn.chatgpt.com/zh-Hans/docs/customization/overview) 与 [MCP 文档](https://learn.chatgpt.com/zh-Hans/docs/extend/mcp)。
 
@@ -129,18 +149,18 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 复制 `.env.example` 为本地环境文件，填写对应的 API 地址和可选令牌：
 
-- `SPRITE_GENERATOR_API_URL`
-- `SPRITE_GENERATOR_API_TOKEN`
+- `SPRITE_PIPELINE_API_URL`（默认 `http://127.0.0.1:7860`）
+- `SPRITE_PIPELINE_API_TOKEN`
 - `MAP_STITCHER_API_URL`
 - `MAP_STITCHER_API_TOKEN`
 
-网页通过服务端网关调用这些地址，令牌不会进入浏览器。Agent runner 使用相同变量和请求结构。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
+`sprite-pipeline` 适配器把 Manifest 的 camelCase 输入转换成 Python `/v1/jobs` 协议；`map-stitcher` 适配器在本地执行 `compose`，仅在 `generate-layer` 时读取外部扩图地址。令牌不会进入浏览器或任务记录。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
 
-工作台页面还声明了两个页面级 WebMCP 工具：读取能力清单、启动可见任务。它们是浏览器宿主的补充通道，不替代仓库级 STDIO MCP Server，也不把网页本身当成主 Agent。
+地图编辑器提供读取、视图调整、图片导入、图层生成、区域批量创建和导出六类页面工具。它们直接复用可见编辑器状态，是浏览器宿主的补充通道，不替代仓库级 STDIO MCP Server。首页可提交符合 Manifest schema 的 JSON，并同步显示所有入口产生的任务和产物。
 
 ## 接入原则
 
-1. 主工作台不包含具体工具算法，只依赖稳定的能力协议。
+1. 工具算法与公共工作台外壳分离，能力入口统一来自 Manifest。
 2. API 密钥只通过环境变量提供，不写入仓库、浏览器存储或任务记录。
 3. 外部 API 不可用时，界面必须给出明确错误和恢复路径。
 4. 新工具应通过注册表加入，不修改工作台核心导航逻辑。
@@ -148,4 +168,4 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 ## 当前状态
 
-首个工作台骨架已经完成：可视化控制台、外部 Agent 客户端 MCP/Skill/CLI 入口、统一能力协议、共享任务运行时、服务端 API 网关和两项可替换适配接口均可使用。未配置外部 API 时，任务会明确停在 `awaiting_configuration`，不会伪造生成结果。
+统一监控台、公共导航、两项本地适配器、FrameRonin 模式地图编辑器和 SpritePipeline 工作台已经整合。地图 `compose` 无需外部服务；`generate-layer` 未配置时会明确停在 `awaiting_configuration`。序列帧适配器默认连接本机工作台的真实 REST API，不再发送通用连接器 envelope。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)，第三方源码的再分发限制见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。

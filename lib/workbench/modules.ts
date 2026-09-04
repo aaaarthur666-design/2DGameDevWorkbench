@@ -12,6 +12,7 @@ export type WorkbenchModule = {
   accent: 'violet' | 'cyan';
   capabilities: readonly string[];
   status: 'ready' | 'beta' | 'planned';
+  surface: 'editor' | 'preview';
 };
 
 /**
@@ -24,7 +25,7 @@ export const workbenchModules: readonly WorkbenchModule[] =
     name: capability.name,
     shortName: capability.shortName,
     description: capability.description,
-    href: `/?capability=${capability.id}`,
+    href: capability.ui.route,
     icon: capability.ui.icon === 'map' ? 'map' : 'frames',
     accent: capability.ui.accent === 'cyan' ? 'cyan' : 'violet',
     capabilities: capability.ui.capabilities,
@@ -34,4 +35,5 @@ export const workbenchModules: readonly WorkbenchModule[] =
         : capability.ui.status === 'beta'
           ? 'beta'
           : 'ready',
+    surface: capability.ui.surface === 'editor' ? 'editor' : 'preview',
   }));

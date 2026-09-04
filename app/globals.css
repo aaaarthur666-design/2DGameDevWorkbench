@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import '../components/map-stitcher/map-editor.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -50,6 +51,7 @@
 }
 
 :root {
+  --workbench-nav-height: 3.5rem;
   color-scheme: dark;
   --background: oklch(0.105 0.015 275);
   --foreground: oklch(0.96 0.012 260);
@@ -198,10 +200,32 @@
       0 24px 80px oklch(0.05 0.03 275 / 24%);
   }
 
+  .workbench-app-shell {
+    isolation: isolate;
+  }
+
+  .workbench-navigation {
+    box-shadow: 0 1px 0 oklch(1 0 0 / 2%);
+  }
+
   .pixel-grid {
     background-image:
       linear-gradient(oklch(0.75 0.16 267 / 12%) 1px, transparent 1px),
       linear-gradient(90deg, oklch(0.75 0.16 267 / 12%) 1px, transparent 1px);
     background-size: 16px 16px;
+  }
+
+  .sprite-frame-placeholder {
+    background-image:
+      linear-gradient(45deg, oklch(0.78 0.05 275 / 4%) 25%, transparent 25%),
+      linear-gradient(-45deg, oklch(0.78 0.05 275 / 4%) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, oklch(0.78 0.05 275 / 4%) 75%),
+      linear-gradient(-45deg, transparent 75%, oklch(0.78 0.05 275 / 4%) 75%);
+    background-position:
+      0 0,
+      0 6px,
+      6px -6px,
+      -6px 0;
+    background-size: 12px 12px;
   }
 }

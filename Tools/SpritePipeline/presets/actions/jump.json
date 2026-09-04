@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "action_id": "jump",
+  "display_name": "原地跳跃",
+  "frame_count": 16,
+  "fps": 6,
+  "scene_fps": 6,
+  "loop": true,
+  "grounded": false,
+  "manifest_action_name": "jump",
+  "sheet_columns": 4,
+  "sheet_rows": 4,
+  "critical_frame_indices": [12],
+  "centroid_shift_px": 6,
+  "action_description": "16-frame in-place jump. Frame 1 stays unchanged; 2-4 crouch, 5-8 rise, 9 reaches the apex, 10-13 fall, 14 lands, and 15-16 recover.",
+  "locked_constraints": [
+    "jump vertically in place with no horizontal travel",
+    "land on the original ground line",
+    "preserve outfit, equipment, proportions, and palette",
+    "preserve every limb and accessory",
+    "keep the full character inside the canvas"
+  ],
+  "loop_constraint": "The last frame must connect cleanly to frame 1 because the current game resource loops this animation."
+}

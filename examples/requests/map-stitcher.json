@@ -1,8 +1,12 @@
 {
-  "prompt": "将森林入口切片拼成横向关卡，检查道路和草地边界。",
-  "sourceDirectory": "assets/maps/forest-entrance",
+  "operation": "compose",
+  "images": [
+    "assets/maps/forest-entrance/tile_01.png",
+    "assets/maps/forest-entrance/tile_02.png"
+  ],
   "columns": 12,
-  "rows": 8,
   "tileSize": 16,
-  "checkSeams": true
+  "checkSeams": true,
+  "stateFormat": "pixelwork-v2",
+  "engineTargets": ["godot"]
 }

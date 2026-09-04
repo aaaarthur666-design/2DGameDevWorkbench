@@ -1,46 +1,57 @@
-# Connector contract
+# Adapter contracts
 
-The workbench keeps tool algorithms outside the shell. Each capability names an HTTP endpoint environment variable in `workbench/manifest.json`.
+`workbench/manifest.json` is the single capability catalog. MCP, CLI, and the web task API validate the same input schema, then `lib/workbench/runtime.mjs` dispatches to the named local adapter. A local adapter owns protocol translation; upstream tools never receive the old generic `{ taskId, capabilityId, input }` envelope unless a future capability explicitly declares the legacy HTTP connector type.
 
-## Request
+## SpritePipeline adapter
 
-The runner and web gateway send a JSON `POST` request:
-
-```json
-{
-  "taskId": "sprite-generator-20260903120000-abcd",
-  "capabilityId": "sprite-generator",
-  "input": {
-    "prompt": "Create an eight-frame idle animation"
-  }
-}
-```
-
-The `input` object must match the capability's `inputSchema`. Authentication is optional; when a token environment variable is configured, the gateway sends `Authorization: Bearer <token>`.
-
-## Response
-
-Any `2xx` JSON response is accepted and stored as `outputs/<task-id>/result.json` by the Agent runner. An adapter should return stable output metadata where possible:
+Manifest input uses JSON-friendly camelCase. For `create` and `create-and-generate`, the adapter sends `POST /v1/jobs` with the Python model's exact snake_case fields:
 
 ```json
 {
-  "outputs": [
-    {
-      "kind": "spriteSheet",
-      "path": "outputs/example/sprite-sheet.png",
-      "mimeType": "image/png"
-    }
-  ],
-  "metadata": {
-    "frameCount": 8,
-    "frameWidth": 32,
-    "frameHeight": 32
-  }
+  "schema_version": 1,
+  "character_id": "player_cyber",
+  "action_id": "idle",
+  "provider": "pixellab",
+  "candidate_count": 1,
+  "frame_count": 8,
+  "action_description": "保持轮廓一致的待机动作",
+  "loop": true,
+  "request_key": "sprite-generator-20260904000000-abcd"
 }
 ```
 
-Non-`2xx` responses are treated as failures. The workbench records status and a concise error but never stores or displays connector tokens.
+The local task ID becomes the idempotency key, preventing an ambiguous retry from silently creating a second chargeable job. `create-and-generate` then calls `POST /v1/jobs/{job_id}/generate`; `get`, `generate-existing`, and `export` map to their corresponding `/v1/jobs` endpoints. The normalized result contains `jobRecord`, `orderedFrames`, `spriteSheet`, `preview`, and `metadata`.
 
-## Configuration
+Set `SPRITE_PIPELINE_API_URL` only when the API is not available at the default `http://127.0.0.1:7860`. The full UI process already mounts the REST API at that address. `SPRITE_PIPELINE_API_TOKEN` is optional for a separately protected deployment.
 
-Copy `.env.example` to an ignored local environment file and set only the connector values you use. The web gateway reads the same variable names as the Agent runner.
+## Map adapter: local compose
+
+`operation: "compose"` accepts an ordered `images` array containing repository-relative paths or base64 `data:image` URLs. The adapter uses nearest-neighbor resizing and writes real task artifacts:
+
+- `stitched-map.png`
+- `seam-report.json`
+- `region-annotations.json`
+- `pixelwork-state.zip`
+- optional `godot-package.zip` and `unity-package.zip`
+
+File paths are resolved inside the repository, and every artifact stays inside `outputs/<task-id>/`. The Pixelwork ZIP can be reopened by the FrameRonin mode editor.
+
+## Map adapter: external layer generation
+
+`operation: "generate-layer"` is the same contract used by the map page. The server removes `operation` and forwards exactly these fields to `MAP_STITCHER_API_URL`:
+
+```json
+{
+  "image": "data:image/png;base64,...",
+  "prompt": "保持原图像素风并向右扩展",
+  "tile": { "key": "1,0", "x": 1, "y": 0, "w": 1, "h": 1 },
+  "layer": "overall",
+  "mask_mode": "white"
+}
+```
+
+The service may return `image`, `data`, or `url`, either at the top level or under `result`. If `MAP_STITCHER_API_URL` is absent, only this operation becomes `awaiting_configuration`; local compose remains available.
+
+## Persistence and errors
+
+Every authorized run creates `work/tasks/<task-id>.json`. Standardized adapter output is stored in `outputs/<task-id>/result.json`. Non-2xx responses, invalid protocol bodies, timeouts, and local processing errors mark the task failed with a concise error. Tokens and connector URLs are never written to task records.
