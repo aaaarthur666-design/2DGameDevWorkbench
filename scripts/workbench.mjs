@@ -9,7 +9,7 @@ import {
   loadManifest,
   prepareTask,
   publicCapability,
-  readTask,
+  refreshTask,
   repositoryRoot,
   runConnector,
   summarizeTask,
@@ -131,7 +131,13 @@ async function main() {
 
   if (command === 'status') {
     if (!target) throw new Error('Provide a task ID.');
-    print(await readTask(manifest, target), jsonMode);
+    const refreshed = await refreshTask(manifest, target);
+    print(
+      refreshed.refreshError
+        ? { ...refreshed.task, refreshError: refreshed.refreshError }
+        : refreshed.task,
+      jsonMode,
+    );
     return;
   }
 

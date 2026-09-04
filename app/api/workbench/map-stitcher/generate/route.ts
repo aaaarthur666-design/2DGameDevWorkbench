@@ -1,103 +1,76 @@
-import manifest from '@/workbench/manifest.json';
-
-type GenerateRequest = {
-  operation?: unknown;
-  image?: unknown;
-  prompt?: unknown;
-  tile?: unknown;
-  layer?: unknown;
-  mask_mode?: unknown;
-};
+import {
+  fetchWorkbenchRuntime,
+  runtimeUnavailable,
+} from '@/lib/workbench/runtime-proxy';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export async function POST(request: Request) {
-  let input: GenerateRequest;
+  let input: unknown;
   try {
-    input = (await request.json()) as GenerateRequest;
+    input = await request.json();
   } catch {
     return Response.json({ error: '请求体必须是有效的 JSON。' }, { status: 400 });
   }
-
-  if (
-    input.operation !== 'generate-layer' ||
-    typeof input.image !== 'string' ||
-    !input.image.startsWith('data:image/') ||
-    typeof input.prompt !== 'string' ||
-    !isRecord(input.tile) ||
-    typeof input.layer !== 'string' ||
-    typeof input.mask_mode !== 'string'
-  ) {
-    return Response.json({ error: '地图扩图输入不完整或格式错误。' }, { status: 400 });
+  if (!isRecord(input)) {
+    return Response.json({ error: '地图扩图输入必须是 JSON 对象。' }, { status: 400 });
   }
-
-  const capability = manifest.capabilities.find(
-    (candidate) => candidate.id === 'map-stitcher',
-  );
-  if (!capability) {
-    return Response.json({ error: '地图拼接能力未注册。' }, { status: 500 });
-  }
-
-  const generationUrlEnv = capability.connector.generationUrlEnv;
-  if (typeof generationUrlEnv !== 'string') {
-    return Response.json({ error: '地图能力缺少扩图服务配置项。' }, { status: 500 });
-  }
-  const connectorUrl = process.env[generationUrlEnv];
-  if (!connectorUrl) {
-    return Response.json(
-      { error: `外部扩图服务尚未配置：${generationUrlEnv}` },
-      { status: 503 },
-    );
-  }
-
-  const generationTokenEnv = capability.connector.generationTokenEnv;
-  const token = typeof generationTokenEnv === 'string' ? process.env[generationTokenEnv] : undefined;
 
   try {
-    const connectorResponse = await fetch(connectorUrl, {
+    const response = await fetchWorkbenchRuntime('/v1/tasks', {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        image: input.image,
-        prompt: input.prompt,
-        tile: input.tile,
-        layer: input.layer,
-        mask_mode: input.mask_mode,
-      }),
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ capabilityId: 'map-stitcher', input }),
     });
-
-    const responseText = await connectorResponse.text();
-    let payload: unknown = null;
-    try {
-      payload = responseText ? JSON.parse(responseText) : null;
-    } catch {
-      payload = null;
-    }
-
-    if (!connectorResponse.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      taskId?: string;
+      status?: string;
+      outputs?: string[];
+      requiredEnvironment?: string;
+      error?: string;
+    } | null;
+    if (!response.ok || !payload) {
       return Response.json(
-        { error: `外部扩图服务返回 HTTP ${connectorResponse.status}。` },
-        { status: 502 },
+        {
+          error: payload?.error ?? `地图扩图任务失败（HTTP ${response.status}）。`,
+          taskId: payload?.taskId,
+        },
+        { status: response.status },
+      );
+    }
+    if (payload.status === 'awaiting_configuration') {
+      return Response.json(
+        {
+          error: payload.requiredEnvironment
+            ? `外部扩图服务尚未配置：${payload.requiredEnvironment}`
+            : '外部扩图服务尚未配置。',
+          taskId: payload.taskId,
+        },
+        { status: 503 },
       );
     }
 
-    const record = isRecord(payload) ? payload : {};
-    const result = isRecord(record.result) ? record.result : record;
-    const image = result.image ?? result.data ?? result.url;
-    if (typeof image !== 'string' || image.length === 0) {
-      return Response.json({ error: '外部扩图服务没有返回图片。' }, { status: 502 });
-    }
-
-    return Response.json({ image });
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : '外部扩图服务调用失败。' },
-      { status: 502 },
+    const output = payload.outputs?.find((value) =>
+      value.endsWith('/generated-layer.png'),
     );
+    if (payload.status !== 'completed' || !output) {
+      return Response.json(
+        {
+          error: payload.error ?? '地图扩图任务没有生成可用图片。',
+          taskId: payload.taskId,
+        },
+        { status: 502 },
+      );
+    }
+    return Response.json({
+      image: `/api/workbench/artifacts?path=${encodeURIComponent(output)}`,
+      output,
+      taskId: payload.taskId,
+      status: payload.status,
+    });
+  } catch (error) {
+    return runtimeUnavailable(error);
   }
 }

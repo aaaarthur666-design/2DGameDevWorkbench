@@ -1,0 +1,9 @@
+{
+  "operation": "create-and-generate",
+  "characterId": "diagnostic_dummy",
+  "actionId": "idle",
+  "provider": "fixture",
+  "candidateCount": 1,
+  "seed": 0,
+  "wait": false
+}

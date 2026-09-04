@@ -508,6 +508,20 @@ class SpritePipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(recipe["cell_width"], 64)
         self.assertEqual(recipe["cell_height"], 64)
 
+        from fastapi.testclient import TestClient
+
+        from sprite_pipeline.api_app import create_api
+
+        with TestClient(create_api(self.root)) as client:
+            sheet_artifact = client.get(f"/v1/jobs/{created.job_id}/exports/sheet")
+            preview_artifact = client.get(f"/v1/jobs/{created.job_id}/exports/preview")
+            self.assertEqual(sheet_artifact.status_code, 200, sheet_artifact.text)
+            self.assertEqual(sheet_artifact.headers["content-type"], "image/png")
+            self.assertTrue(sheet_artifact.content.startswith(b"\x89PNG\r\n\x1a\n"))
+            self.assertEqual(preview_artifact.status_code, 200, preview_artifact.text)
+            self.assertEqual(preview_artifact.headers["content-type"], "image/gif")
+            self.assertTrue(preview_artifact.content.startswith((b"GIF87a", b"GIF89a")))
+
     def test_cli_export_accepts_an_explicit_project_filename(self) -> None:
         created = self.service.create_job(self.harness.create_request("fixture"))
         generated = self.service.generate_job(created.job_id)
@@ -1590,6 +1604,17 @@ class SpritePipelineIntegrationTests(unittest.TestCase):
             script = client.get("/pixel-editor-assets/pixel_editor.js?v=1")
             self.assertEqual(script.status_code, 200)
             self.assertIn("imageSmoothingEnabled = false", script.text)
+
+            frame_artifact = client.get(
+                f"/v1/jobs/{checked.job_id}/candidates/1/frames/0/image"
+            )
+            self.assertEqual(frame_artifact.status_code, 200, frame_artifact.text)
+            self.assertEqual(frame_artifact.headers["content-type"], "image/png")
+            self.assertTrue(frame_artifact.content.startswith(b"\x89PNG\r\n\x1a\n"))
+            missing_artifact = client.get(
+                f"/v1/jobs/{checked.job_id}/candidates/1/frames/999/image"
+            )
+            self.assertEqual(missing_artifact.status_code, 404)
 
             response = client.get(
                 f"/v1/jobs/{checked.job_id}/candidates/1/frames/0/pixel-edit"

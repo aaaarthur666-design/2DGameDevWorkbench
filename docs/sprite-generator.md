@@ -47,6 +47,8 @@ SPRITE_PIPELINE_API_URL=https://your-private-sprite-pipeline.example
 }
 ```
 
-先使用 `workbench_prepare_task` 校验；只有明确授权真实生成后才使用 `workbench_run_task`。健康指示灯通过同源 `/api/workbench/sprite-pipeline/health` 代理验证 `ok` 与 `version`，端口上其他服务或 404 不会被误报为已连接。
+先使用 `workbench_prepare_task` 校验；只有明确授权真实生成后才使用 `workbench_run_task`。异步生成返回 `running` 后，重复调用 `workbench_get_task` 会轮询同一个上游作业，不会再次提交付费生成。候选帧以及导出的 Sheet/预览会被复制到 `outputs/<task-id>/`，任务只有在记录中的每个输出文件真实存在时才会持久化为相应状态。健康指示灯通过同源 `/api/workbench/sprite-pipeline/health` 代理验证 `ok` 与 `version`，端口上其他服务或 404 不会被误报为已连接。
+
+如需无网络、无付费地验证整条 Agent 接线，可运行 `examples/requests/sprite-generator-fixture.json`；其 `diagnostic_dummy` 产物仅用于诊断，不是可交付美术资源。
 
 上游当前没有提供 LICENSE、COPYING 或 NOTICE 文件。公开再分发或商业发布前应由仓库所有者补充明确许可证或书面授权；详见根目录 `THIRD_PARTY_NOTICES.md`。

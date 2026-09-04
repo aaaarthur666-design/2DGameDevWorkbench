@@ -249,6 +249,77 @@ def create_api(
     def get_job(job_id: str) -> dict[str, Any]:
         return {"schema_version": 1, "ok": True, "data": {"job": _job(service.get_job(job_id))}}
 
+    @app.get("/v1/jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/image")
+    def frame_image(job_id: str, candidate_index: int, frame_index: int) -> FileResponse:
+        job = service.get_job(job_id)
+        candidate = next(
+            (item for item in job.candidates if item.candidate_index == candidate_index),
+            None,
+        )
+        if candidate is None:
+            raise NotFoundError(
+                "candidate not found",
+                details={"job_id": job_id, "candidate_index": candidate_index},
+            )
+        frame = next((item for item in candidate.frames if item.index == frame_index), None)
+        if frame is None:
+            raise NotFoundError(
+                "frame not found",
+                details={
+                    "job_id": job_id,
+                    "candidate_index": candidate_index,
+                    "frame_index": frame_index,
+                },
+            )
+        artifact = service.store.resolve_job_path(job_id, frame.active_path)
+        if not artifact.is_file():
+            raise NotFoundError("frame artifact not found", details={"path": frame.active_path})
+        return FileResponse(
+            artifact,
+            media_type="image/png",
+            filename=f"{job_id}_candidate_{candidate_index:02d}_frame_{frame_index:03d}.png",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/v1/jobs/{job_id}/exports/{artifact_name}")
+    def export_artifact(job_id: str, artifact_name: str) -> FileResponse:
+        job = service.get_job(job_id)
+        if job.export is None:
+            raise NotFoundError("job has not been exported", details={"job_id": job_id})
+        fields = {
+            "sheet": ("sheet_path", "image/png"),
+            "preview": ("preview_path", "image/gif"),
+            "recipe": ("recipe_path", "application/json"),
+            "qa": ("qa_path", "application/json"),
+        }
+        field = fields.get(artifact_name)
+        if field is None:
+            raise NotFoundError(
+                "export artifact not found",
+                details={"job_id": job_id, "artifact": artifact_name},
+            )
+        recorded_path = getattr(job.export, field[0])
+        artifact = service.settings.resolve_record_path(recorded_path)
+        exports_root = service.settings.exports_dir.resolve()
+        try:
+            artifact.relative_to(exports_root)
+        except ValueError as exc:
+            raise ValidationHarnessError(
+                "export artifact escaped the configured exports directory",
+                details={"artifact": artifact_name},
+            ) from exc
+        if not artifact.is_file():
+            raise NotFoundError(
+                "export artifact file not found",
+                details={"artifact": artifact_name},
+            )
+        return FileResponse(
+            artifact,
+            media_type=field[1],
+            filename=artifact.name,
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/v1/jobs/{job_id}/candidates/{candidate_index}/safety")
     def candidate_safety(job_id: str, candidate_index: int) -> dict[str, Any]:
         return {

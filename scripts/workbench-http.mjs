@@ -29,8 +29,12 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/v1/tasks') {
       const manifest = await loadManifest();
       const limit = Number(url.searchParams.get('limit') ?? 30);
+      const refresh = url.searchParams.get('refresh') === 'true';
       sendJson(response, 200, {
-        tasks: await listTasks(manifest, { limit: Number.isInteger(limit) ? limit : 30 }),
+        tasks: await listTasks(manifest, {
+          limit: Number.isInteger(limit) ? limit : 30,
+          refresh,
+        }),
       });
       return;
     }

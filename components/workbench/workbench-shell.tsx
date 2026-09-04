@@ -201,7 +201,9 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
 
   const refreshTasks = useCallback(async () => {
     try {
-      const response = await fetch('/api/workbench/tasks?limit=30', { cache: 'no-store' });
+      const response = await fetch('/api/workbench/tasks?limit=30&refresh=true', {
+        cache: 'no-store',
+      });
       setRuntimeOnline(response.ok);
       if (!response.ok) return;
       const payload = (await response.json()) as { tasks?: StoredTask[] };
@@ -215,14 +217,16 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: number | undefined;
     const sync = async () => {
-      if (!cancelled) await refreshTasks().catch(() => undefined);
+      if (cancelled) return;
+      await refreshTasks().catch(() => undefined);
+      if (!cancelled) timer = window.setTimeout(() => void sync(), 3_000);
     };
     void sync();
-    const interval = window.setInterval(() => void sync(), 3_000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [refreshTasks]);
 

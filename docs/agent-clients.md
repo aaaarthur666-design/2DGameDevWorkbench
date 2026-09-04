@@ -40,14 +40,14 @@ The server exposes one read-only manifest resource, `workbench://manifest`, and 
 | `workbench_describe_capability` | Returns one capability's schema and workflow contract |
 | `workbench_prepare_task` | Validates input and records a task without running its adapter or making an external call |
 | `workbench_run_task` | Runs an authorized manifest-selected adapter; external-only steps can record `awaiting_configuration` |
-| `workbench_get_task` | Reads the exact current task record |
+| `workbench_get_task` | Reads a task and, while it is running, polls its existing upstream job once and persists the refreshed state and artifacts |
 
-The expected Agent flow is discover → describe → prepare or run → inspect status → report exact output paths.
+The expected Agent flow is discover → describe → prepare or run → inspect status → report exact output paths. Calling `workbench_get_task` is idempotent: it never submits a second generation, and a transient upstream polling error leaves the durable task in its previous state with a separate refresh error.
 
 ## Shared runtime and safety
 
 MCP, CLI, and the web task API share `lib/workbench/runtime.mjs`; the visual console polls the same persisted task records. Runtime records remain under `work/`, generated assets remain under `outputs/`, and both directories stay uncommitted. Adapter credentials are read from environment variables and must never appear in chat, task records, browser state, or committed files.
 
-The SpritePipeline adapter maps structured capability input to the real `/v1/jobs` API. The map adapter performs deterministic local compose itself and forwards only the exact five-field image-generation payload for `generate-layer`. The map editor additionally exposes page-scoped tools for summary, view, import, generation, region creation, and export; these mutate the same visible editor state as the buttons.
+The SpritePipeline adapter maps structured capability input to the real `/v1/jobs` API and copies selected frame/export files into that task's own output directory. The map adapter performs deterministic local compose itself and forwards only the exact five-field image-generation payload for `generate-layer`; remote images are downloaded and normalized to a local PNG before completion. The map editor additionally exposes page-scoped tools for summary, view, import, generation, region creation, and export; these mutate the same visible editor state as the buttons. Browser-triggered map generation also enters the same runtime task ledger used by MCP and CLI.
 
 An `awaiting_configuration` or `prepared` task is not a successful generation. The Agent must not invent outputs or describe a task as complete until its task record is `completed` and every reported path exists.

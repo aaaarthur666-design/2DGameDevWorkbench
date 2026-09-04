@@ -9,7 +9,7 @@ import {
   loadManifest,
   prepareTask,
   publicCapability,
-  readTask,
+  refreshTask,
   runConnector,
   summarizeTask,
 } from '../lib/workbench/runtime.mjs';
@@ -21,7 +21,7 @@ const server = new McpServer(
   },
   {
     instructions:
-      'This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. Local adapters persist real task state; an awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned.',
+      'This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned.',
   },
 );
 
@@ -146,20 +146,24 @@ registerTool(
   {
     title: 'Get a 2D workbench task',
     description:
-      'Read the exact current status, inputs, outputs, and error information for a local workbench task.',
+      'Read a workbench task. If its adapter job is still running, poll that existing job once and persist the refreshed status and artifacts without starting new generation.',
     inputSchema: {
       taskId: z.string().min(1).describe('Task ID returned by this server.'),
     },
     annotations: {
-      readOnlyHint: true,
+      readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: true,
-      openWorldHint: false,
+      openWorldHint: true,
     },
   },
   async ({ taskId }) => {
     const manifest = await loadManifest();
-    return { task: await readTask(manifest, taskId) };
+    const refreshed = await refreshTask(manifest, taskId);
+    return {
+      task: refreshed.task,
+      ...(refreshed.refreshError ? { refreshError: refreshed.refreshError } : {}),
+    };
   },
 );
 

@@ -240,7 +240,7 @@
           }
         }
       },
-      "outputs": ["stitchedMap", "seamReport", "statePackage", "regionAnnotations", "godotPackage", "unityPackage", "metadata"]
+      "outputs": ["generatedLayer", "stitchedMap", "seamReport", "statePackage", "regionAnnotations", "godotPackage", "unityPackage", "metadata"]
     }
   ]
 }

@@ -9,6 +9,7 @@ import sharp from 'sharp';
 import {
   findCapability,
   loadManifest,
+  refreshTask,
   repositoryRoot,
   runConnector,
   validateInput,
@@ -18,7 +19,7 @@ const requests = [];
 const generatedTile = await sharp({
   create: { width: 2, height: 2, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } },
 }).png().toBuffer();
-const generatedDataUrl = `data:image/png;base64,${generatedTile.toString('base64')}`;
+let baseUrl = '';
 
 const server = http.createServer(async (request, response) => {
   const chunks = [];
@@ -33,11 +34,32 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   if (request.method === 'POST' && request.url === '/v1/jobs/mock-job/generate') {
+    response.end(JSON.stringify({ ok: true, data: { job: spriteJob('provider_pending') } }));
+    return;
+  }
+  if (request.method === 'GET' && request.url === '/v1/jobs/mock-job') {
     response.end(JSON.stringify({ ok: true, data: { job: spriteJob('review_required') } }));
     return;
   }
+  if (
+    request.method === 'GET' &&
+    request.url === '/v1/jobs/mock-job/candidates/1/frames/0/image'
+  ) {
+    response.setHeader('content-type', 'image/png');
+    response.end(generatedTile);
+    return;
+  }
   if (request.method === 'POST' && request.url === '/map') {
-    response.end(JSON.stringify({ image: generatedDataUrl }));
+    response.end(JSON.stringify({
+      url: body.prompt === 'unsafe foreign URL'
+        ? 'http://127.0.0.1:1/private.png'
+        : `${baseUrl}/generated.png`,
+    }));
+    return;
+  }
+  if (request.method === 'GET' && request.url === '/generated.png') {
+    response.setHeader('content-type', 'image/png');
+    response.end(generatedTile);
     return;
   }
   response.statusCode = 404;
@@ -47,7 +69,7 @@ const server = http.createServer(async (request, response) => {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const address = server.address();
 assert(address && typeof address === 'object');
-const baseUrl = `http://127.0.0.1:${address.port}`;
+baseUrl = `http://127.0.0.1:${address.port}`;
 const previousSpriteUrl = process.env.SPRITE_PIPELINE_API_URL;
 const previousMapUrl = process.env.MAP_STITCHER_API_URL;
 process.env.SPRITE_PIPELINE_API_URL = baseUrl;
@@ -77,7 +99,7 @@ try {
     candidateCount: 1,
     frameCount: 1,
   });
-  assert.equal(spriteResult.task.status, 'attention_required');
+  assert.equal(spriteResult.task.status, 'running');
   assert.equal(spriteResult.task.adapter.remoteJobId, 'mock-job');
   const createRequest = requests.find((item) => item.url === '/v1/jobs');
   assert.equal(createRequest.body.character_id, 'diagnostic_dummy');
@@ -86,6 +108,19 @@ try {
   assert.equal(createRequest.body.frame_count, 1);
   assert.equal('taskId' in createRequest.body, false);
   assert.equal(createRequest.headers['idempotency-key'], spriteResult.task.id);
+
+  const refreshedSprite = await refreshTask(manifest, spriteResult.task.id);
+  assert.equal(refreshedSprite.task.id, spriteResult.task.id);
+  assert.equal(refreshedSprite.task.status, 'attention_required');
+  assert.equal(refreshedSprite.task.adapter.remoteStatus, 'review_required');
+  const frameOutput = refreshedSprite.task.outputs.find((output) =>
+    output.endsWith('/frames/candidate-01/frame-000.png'),
+  );
+  assert(frameOutput);
+  assert(frameOutput.startsWith(`outputs/${spriteResult.task.id}/`));
+  const frameMetadata = await sharp(path.resolve(repositoryRoot, frameOutput)).metadata();
+  assert.equal(frameMetadata.width, 2);
+  assert.equal(frameMetadata.height, 2);
 
   const blue = await solidPng(0, 80, 220);
   const green = await solidPng(0, 190, 90);
@@ -142,11 +177,23 @@ try {
   assert.deepEqual(Object.keys(mapRequest.body).sort(), ['image', 'layer', 'mask_mode', 'prompt', 'tile']);
   assert.equal(mapRequest.body.layer, 'overall');
 
+  await assert.rejects(
+    runConnector(manifest, map, {
+      operation: 'generate-layer',
+      image: dataUrl(blue),
+      prompt: 'unsafe foreign URL',
+      tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
+      layer: 'overall',
+      mask_mode: 'white',
+    }),
+    /image URL must use the connector origin/,
+  );
+
   process.stdout.write(`${JSON.stringify({
     spriteAdapter: 'ok',
     mapComposeAdapter: 'ok',
     mapGenerationContract: 'ok',
-    spriteTaskId: spriteResult.task.id,
+    spriteTaskId: refreshedSprite.task.id,
     mapTaskId: composeResult.task.id,
     outputs: composeResult.task.outputs,
   }, null, 2)}\n`);
@@ -169,7 +216,7 @@ function spriteJob(status) {
         frames: [
           {
             index: 0,
-            active_path: path.join(repositoryRoot, 'work', 'mock', 'frame_000.png'),
+            active_path: 'candidates/candidate_01/frames/frame_000.png',
           },
         ],
       },

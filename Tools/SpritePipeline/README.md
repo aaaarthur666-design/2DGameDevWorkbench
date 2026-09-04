@@ -220,11 +220,13 @@ Interactive OpenAPI docs are at `http://127.0.0.1:8765/docs`. Main routes:
 | `POST` | `/v1/jobs/{id}/candidates/{n}/recover` | Poll an existing provider job without submitting a generation |
 | `POST` | `/v1/jobs/{id}/candidates/{n}/attach-provider-job` | Bind a known ID after an ambiguous submission |
 | `POST` | `/v1/jobs/{id}/candidates/{n}/frames` | Import base64 PNG frames |
+| `GET` | `/v1/jobs/{id}/candidates/{n}/frames/{frame}/image` | Read the selected frame as a PNG artifact |
 | `POST` | `/v1/jobs/{id}/candidates/{n}/reviews/frame` | Save one frame review |
 | `GET` | `/v1/jobs/{id}/candidates/{n}/frames/{frame}/pixel-edit` | Read exact RGBA pixels and the base version hash |
 | `POST` | `/v1/jobs/{id}/candidates/{n}/frames/{frame}/pixel-edit` | Commit a verified manual RGBA version and re-run QA |
 | `POST` | `/v1/jobs/{id}/candidates/{n}/approve` | Explicitly approve a candidate |
 | `POST` | `/v1/jobs/{id}/candidates/{n}/export` | Export after the approval gate |
+| `GET` | `/v1/jobs/{id}/exports/{sheet|preview|recipe|qa}` | Read one recorded export artifact |
 
 The API intentionally defaults to loopback and has no authentication. Do not
 bind it to a public interface without adding access control and upload quotas.
