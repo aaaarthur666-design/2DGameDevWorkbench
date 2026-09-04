@@ -1,6 +1,6 @@
-import { WorkbenchHome } from '@/components/workbench/workbench-home';
+import { WorkbenchShell } from '@/components/workbench/workbench-shell';
 import { workbenchModules } from '@/lib/workbench/modules';
 
 export default function Home() {
-  return <WorkbenchHome modules={workbenchModules} />;
+  return <WorkbenchShell modules={workbenchModules} />;
 }

@@ -22,7 +22,16 @@
         "workbench_get_task"
       ]
     },
-    "browserTools": ["read_scene_summary", "set_scene_view"]
+    "browserTools": [
+      "list_workbench_capabilities",
+      "start_workbench_task",
+      "map_stitcher_read_summary",
+      "map_stitcher_set_view",
+      "map_stitcher_import_images",
+      "map_stitcher_generate_layer",
+      "map_stitcher_create_regions",
+      "map_stitcher_export"
+    ]
   },
   "capabilities": [
     {
@@ -41,24 +50,50 @@
         "capabilities": ["角色动作生成", "播放检查", "逐帧修补", "精灵表导出"]
       },
       "connector": {
-        "type": "http",
-        "urlEnv": "SPRITE_GENERATOR_API_URL",
-        "tokenEnv": "SPRITE_GENERATOR_API_TOKEN"
+        "type": "local-adapter",
+        "adapter": "sprite-pipeline",
+        "urlEnv": "SPRITE_PIPELINE_API_URL",
+        "defaultUrl": "http://127.0.0.1:7860",
+        "tokenEnv": "SPRITE_PIPELINE_API_TOKEN"
       },
       "inputSchema": {
         "type": "object",
-        "required": ["prompt"],
+        "required": ["operation"],
         "additionalProperties": false,
         "properties": {
-          "prompt": {
+          "operation": {
+            "type": "string",
+            "enum": ["create", "create-and-generate", "generate-existing", "get", "export"],
+            "description": "与 SpritePipeline REST API 对应的作业操作。"
+          },
+          "characterId": {
             "type": "string",
             "minLength": 1,
-            "description": "角色、动作、画风和导出目标。"
+            "description": "已存在的角色预设 ID，对应 Python character_id。"
           },
-          "referenceImages": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "仓库内参考图路径。"
+          "actionId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "已存在的动作预设 ID，对应 Python action_id。"
+          },
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SpritePipeline 返回的持久作业 ID。"
+          },
+          "provider": {
+            "type": "string",
+            "enum": ["pixellab", "fixture", "import"]
+          },
+          "candidateCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
           },
           "frameCount": {
             "type": "integer",
@@ -66,25 +101,48 @@
             "maximum": 64,
             "description": "期望帧数。"
           },
-          "frameWidth": {
-            "type": "integer",
-            "minimum": 8,
-            "maximum": 2048
+          "actionDescription": {
+            "type": "string",
+            "maxLength": 1000
           },
-          "frameHeight": {
+          "loop": {
+            "type": "boolean"
+          },
+          "requestKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "仅在明确允许等待外部生成时使用；默认 false。"
+          },
+          "candidateIndex": {
             "type": "integer",
-            "minimum": 8,
-            "maximum": 2048
+            "minimum": 1,
+            "maximum": 8
+          },
+          "columns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 5
+          },
+          "overwrite": {
+            "type": "boolean"
           }
         }
       },
-      "outputs": ["orderedFrames", "spriteSheet", "metadata"]
+      "outputs": ["jobRecord", "orderedFrames", "spriteSheet", "preview", "metadata"]
     },
     {
       "id": "map-stitcher",
       "name": "地图拼接",
       "shortName": "地图拼接",
-      "description": "组合地图切片，预览边界衔接，并输出完整的 2D 关卡画布。",
+      "description": "以 FrameRonin / Pixelwork v2 模型组合地图切片，编辑独立图片图层和矢量区域，并输出可恢复状态与引擎资源。",
       "category": "production",
       "workflow": "workbench/workflows/map-production.json",
       "ui": {
@@ -93,27 +151,51 @@
         "status": "ready",
         "route": "/tools/map-stitcher",
         "surface": "editor",
-        "capabilities": ["切片编排", "分层绘制", "碰撞层", "Godot 导出"]
+        "capabilities": ["切片编排", "六层显示", "四类区域绘制", "Pixelwork v2 状态", "Godot / Unity 导出"]
       },
       "connector": {
-        "type": "http",
-        "urlEnv": "MAP_STITCHER_API_URL",
-        "tokenEnv": "MAP_STITCHER_API_TOKEN"
+        "type": "local-adapter",
+        "adapter": "map-stitcher",
+        "generationUrlEnv": "MAP_STITCHER_API_URL",
+        "generationTokenEnv": "MAP_STITCHER_API_TOKEN"
       },
       "inputSchema": {
         "type": "object",
-        "required": ["prompt"],
+        "required": ["operation"],
         "additionalProperties": false,
         "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["compose", "generate-layer"],
+            "description": "compose 在本地拼接图片；generate-layer 使用与网页相同的扩图请求。"
+          },
           "prompt": {
             "type": "string",
             "minLength": 1,
-            "description": "地图拼接目标、布局要求和导出目标。"
+            "description": "generate-layer 的图片生成提示词。"
           },
-          "sourceDirectory": {
+          "images": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" },
+            "description": "compose 使用的仓库内图片路径或 data:image URL，按行优先排列。"
+          },
+          "image": {
             "type": "string",
             "minLength": 1,
-            "description": "仓库内地图切片目录。"
+            "description": "generate-layer 使用的 data:image URL。"
+          },
+          "tile": {
+            "type": "object",
+            "description": "generate-layer 的 FrameRonin 卡片几何信息。"
+          },
+          "layer": {
+            "type": "string",
+            "enum": ["overall", "surface", "object", "black", "white"]
+          },
+          "mask_mode": {
+            "type": "string",
+            "enum": ["black", "white"]
           },
           "columns": {
             "type": "integer",
@@ -136,10 +218,29 @@
           "checkSeams": {
             "type": "boolean",
             "description": "是否执行边界衔接检查。"
+          },
+          "regions": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "需要写入状态和引擎交付包的区域标注。"
+          },
+          "stateFormat": {
+            "type": "string",
+            "enum": ["pixelwork-v2"],
+            "description": "可恢复编辑状态的格式。"
+          },
+          "engineTargets": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": ["godot", "unity"]
+            },
+            "description": "需要生成的引擎交付包。"
           }
         }
       },
-      "outputs": ["stitchedMap", "seamReport", "metadata"]
+      "outputs": ["stitchedMap", "seamReport", "statePackage", "regionAnnotations", "godotPackage", "unityPackage", "metadata"]
     }
   ]
 }

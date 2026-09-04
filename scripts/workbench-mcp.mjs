@@ -21,7 +21,7 @@ const server = new McpServer(
   },
   {
     instructions:
-      'This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. An awaiting_configuration task is not complete; report its required environment variable. Never invent outputs, and report task IDs and paths exactly as returned.',
+      'This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. Local adapters persist real task state; an awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned.',
   },
 );
 
@@ -55,7 +55,7 @@ registerTool(
   {
     title: 'List 2D workbench capabilities',
     description:
-      'List the production capabilities registered in this project and whether each external connector is configured.',
+      'List the production capabilities and local adapters registered in this project, including optional external-service configuration.',
     inputSchema: {},
     annotations: {
       readOnlyHint: true,
@@ -104,7 +104,7 @@ registerTool(
   {
     title: 'Prepare a 2D workbench task',
     description:
-      'Validate a request and write a local task record without calling an external connector.',
+      'Validate a request and write a local task record without running its adapter or calling an external service.',
     inputSchema: taskInputSchema,
     annotations: {
       readOnlyHint: false,
@@ -125,7 +125,7 @@ registerTool(
   {
     title: 'Run a 2D workbench task',
     description:
-      'Validate a request and run its configured external connector. Without configuration, preserve an awaiting_configuration task instead of fabricating output.',
+      'Validate a request and run its manifest-selected local adapter. Operations that need an unconfigured external service remain awaiting_configuration instead of fabricating output.',
     inputSchema: taskInputSchema,
     annotations: {
       readOnlyHint: false,

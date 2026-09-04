@@ -39,6 +39,7 @@ export function SpritePipelineWorkspace({
   module: WorkbenchModule;
 }) {
   const [status, setStatus] = useState<PipelineStatus>('checking');
+  const [pipelineVersion, setPipelineVersion] = useState<string | null>(null);
   const pipelineUrl = normalizedPipelineUrl();
 
   const checkConnection = useCallback(async () => {
@@ -46,18 +47,26 @@ export function SpritePipelineWorkspace({
     const timeout = window.setTimeout(() => controller.abort(), 2500);
 
     try {
-      await fetch(`${pipelineUrl}/health`, {
+      const response = await fetch('/api/workbench/sprite-pipeline/health', {
         cache: 'no-store',
-        mode: 'no-cors',
         signal: controller.signal,
       });
+      const payload = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        version?: string;
+      } | null;
+      if (!response.ok || payload?.ok !== true || typeof payload.version !== 'string') {
+        throw new Error('Invalid SpritePipeline health response');
+      }
+      setPipelineVersion(payload.version);
       setStatus('ready');
     } catch {
+      setPipelineVersion(null);
       setStatus('offline');
     } finally {
       window.clearTimeout(timeout);
     }
-  }, [pipelineUrl]);
+  }, []);
 
   useEffect(() => {
     // oxlint-disable-next-line react/react-compiler -- This effect synchronizes the UI with an external sidecar service.
@@ -95,7 +104,7 @@ export function SpritePipelineWorkspace({
           {status === 'checking'
             ? '正在连接'
             : status === 'ready'
-              ? '本地管线已连接'
+              ? `本地管线已连接${pipelineVersion ? ` · v${pipelineVersion}` : ''}`
               : '本地管线未启动'}
         </div>
 

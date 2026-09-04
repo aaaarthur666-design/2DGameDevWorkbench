@@ -1,6 +1,7 @@
 import manifest from '@/workbench/manifest.json';
 
 type GenerateRequest = {
+  operation?: unknown;
   image?: unknown;
   prompt?: unknown;
   tile?: unknown;
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
   }
 
   if (
+    input.operation !== 'generate-layer' ||
     typeof input.image !== 'string' ||
     !input.image.startsWith('data:image/') ||
     typeof input.prompt !== 'string' ||
@@ -38,16 +40,20 @@ export async function POST(request: Request) {
     return Response.json({ error: '地图拼接能力未注册。' }, { status: 500 });
   }
 
-  const connectorUrl = process.env[capability.connector.urlEnv];
+  const generationUrlEnv = capability.connector.generationUrlEnv;
+  if (typeof generationUrlEnv !== 'string') {
+    return Response.json({ error: '地图能力缺少扩图服务配置项。' }, { status: 500 });
+  }
+  const connectorUrl = process.env[generationUrlEnv];
   if (!connectorUrl) {
     return Response.json(
-      { error: `外部扩图服务尚未配置：${capability.connector.urlEnv}` },
+      { error: `外部扩图服务尚未配置：${generationUrlEnv}` },
       { status: 503 },
     );
   }
 
-  const token = process.env[capability.connector.tokenEnv];
-  const taskId = `map-stitcher-${crypto.randomUUID().slice(0, 8)}`;
+  const generationTokenEnv = capability.connector.generationTokenEnv;
+  const token = typeof generationTokenEnv === 'string' ? process.env[generationTokenEnv] : undefined;
 
   try {
     const connectorResponse = await fetch(connectorUrl, {
@@ -57,9 +63,11 @@ export async function POST(request: Request) {
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({
-        taskId,
-        capabilityId: capability.id,
-        input,
+        image: input.image,
+        prompt: input.prompt,
+        tile: input.tile,
+        layer: input.layer,
+        mask_mode: input.mask_mode,
       }),
     });
 

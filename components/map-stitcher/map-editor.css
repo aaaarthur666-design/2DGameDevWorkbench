@@ -340,3 +340,103 @@
   .map-stitcher-surface .fine-editor-actions,
   .map-stitcher-surface .collision-editor-actions { margin-left: 0; }
 }
+
+/* FrameRonin-compatible editor ------------------------------------------------ */
+.map-stitcher-surface.frame-ronin-editor {
+  --frame-panel-width: 272px;
+  --frame-cyan: #45d6cc;
+  --frame-purple: #9f7cff;
+}
+.map-stitcher-surface .frame-ronin-topbar { gap: 18px; padding-inline: 22px; }
+.map-stitcher-surface .frame-ronin-topbar .title-cluster h1 { font-size: 19px; }
+.map-stitcher-surface .frame-ronin-topbar .title-cluster p { font-size: 11px; }
+.map-stitcher-surface .frame-ronin-topbar .top-controls { gap: 7px; }
+.map-stitcher-surface .compact-number,
+.map-stitcher-surface .compact-select {
+  display: grid; grid-template-columns: auto 44px auto; align-items: center; gap: 5px; height: 34px; padding: 0 8px;
+  border: 1px solid var(--workbench-line); border-radius: 6px; background: rgba(255,255,255,.025); color: rgba(255,255,255,.4); font-size: 10px;
+}
+.map-stitcher-surface .compact-select { grid-template-columns: auto 58px; }
+.map-stitcher-surface .compact-number input,
+.map-stitcher-surface .compact-select select {
+  min-width: 0; height: 24px; border: 0; outline: 0; background: transparent; color: rgba(255,255,255,.78); font-family: var(--font-mono); font-size: 11px;
+}
+.map-stitcher-surface .compact-number input { width: 44px; text-align: right; }
+.map-stitcher-surface .compact-select select { width: 58px; }
+.map-stitcher-surface .compact-select option { color: #11141a; }
+.map-stitcher-surface .legacy-editor-link {
+  display: inline-flex; align-items: center; height: 34px; padding: 0 9px; border-radius: 6px; color: rgba(255,255,255,.35); font-size: 11px; text-decoration: none;
+}
+.map-stitcher-surface .legacy-editor-link:hover { background: rgba(255,255,255,.05); color: rgba(255,255,255,.78); }
+
+.map-stitcher-surface .frame-ronin-panel { width: var(--frame-panel-width); gap: 8px; }
+.map-stitcher-surface .frame-ronin-panel > section,
+.map-stitcher-surface .region-layer-panel,
+.map-stitcher-surface .tile-actions-panel {
+  padding: 9px; border: 1px solid var(--workbench-line); border-radius: 9px; background: rgba(13,15,21,.93);
+  box-shadow: 0 12px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.035); backdrop-filter: blur(14px);
+}
+.map-stitcher-surface .frame-ronin-panel .layer-stack-row { grid-template-columns: 1fr 30px 30px; }
+.map-stitcher-surface .frame-ronin-panel .layer-stack-row button:first-child { font-size: 11px; }
+.map-stitcher-surface .panel-heading-row { display: flex; align-items: center; justify-content: space-between; }
+.map-stitcher-surface .panel-heading-row .panel-label { margin: 0 0 7px; text-align: left; }
+.map-stitcher-surface .panel-heading-row strong { margin-bottom: 7px; color: rgba(255,255,255,.38); font-family: var(--font-mono); font-size: 10px; }
+.map-stitcher-surface .region-layer-stack .layer-stack-row { border-left: 2px solid var(--region-color); }
+.map-stitcher-surface .region-layer-stack .layer-stack-row.active { border-color: color-mix(in srgb, var(--region-color) 70%, transparent); background: color-mix(in srgb, var(--region-color) 14%, transparent); }
+.map-stitcher-surface .region-description,
+.map-stitcher-surface .region-draw-hint { margin: 7px 2px 8px; color: rgba(255,255,255,.35); font-size: 10px; line-height: 1.45; }
+.map-stitcher-surface .region-draw-hint { min-height: 28px; margin-bottom: 0; color: rgba(255,255,255,.47); }
+.map-stitcher-surface .region-tool-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.map-stitcher-surface .region-tool-grid button { min-width: 0; height: 29px; padding: 0 6px; font-size: 10px; }
+.map-stitcher-surface .region-tool-grid button svg { width: 13px; height: 13px; }
+.map-stitcher-surface .region-editing-active { border-color: rgba(69,214,204,.55); background: rgba(69,214,204,.12); color: #9af7f0; }
+.map-stitcher-surface .tile-actions-panel .panel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-stitcher-surface .compact-actions { grid-template-columns: 1fr 1fr; }
+.map-stitcher-surface .compact-actions button { min-width: 0; height: 31px; padding: 0 8px; font-size: 10px; }
+.map-stitcher-surface .compact-actions button svg { width: 13px; height: 13px; }
+.map-stitcher-surface .frame-ronin-panel .feather-controls { gap: 7px; margin-top: 9px; padding-top: 9px; }
+.map-stitcher-surface .frame-ronin-panel .feather-row span { flex-basis: 50px; font-size: 9px; }
+
+.map-stitcher-surface .frame-tile {
+  display: block; appearance: none; padding: 0; color: inherit; text-align: initial; cursor: pointer;
+}
+.map-stitcher-surface .frame-tile .tile-layer-active { z-index: 1; }
+.map-stitcher-surface .region-drawing-overlay {
+  position: absolute; inset: 0; z-index: 9; width: 100%; height: 100%; overflow: visible; pointer-events: none;
+}
+.map-stitcher-surface .region-drawing-overlay.interactive { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.map-stitcher-surface .region-shape { opacity: .9; pointer-events: none; }
+.map-stitcher-surface .region-drawing-overlay.interactive .region-shape { pointer-events: visiblePainted; }
+.map-stitcher-surface .region-shape.selected { filter: drop-shadow(0 0 4px currentColor); stroke-dasharray: 7 4; opacity: 1; }
+.map-stitcher-surface .region-draft { opacity: 1; pointer-events: none !important; }
+.map-stitcher-surface .frame-tile.preview-hidden .region-drawing-overlay { visibility: hidden; }
+
+.map-stitcher-surface .frame-ronin-panel + .panel-button { flex: 0 0 auto; }
+.frame-ronin-settings { width: min(720px, calc(100vw - 32px)); max-width: 720px; }
+.frame-ronin-settings-grid { display: grid; gap: 11px; }
+.frame-ronin-settings-grid > label { display: grid; grid-template-columns: 126px 1fr; align-items: start; gap: 10px; color: rgba(255,255,255,.54); font-size: 12px; }
+.frame-ronin-settings-grid select,
+.frame-ronin-settings-grid textarea {
+  width: 100%; border: 1px solid rgba(255,255,255,.11); border-radius: 6px; outline: none; background: rgba(255,255,255,.035); color: rgba(255,255,255,.82); font-size: 12px;
+}
+.frame-ronin-settings-grid select { height: 34px; padding: 0 9px; }
+.frame-ronin-settings-grid select option { color: #11141a; }
+.frame-ronin-settings-grid textarea { min-height: 66px; resize: vertical; padding: 8px 10px; line-height: 1.45; }
+.frame-ronin-settings-grid select:focus,
+.frame-ronin-settings-grid textarea:focus { border-color: rgba(159,124,255,.62); box-shadow: 0 0 0 3px rgba(159,124,255,.1); }
+
+@media (max-width: 1320px) {
+  .map-stitcher-surface .frame-ronin-topbar .title-cluster p,
+  .map-stitcher-surface .compact-number span:first-child,
+  .map-stitcher-surface .compact-select span:first-child { display: none; }
+  .map-stitcher-surface .compact-number { grid-template-columns: 38px auto; }
+  .map-stitcher-surface .compact-select { grid-template-columns: 58px; }
+}
+
+@media (max-width: 980px) {
+  .map-stitcher-surface.frame-ronin-editor { --frame-panel-width: 244px; }
+  .map-stitcher-surface .frame-ronin-topbar { height: 106px; align-items: flex-start; flex-wrap: wrap; padding: 9px 12px; }
+  .map-stitcher-surface .frame-ronin-topbar .title-cluster { width: 100%; }
+  .map-stitcher-surface .frame-ronin-topbar .top-controls { justify-content: flex-start; overflow-x: auto; }
+  .map-stitcher-surface.frame-ronin-editor .workspace { height: calc(100% - 106px); }
+}

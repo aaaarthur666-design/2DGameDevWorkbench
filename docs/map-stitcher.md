@@ -38,21 +38,34 @@ npm run dev
 npm run build
 ```
 
-## 外部扩图 API 协议
+## Agent / MCP 本地拼接
 
-在根项目环境中配置 `MAP_STITCHER_API_URL` 和可选的 `MAP_STITCHER_API_TOKEN`。浏览器不会读取这两个值；服务端会按统一 Connector 协议发送：
+Manifest 中的地图输入以 `operation` 区分两条真实流程。`compose` 接收按行优先排列的 `images`（仓库相对路径或 `data:image` URL），由本地 `map-stitcher` 适配器生成拼接 PNG、接缝报告、Pixelwork v2 状态包、区域清单及可选引擎包，不需要配置外部 URL。
 
 ```json
 {
-  "taskId": "map-stitcher-1234abcd",
-  "capabilityId": "map-stitcher",
-  "input": {
-    "image": "data:image/png;base64,...",
-    "prompt": "保持原图像素风……",
-    "tile": { "key": "0,-0.85", "x": 0, "y": -0.85, "w": 1, "h": 1 },
-    "layer": "ground",
-    "mask_mode": "white"
-  }
+  "operation": "compose",
+  "images": ["assets/maps/tile_01.png", "assets/maps/tile_02.png"],
+  "columns": 2,
+  "tileSize": 16,
+  "checkSeams": true,
+  "engineTargets": ["godot"]
+}
+```
+
+地图页面还注册读取摘要、调整视图、图片导入、图片层生成、区域批量创建和导出六个 WebMCP 工具。它们复用页面按钮的状态动作，不维护第二套编辑模型。
+
+## 外部扩图 API 协议
+
+在根项目环境中配置 `MAP_STITCHER_API_URL` 和可选的 `MAP_STITCHER_API_TOKEN`。浏览器不会读取这两个值；服务端会发送与 Manifest `generate-layer` 操作相同的图片请求，不再包裹通用 Workbench envelope：
+
+```json
+{
+  "image": "data:image/png;base64,...",
+  "prompt": "保持原图像素风……",
+  "tile": { "key": "0,-0.85", "x": 0, "y": -0.85, "w": 1, "h": 1 },
+  "layer": "surface",
+  "mask_mode": "white"
 }
 ```
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowUp,
   Box,
@@ -46,10 +46,22 @@ type TaskState = 'running' | 'complete' | 'waiting' | 'failed';
 
 type Task = {
   id: string;
+  capabilityId: string;
   name: string;
   detail: string;
   progress: number;
   state: TaskState;
+  outputs: string[];
+};
+
+type StoredTask = {
+  id: string;
+  capabilityId: string;
+  status: string;
+  input?: Record<string, unknown>;
+  outputs?: string[];
+  error?: string;
+  requiredEnvironment?: string;
 };
 
 type Message = {
@@ -81,12 +93,12 @@ type AgentAwareDocument = Document & {
 
 const promptIdeas: Record<string, string[]> = {
   'sprite-generator': [
-    '生成一个 32×32 像素角色的 8 帧待机动画',
-    '把角色设定整理成可执行的动作帧清单',
+    '{"operation":"create","characterId":"diagnostic_dummy","actionId":"idle","provider":"fixture"}',
+    '{"operation":"get","jobId":"在这里填写 SpritePipeline 作业 ID"}',
   ],
   'map-stitcher': [
-    '将这批 16×16 地图切片拼成 64×64 关卡',
-    '检查地图边界并列出需要修补的接缝',
+    '{"operation":"compose","images":["Tools/SpritePipeline/presets/characters/diagnostic_dummy/idle_reference.png"],"columns":1,"checkSeams":true}',
+    '{"operation":"compose","images":["仓库内/地图块01.png","仓库内/地图块02.png"],"columns":2,"engineTargets":["godot"]}',
   ],
 };
 
@@ -99,31 +111,42 @@ const initialMessages: Message[] = [
   },
 ];
 
-const initialTasks: Task[] = [
-  {
-    id: 'WB-024',
-    name: '骑士待机动作',
-    detail: '序列帧生成 · 示例记录',
-    progress: 100,
-    state: 'complete',
-  },
-  {
-    id: 'WB-025',
-    name: '森林入口地图',
-    detail: '地图拼接 · 等待配置连接器',
-    progress: 0,
-    state: 'waiting',
-  },
-];
-
 const capabilityAssets = [
   { name: 'Skill', detail: '项目级工作流', state: 'ready' },
   { name: 'Expert', detail: '2D 生产专家', state: 'ready' },
-  { name: 'Connector', detail: 'HTTP 适配器', state: 'config' },
+  { name: 'Adapter', detail: '2 个本地协议适配器', state: 'ready' },
   { name: 'MCP Server', detail: '5 个客户端工具', state: 'ready' },
-  { name: 'WebMCP', detail: '2 个页面工具', state: 'ready' },
+  { name: 'WebMCP', detail: '8 个页面工具（含 6 个地图工具）', state: 'ready' },
   { name: 'Workflow', detail: '5 步预置流程', state: 'ready' },
 ] as const;
+
+function storedTaskView(task: StoredTask, modules: readonly WorkbenchModule[]): Task {
+  const capabilityModule = modules.find((candidate) => candidate.id === task.capabilityId);
+  const operation = typeof task.input?.operation === 'string' ? task.input.operation : 'task';
+  const state: TaskState =
+    task.status === 'completed'
+      ? 'complete'
+      : task.status === 'failed'
+        ? 'failed'
+        : task.status === 'running'
+          ? 'running'
+          : 'waiting';
+  const statusLabel: Record<TaskState, string> = {
+    complete: '已完成',
+    failed: '失败',
+    running: '运行中',
+    waiting: task.status === 'awaiting_configuration' ? '等待外部服务配置' : '需要处理',
+  };
+  return {
+    id: task.id,
+    capabilityId: task.capabilityId,
+    name: `${capabilityModule?.shortName ?? task.capabilityId} · ${operation}`,
+    detail: task.error ?? `${statusLabel[state]}${task.requiredEnvironment ? ` · ${task.requiredEnvironment}` : ''}`,
+    progress: state === 'complete' ? 100 : state === 'running' ? 45 : 0,
+    state,
+    outputs: Array.isArray(task.outputs) ? task.outputs : [],
+  };
+}
 
 function StatusMark({ state }: { state: TaskState }) {
   if (state === 'complete') {
@@ -162,8 +185,8 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
   const [activeId, setActiveId] = useState(modules[0]?.id ?? '');
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
-  const taskSequence = useRef(26);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [runtimeOnline, setRuntimeOnline] = useState(false);
 
   const activeModule = useMemo(
     () => modules.find((module) => module.id === activeId) ?? modules[0],
@@ -171,37 +194,65 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
   );
 
   const ideas = activeModule ? (promptIdeas[activeModule.id] ?? []) : [];
+  const recentOutputs = useMemo(
+    () => tasks.flatMap((task) => task.outputs.map((output) => ({ taskId: task.id, output }))).slice(0, 5),
+    [tasks],
+  );
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const response = await fetch('/api/workbench/tasks?limit=30', { cache: 'no-store' });
+      setRuntimeOnline(response.ok);
+      if (!response.ok) return;
+      const payload = (await response.json()) as { tasks?: StoredTask[] };
+      if (Array.isArray(payload.tasks)) {
+        setTasks(payload.tasks.map((task) => storedTaskView(task, modules)));
+      }
+    } catch {
+      setRuntimeOnline(false);
+    }
+  }, [modules]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      if (!cancelled) await refreshTasks().catch(() => undefined);
+    };
+    void sync();
+    const interval = window.setInterval(() => void sync(), 3_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [refreshTasks]);
 
   const startTask = useCallback(
-    async (instruction: string, requestedModuleId = activeId) => {
+    async (input: Record<string, unknown>, requestedModuleId = activeId) => {
       const targetModule = modules.find(
         (module) => module.id === requestedModuleId,
       );
-      if (!targetModule) {
-        throw new Error(`未找到能力：${requestedModuleId}`);
-      }
+      if (!targetModule) throw new Error(`未找到能力：${requestedModuleId}`);
 
-      const trimmed = instruction.trim();
-      if (!trimmed) throw new Error('任务指令不能为空。');
-
-      const taskId = `WB-${String(taskSequence.current).padStart(3, '0')}`;
-      taskSequence.current += 1;
+      const operation = typeof input.operation === 'string' ? input.operation : 'task';
+      const taskId = `pending-${crypto.randomUUID().slice(0, 8)}`;
       const nextTask: Task = {
         id: taskId,
-        name: trimmed.length > 18 ? `${trimmed.slice(0, 18)}…` : trimmed,
-        detail: `${targetModule.shortName} · 已交给适配器`,
+        capabilityId: targetModule.id,
+        name: `${targetModule.shortName} · ${operation}`,
+        detail: '正在校验并交给本地适配器',
         progress: 12,
         state: 'running',
+        outputs: [],
       };
 
       setActiveId(targetModule.id);
       setMessages((current) => [
         ...current,
-        { id: `${taskId}-user`, role: 'user', content: trimmed },
+        { id: `${taskId}-user`, role: 'user', content: JSON.stringify(input) },
         {
           id: `${taskId}-agent`,
           role: 'workbench',
-          content: `控制台已选择「${targetModule.name}」，并将输入交给统一适配器校验；任务 ${taskId} 已加入右侧队列。`,
+          content: `已把结构化输入交给「${targetModule.name}」适配器；右侧队列会同步 MCP、CLI 和网页创建的同一批任务。`,
         },
       ]);
       setTasks((current) => [nextTask, ...current]);
@@ -212,70 +263,70 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             capabilityId: targetModule.id,
-            input: { prompt: trimmed },
+            input,
           }),
         });
         const result = (await response.json()) as {
+          taskId?: string;
           status?: string;
+          outputs?: string[];
           requiredEnvironment?: string;
           error?: string;
         };
-
-        const nextState: TaskState =
-          result.status === 'completed'
-            ? 'complete'
-            : result.status === 'awaiting_configuration'
-              ? 'waiting'
-              : 'failed';
+        const stored: StoredTask = {
+          id: result.taskId ?? taskId,
+          capabilityId: targetModule.id,
+          status: response.ok ? (result.status ?? 'failed') : 'failed',
+          input,
+          outputs: result.outputs,
+          error: result.error,
+          requiredEnvironment: result.requiredEnvironment,
+        };
+        const view = storedTaskView(stored, modules);
         setTasks((current) =>
-          current.map((task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  progress: nextState === 'complete' ? 100 : task.progress,
-                  state: nextState,
-                  detail:
-                    nextState === 'complete'
-                      ? `${targetModule.shortName} · 已完成`
-                      : nextState === 'waiting'
-                        ? `${targetModule.shortName} · 等待配置连接器`
-                        : `${targetModule.shortName} · 调用失败`,
-                }
-              : task,
-          ),
+          current.map((task) => (task.id === taskId ? view : task)),
         );
 
-        if (nextState === 'waiting') {
+        if (view.state === 'waiting') {
           setMessages((current) => [
             ...current,
             {
               id: `${taskId}-configuration`,
               role: 'workbench',
-              content: `任务已按能力协议准备完成。配置 ${result.requiredEnvironment ?? '对应的 API 地址'} 后即可执行，当前没有伪造生成结果。`,
+              content: result.requiredEnvironment
+                ? `任务已持久化；配置 ${result.requiredEnvironment} 后可继续对应的外部步骤。`
+                : '任务已持久化，当前状态需要人工检查。',
             },
           ]);
-        } else if (nextState === 'failed') {
+        } else if (view.state === 'failed') {
           setMessages((current) => [
             ...current,
             {
               id: `${taskId}-error`,
               role: 'workbench',
               content:
-                result.error ?? '连接器调用失败，请检查 API 配置后重试。',
+                result.error ?? '适配器调用失败，请检查任务输入和本地服务。',
             },
           ]);
         }
 
+        window.setTimeout(() => void refreshTasks().catch(() => undefined), 150);
+
         return {
-          taskId,
+          taskId: result.taskId ?? taskId,
           capabilityId: targetModule.id,
           status: result.status ?? 'failed',
+          outputs: result.outputs ?? [],
         };
-      } catch {
+      } catch (error) {
         setTasks((current) =>
           current.map((task) =>
             task.id === taskId
-              ? { ...task, state: 'failed', detail: '工作台服务不可用' }
+              ? {
+                  ...task,
+                  state: 'failed',
+                  detail: error instanceof Error ? error.message : '工作台服务不可用',
+                }
               : task,
           ),
         );
@@ -283,10 +334,11 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
           taskId,
           capabilityId: targetModule.id,
           status: 'failed',
+          outputs: [],
         };
       }
     },
-    [activeId, modules],
+    [activeId, modules, refreshTasks],
   );
 
   useEffect(() => {
@@ -335,9 +387,12 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 type: 'string',
                 enum: modules.map((module) => module.id),
               },
-              instruction: { type: 'string', minLength: 1 },
+              input: {
+                type: 'object',
+                description: '必须符合该能力在 workbench/manifest.json 中声明的 inputSchema。',
+              },
             },
-            required: ['capabilityId', 'instruction'],
+            required: ['capabilityId', 'input'],
             additionalProperties: false,
           },
           annotations: {
@@ -351,11 +406,13 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
             const values = input as Record<string, unknown>;
             if (
               typeof values.capabilityId !== 'string' ||
-              typeof values.instruction !== 'string'
+              !values.input ||
+              typeof values.input !== 'object' ||
+              Array.isArray(values.input)
             ) {
-              throw new Error('capabilityId 和 instruction 必须是字符串。');
+              throw new Error('capabilityId 必须是字符串，input 必须是对象。');
             }
-            return startTask(values.instruction, values.capabilityId);
+            return startTask(values.input as Record<string, unknown>, values.capabilityId);
           },
         },
         registrationOptions,
@@ -372,8 +429,23 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
   function runPrompt() {
     const trimmed = prompt.trim();
     if (!trimmed || !activeModule) return;
-    void startTask(trimmed, activeModule.id);
-    setPrompt('');
+    try {
+      const input = JSON.parse(trimmed) as unknown;
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new Error('能力输入必须是 JSON 对象。');
+      }
+      void startTask(input as Record<string, unknown>, activeModule.id);
+      setPrompt('');
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `input-error-${Date.now()}`,
+          role: 'workbench',
+          content: error instanceof Error ? error.message : '无法解析能力输入 JSON。',
+        },
+      ]);
+    }
   }
 
   return (
@@ -396,9 +468,14 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
               </span>
               <Badge
                 variant="outline"
-                className="hidden h-5 border-emerald-300/20 bg-emerald-400/7 px-1.5 text-[11px] font-normal text-emerald-200 sm:inline-flex"
+                className={cn(
+                  'hidden h-5 px-1.5 text-[11px] font-normal sm:inline-flex',
+                  runtimeOnline
+                    ? 'border-emerald-300/20 bg-emerald-400/7 text-emerald-200'
+                    : 'border-amber-300/20 bg-amber-400/7 text-amber-200',
+                )}
               >
-                Client bridge ready
+                {runtimeOnline ? 'Runtime bridge ready' : 'Runtime bridge offline'}
               </Badge>
             </div>
           </div>
@@ -679,8 +756,8 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                       runPrompt();
                     }
                   }}
-                  placeholder={`直接向${activeModule?.shortName ?? '工作台'}提交任务…`}
-                  aria-label="直接提交工作台任务"
+                  placeholder={`粘贴${activeModule?.shortName ?? '工作台'}能力输入 JSON…`}
+                  aria-label="提交结构化工作台任务"
                   className="min-h-[66px] resize-none border-0 bg-transparent px-2.5 py-2 text-[15px] leading-6 text-white/85 shadow-none placeholder:text-white/25 focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
                 />
                 <div className="flex items-center justify-between gap-2 px-1 pt-1">
@@ -720,7 +797,7 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 </div>
               </form>
               <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-white/22">
-                人工直调会校验输入；主 Agent 请在外部客户端的项目对话中使用
+                网页与 MCP 使用同一 Manifest、适配器和本地任务记录
               </p>
             </div>
           </section>
@@ -844,6 +921,11 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                     </span>
                   </div>
                   <div className="space-y-2">
+                    {tasks.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-white/8 px-3 py-4 text-xs text-white/28">
+                        暂无任务；MCP、CLI 或本页创建任务后会自动出现。
+                      </p>
+                    ) : null}
                     {tasks.map((task) => (
                       <div
                         key={task.id}
@@ -885,20 +967,29 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                   <h3 className="mb-2.5 px-0.5 text-xs font-medium text-white/48">
                     最近产物
                   </h3>
-                  <button className="flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.018] p-3 text-left transition hover:border-white/14 hover:bg-white/[0.03]">
-                    <div className="pixel-thumb flex size-10 items-center justify-center rounded-lg border border-violet-300/12 bg-violet-500/7">
-                      <FileImage className="size-4 text-violet-200/65" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs text-white/62">
-                        示例 · knight_idle_sheet.png
+                  <div className="space-y-2">
+                    {recentOutputs.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-white/8 px-3 py-4 text-xs text-white/28">
+                        尚无真实产物。
                       </p>
-                      <p className="mt-0.5 text-[10px] text-white/25">
-                        256 × 32 · 18 KB
-                      </p>
-                    </div>
-                    <ChevronDown className="size-3.5 -rotate-90 text-white/25" />
-                  </button>
+                    ) : null}
+                    {recentOutputs.map(({ taskId, output }) => (
+                      <a
+                        key={`${taskId}:${output}`}
+                        href={`/api/workbench/artifacts?path=${encodeURIComponent(output)}`}
+                        className="flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.018] p-3 text-left transition hover:border-white/14 hover:bg-white/[0.03]"
+                      >
+                        <div className="pixel-thumb flex size-10 items-center justify-center rounded-lg border border-violet-300/12 bg-violet-500/7">
+                          <FileImage className="size-4 text-violet-200/65" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs text-white/62">{output.split('/').at(-1)}</p>
+                          <p className="mt-0.5 truncate text-[10px] text-white/25">{taskId}</p>
+                        </div>
+                        <ChevronDown className="size-3.5 -rotate-90 text-white/25" />
+                      </a>
+                    ))}
+                  </div>
                 </section>
               </div>
             </ScrollArea>

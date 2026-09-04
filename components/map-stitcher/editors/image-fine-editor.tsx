@@ -498,9 +498,9 @@ export function ImageFineEditor({
   const cursor = isPanning ? 'grabbing' : tool === 'selectMove' ? (selection ? 'move' : 'crosshair') : tool === 'eyedropper' ? 'copy' : 'crosshair';
 
   return (
-    <div className="fine-editor" aria-label={`${tileKey} ${layerLabel}区域精修`} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
+    <div className="fine-editor" aria-label={`${tileKey} ${layerLabel}像素精修`} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
       <header className="fine-editor-toolbar">
-        <div className="fine-editor-title"><strong>区域绘制</strong><span>{tileKey} · 正在编辑：{layerLabel}</span></div>
+        <div className="fine-editor-title"><strong>像素精修</strong><span>{tileKey} · 正在编辑：{layerLabel}</span></div>
         <div className="fine-editor-tools">
           <Button size="sm" variant={tool === 'brush' ? 'default' : 'outline'} onClick={() => setTool('brush')}><Paintbrush /> 画笔</Button>
           <Button size="sm" variant={tool === 'eraser' ? 'default' : 'outline'} onClick={() => setTool('eraser')}><Eraser /> 橡皮擦</Button>

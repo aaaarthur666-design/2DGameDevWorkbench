@@ -23,6 +23,7 @@ npm run dev
 
 ```dotenv
 NEXT_PUBLIC_SPRITE_PIPELINE_UI_URL=https://your-private-sprite-pipeline.example
+SPRITE_PIPELINE_API_URL=https://your-private-sprite-pipeline.example
 ```
 
 ## 功能边界
@@ -31,4 +32,21 @@ NEXT_PUBLIC_SPRITE_PIPELINE_UI_URL=https://your-private-sprite-pipeline.example
 
 通过根目录 npm 命令启动时，Python 管线只监听回环地址，任务和角色包写入 `work/sprite-pipeline/`，成品写入 `outputs/sprite-pipeline/`；两者都不会提交到 Git。直接使用上游启动器时仍沿用其用户数据与文档导出目录。公开部署的 Cloudflare 页面不能启动本机 Python；若要远程使用，需要把管线单独部署到可信 HTTPS 服务，并补充访问控制和持久存储。
 
-上游当前没有提供 LICENSE、COPYING 或 NOTICE 文件。公开再分发或商业发布前应由仓库所有者补充明确许可证或书面授权。
+## Agent / MCP 接线
+
+`sprite-generator` 由 `sprite-pipeline` 本地适配器驱动。Manifest 输入必须包含 `operation`；创建作业时还要提供真实预设的 `characterId` 和 `actionId`。适配器会将它们转换为 Python 所需的 `character_id` / `action_id` 并调用 `/v1/jobs`，不会再把通用 Workbench envelope 直接发给 FastAPI。
+
+```json
+{
+  "operation": "create-and-generate",
+  "characterId": "player_cyber",
+  "actionId": "idle",
+  "provider": "pixellab",
+  "candidateCount": 1,
+  "wait": false
+}
+```
+
+先使用 `workbench_prepare_task` 校验；只有明确授权真实生成后才使用 `workbench_run_task`。健康指示灯通过同源 `/api/workbench/sprite-pipeline/health` 代理验证 `ok` 与 `version`，端口上其他服务或 404 不会被误报为已连接。
+
+上游当前没有提供 LICENSE、COPYING 或 NOTICE 文件。公开再分发或商业发布前应由仓库所有者补充明确许可证或书面授权；详见根目录 `THIRD_PARTY_NOTICES.md`。

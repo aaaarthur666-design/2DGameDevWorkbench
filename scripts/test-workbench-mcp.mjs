@@ -50,7 +50,12 @@ try {
     name: 'workbench_prepare_task',
     arguments: {
       capabilityId: 'sprite-generator',
-      input: { prompt: 'MCP self-test request' },
+      input: {
+        operation: 'create',
+        characterId: 'diagnostic_dummy',
+        actionId: 'idle',
+        provider: 'fixture',
+      },
     },
   });
   if (
@@ -76,7 +81,14 @@ try {
     name: 'workbench_run_task',
     arguments: {
       capabilityId: 'map-stitcher',
-      input: { prompt: 'MCP connector-state self-test' },
+      input: {
+        operation: 'generate-layer',
+        image: 'data:image/png;base64,iVBORw0KGgo=',
+        prompt: 'MCP connector-state self-test',
+        tile: { key: '0,0', x: 0, y: 0, w: 1, h: 1 },
+        layer: 'overall',
+        mask_mode: 'white',
+      },
     },
   });
   if (

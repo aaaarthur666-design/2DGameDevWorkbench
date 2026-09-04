@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pipelineRoot = Join-Path $repositoryRoot 'Tools\SpritePipeline'
 $requirementsPath = Join-Path $pipelineRoot 'requirements.txt'
+$requirementsLockPath = Join-Path $pipelineRoot 'requirements.lock'
 $virtualEnvironment = Join-Path $pipelineRoot '.venv'
 $virtualEnvironmentPython = Join-Path $virtualEnvironment 'Scripts\python.exe'
 
@@ -62,7 +63,14 @@ if (-not (Test-Path -LiteralPath $virtualEnvironmentPython -PathType Leaf)) {
     }
 }
 
-& $virtualEnvironmentPython -m pip install --disable-pip-version-check --requirement $requirementsPath
+$installRequirementsPath = if (Test-Path -LiteralPath $requirementsLockPath -PathType Leaf) {
+    $requirementsLockPath
+}
+else {
+    $requirementsPath
+}
+
+& $virtualEnvironmentPython -m pip install --disable-pip-version-check --requirement $installRequirementsPath
 if ($LASTEXITCODE -ne 0) {
     throw "Installing sprite pipeline dependencies exited with code $LASTEXITCODE"
 }

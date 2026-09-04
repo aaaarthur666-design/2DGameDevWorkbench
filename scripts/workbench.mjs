@@ -108,12 +108,22 @@ async function main() {
     const report = {
       manifest: 'ok',
       schemaVersion: manifest.schemaVersion,
-      capabilities: manifest.capabilities.map((capability) => ({
-        id: capability.id,
-        connector: capability.connector.type,
-        configured: Boolean(process.env[capability.connector.urlEnv]),
-        urlEnv: capability.connector.urlEnv,
-      })),
+      capabilities: manifest.capabilities.map((capability) => {
+        const published = publicCapability(capability);
+        return {
+          id: capability.id,
+          connector: published.connector.type,
+          adapter: published.connector.adapter,
+          configured: published.connector.configured,
+          ...(published.connector.urlEnv ? { urlEnv: published.connector.urlEnv } : {}),
+          ...(published.connector.generationUrlEnv
+            ? {
+                generationUrlEnv: published.connector.generationUrlEnv,
+                externalGenerationConfigured: published.connector.externalGenerationConfigured,
+              }
+            : {}),
+        };
+      }),
     };
     print(report, jsonMode);
     return;

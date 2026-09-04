@@ -475,10 +475,11 @@ export function MapEditor() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        operation: 'generate-layer',
         image: await canvasDataUrl(template),
         prompt: generator.prompt,
         tile: { key: target.key, x: target.x, y: target.y, w: target.w, h: target.h },
-        layer: editableLayer,
+        layer: editableLayer === 'ground' ? 'surface' : editableLayer,
         mask_mode: maskMode,
       }),
     });
