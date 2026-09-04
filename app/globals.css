@@ -158,13 +158,6 @@
 }
 
 @layer utilities {
-  .workbench-frame {
-    box-shadow:
-      inset 0 1px 0 oklch(1 0 0 / 4%),
-      0 0 0 1px oklch(0.6 0.09 280 / 3%),
-      0 28px 90px oklch(0.025 0.02 275 / 58%);
-  }
-
   .nav-item {
     @apply relative flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors hover:bg-white/[0.04] hover:text-white/75;
   }

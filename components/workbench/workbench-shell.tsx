@@ -23,7 +23,6 @@ import {
   Search,
   Settings2,
   TerminalSquare,
-  WandSparkles,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -490,35 +489,35 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
   }, [modules, startTask]);
 
   return (
-    <main className="h-svh overflow-hidden p-2.5 sm:p-3">
-      <section className="workbench-frame mx-auto grid h-full max-w-[1800px] grid-rows-[52px_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/10 bg-[#0b0d12]/96 shadow-2xl shadow-black/40">
-        <header className="flex items-center justify-between border-b border-white/8 px-3.5 sm:px-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex items-center gap-1.5" aria-hidden="true">
-              <span className="size-2.5 rounded-full bg-[#ff675c]" />
-              <span className="size-2.5 rounded-full bg-[#f6bf4f]" />
-              <span className="size-2.5 rounded-full bg-[#32c96b]" />
+    <main className="h-[calc(100svh-var(--workbench-nav-height))] overflow-hidden">
+      <section className="grid h-full w-full grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-[#0b0d12]/96">
+        <header className="flex items-center justify-between border-b border-white/8 bg-[#0a0d13] px-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-violet-300/18 bg-violet-500/10 text-violet-200">
+              <LayoutDashboard className="size-4" />
             </div>
-            <div className="hidden h-5 w-px bg-white/10 sm:block" />
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-violet-300/20 bg-violet-500/14 text-violet-200">
-                <WandSparkles className="size-4" />
-              </div>
-              <span className="truncate text-sm font-semibold tracking-[-0.01em] text-white/92">
-                2D Game Dev Workbench
-              </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold tracking-[-0.01em] text-white/92">
+                任务控制台
+              </p>
+              <p className="hidden text-[11px] text-white/35 sm:block">
+                外部 Agent 运行概览
+              </p>
+            </div>
+            <div className="hidden h-6 w-px bg-white/8 sm:block" />
+            <div className="flex min-w-0 items-center">
               <Badge
                 variant="outline"
                 className={cn(
-                  'hidden h-5 px-1.5 text-[11px] font-normal sm:inline-flex',
+                  'hidden h-6 px-2 text-[11px] font-normal sm:inline-flex',
                   runtimeOnline
                     ? 'border-emerald-300/20 bg-emerald-400/7 text-emerald-200'
                     : 'border-amber-300/20 bg-amber-400/7 text-amber-200',
                 )}
               >
                 {runtimeOnline
-                  ? 'Runtime bridge ready'
-                  : 'Runtime bridge offline'}
+                  ? '运行桥接已连接'
+                  : '运行桥接未连接'}
               </Badge>
             </div>
           </div>
