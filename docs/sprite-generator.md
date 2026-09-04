@@ -1,6 +1,8 @@
 # 序列帧生成工作区
 
-当前项目把 `NativeFramesGeneration` 的完整本地工作台保存在 `Tools/SpritePipeline/`，并通过 `/tools/sprite-generator` 嵌入统一导航。上游来源为 `https://github.com/flxBurnOut/NativeFramesGeneration.git`，本次接入基于提交 `4254eb5`。
+当前项目把 `NativeFramesGeneration` 的完整本地工作台保存在 `Tools/SpritePipeline/`，并通过 `/tools/sprite-generator` 嵌入统一导航。上游来源为 `https://github.com/flxBurnOut/NativeFramesGeneration.git`，当前已同步至提交 `b5cd0a4`（功能版本 `c2c505c`、MIT 许可 `322a6ae`、测试依赖修复 `b5cd0a4`）。
+
+本次同步增强了原始资产与恢复记录校验、QA 算法版本门禁、修补前后问题差异、五状态逐帧时间线、问题帧导航，以及多标签页草稿的三方像素冲突合并。外部替换继续要求选择帧时捕获的 SHA-256，避免覆盖更晚版本。
 
 ## 本地启动
 

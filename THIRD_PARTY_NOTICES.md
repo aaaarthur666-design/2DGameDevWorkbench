@@ -5,7 +5,7 @@ This file records provenance and the license status of incorporated source.
 ## NativeFramesGeneration / SpritePipeline
 
 - Upstream: <https://github.com/flxBurnOut/NativeFramesGeneration.git>
-- Integrated from commit `4254eb5` and subsequently adapted under `Tools/SpritePipeline/`.
+- Synchronized through upstream commit `b5cd0a4` (feature update `c2c505c`, MIT license `322a6ae`, test dependency fix `b5cd0a4`) and subsequently adapted under `Tools/SpritePipeline/`.
 - License: MIT License, Copyright (c) 2026 flxBurnOut.
 - Authorization confirmed by the copyright holder on 2026-09-04. The integrated copy includes its license at `Tools/SpritePipeline/LICENSE`; the upstream repository also carries the MIT license.
 - Distribution status: **resolved under the MIT License**.
