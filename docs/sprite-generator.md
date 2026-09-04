@@ -51,4 +51,4 @@ SPRITE_PIPELINE_API_URL=https://your-private-sprite-pipeline.example
 
 如需无网络、无付费地验证整条 Agent 接线，可运行 `examples/requests/sprite-generator-fixture.json`；其 `diagnostic_dummy` 产物仅用于诊断，不是可交付美术资源。
 
-上游当前没有提供 LICENSE、COPYING 或 NOTICE 文件。公开再分发或商业发布前应由仓库所有者补充明确许可证或书面授权；详见根目录 `THIRD_PARTY_NOTICES.md`。
+上游仓库所有者已于 2026-09-04 确认以 MIT License 发布，当前集成副本包含 `Tools/SpritePipeline/LICENSE`；来源与许可记录见根目录 `THIRD_PARTY_NOTICES.md`。

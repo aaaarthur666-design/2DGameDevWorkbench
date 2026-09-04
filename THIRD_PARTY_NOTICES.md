@@ -1,15 +1,16 @@
 # Third-party source and license status
 
-This file records provenance; it does not grant rights that an upstream project has not granted.
+This file records provenance and the license status of incorporated source.
 
 ## NativeFramesGeneration / SpritePipeline
 
 - Upstream: <https://github.com/flxBurnOut/NativeFramesGeneration.git>
-- Integrated snapshot: commit `4254eb5`, under `Tools/SpritePipeline/`
-- License status checked on 2026-09-04: no `LICENSE`, `COPYING`, or `NOTICE` file was present in the integrated upstream snapshot.
-- Distribution status: **unresolved**. Do not redistribute, publish, sell, or include this directory in a public deployment until the copyright holder adds an explicit license or provides written permission.
+- Integrated from commit `4254eb5` and subsequently adapted under `Tools/SpritePipeline/`.
+- License: MIT License, Copyright (c) 2026 flxBurnOut.
+- Authorization confirmed by the copyright holder on 2026-09-04. The integrated copy includes its license at `Tools/SpritePipeline/LICENSE`; the upstream repository also carries the MIT license.
+- Distribution status: **resolved under the MIT License**.
 
-The workbench's `sprite-pipeline` adapter communicates with this component through its documented local REST API. If redistribution permission cannot be obtained, keep the adapter and replace the vendored directory with a separately installed sidecar.
+The workbench's `sprite-pipeline` adapter communicates with this component through its documented local REST API.
 
 ## FrameRonin compatibility reference
 

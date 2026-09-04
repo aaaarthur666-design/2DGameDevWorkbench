@@ -168,4 +168,8 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 ## 当前状态
 
-统一监控台、公共导航、两项本地适配器、FrameRonin 模式地图编辑器和 SpritePipeline 工作台已经整合。地图 `compose` 无需外部服务；`generate-layer` 未配置时会明确停在 `awaiting_configuration`。序列帧适配器默认连接本机工作台的真实 REST API，不再发送通用连接器 envelope。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)，第三方源码的再分发限制见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+统一监控台、公共导航、两项本地适配器、FrameRonin 模式地图编辑器和 SpritePipeline 工作台已经整合。地图 `compose` 无需外部服务；`generate-layer` 未配置时会明确停在 `awaiting_configuration`。序列帧适配器默认连接本机工作台的真实 REST API，不再发送通用连接器 envelope。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)，第三方来源与许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+## License
+
+本项目以 [MIT License](LICENSE) 发布。内置 SpritePipeline 的许可副本位于 [`Tools/SpritePipeline/LICENSE`](Tools/SpritePipeline/LICENSE)。
