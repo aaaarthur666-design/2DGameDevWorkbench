@@ -29,6 +29,7 @@
     "build/**",
     "dist/**",
     "coverage/**",
+    "Tools/SpritePipeline/**",
     "components/ui/**",
     "hooks/use-mobile.ts",
     "next-env.d.ts"

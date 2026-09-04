@@ -1,6 +1,8 @@
 import JSZip from 'jszip';
 import {
+  ASSET_LAYERS,
   CENTER_KEY,
+  type CollisionRect,
   type EditableLayer,
   type Feather,
   type LayerId,
@@ -65,7 +67,20 @@ export async function renderTile(
   if (!context) throw new Error('浏览器无法创建图片画布');
   context.imageSmoothingEnabled = false;
 
-  const layers: EditableLayer[] = layer === 'overall' ? ['ground', 'object'] : [layer];
+  if (layer === 'collision') {
+    context.fillStyle = '#ffffff';
+    for (const rect of tile.collisions) {
+      context.fillRect(
+        Math.round(rect.x * width),
+        Math.round(rect.y * height),
+        Math.max(1, Math.round(rect.w * width)),
+        Math.max(1, Math.round(rect.h * height)),
+      );
+    }
+    return canvas;
+  }
+
+  const layers: EditableLayer[] = layer === 'overall' ? ['ground', 'object', 'foreground'] : [layer];
   for (const currentLayer of layers) {
     const asset = tile.layers[currentLayer];
     if (!asset) continue;
@@ -230,6 +245,7 @@ export async function generateLocalExpansion(
   layer: LayerId,
   _maskMode: MaskMode,
 ) {
+  if (layer === 'collision') throw new Error('碰撞层不能自动扩图');
   const source = sourceTile(tiles);
   const sourceAsset = source.layers.ground!;
   const candidates = completedTiles(tiles, layer).filter((tile) => tile.key !== target.key);
@@ -279,7 +295,7 @@ export async function generateLocalExpansion(
 export async function generateLayerVariant(
   tiles: Tile[],
   target: Tile,
-  mode: 'black' | 'white' | 'object',
+  mode: 'black' | 'white' | 'object' | 'foreground',
 ) {
   if (!target.layers.ground && !target.layers.object) throw new Error('当前卡片没有可用于提取图层的整体图片');
   const source = sourceTile(tiles);
@@ -305,7 +321,7 @@ export async function generateLayerVariant(
       (data[index + 2] - background[2]) ** 2,
     );
     const foreground = clamp((distance - 18) / 58, 0, 1) * (data[index + 3] / 255);
-    if (mode === 'object') {
+    if (mode === 'object' || mode === 'foreground') {
       data[index + 3] = Math.round(foreground * 255);
       continue;
     }
@@ -343,7 +359,7 @@ export async function exportStateZip(
   const savedTiles = await Promise.all(
     tiles.map(async (tile) => {
       const layers: SavedTileLayers = {};
-      for (const layer of ['ground', 'object', 'black', 'white'] as const) {
+      for (const layer of ASSET_LAYERS) {
         const asset = tile.layers[layer];
         if (!asset) continue;
         const name = uniqueName(`${tile.key === CENTER_KEY ? 'source' : `tile_${tile.key.replace(',', '_')}`}_${layer}_${asset.name}`);
@@ -367,12 +383,13 @@ export async function exportStateZip(
         feather: tile.feather,
         hidden: tile.hidden,
         layers,
+        collisions: tile.collisions,
       };
     }),
   );
 
   const manifest: SceneMakerState = {
-    version: 3,
+    version: 5,
     format: 'scenemaker-map-stitch-state',
     savedAt: new Date().toISOString(),
     tiles: savedTiles,
@@ -385,20 +402,79 @@ export async function exportStateZip(
 
 type SavedTileLayers = Partial<Record<EditableLayer, SavedImageReference>>;
 
+/** Import-only compatibility for the temporary v4 collision-mask state format. */
+export async function legacyCollisionMaskToRectangles(blob: Blob): Promise<CollisionRect[]> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = await loadImage(url);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return [];
+    context.drawImage(image, 0, 0);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    type PixelRect = { x: number; y: number; width: number; height: number };
+    const completed: PixelRect[] = [];
+    let active = new Map<string, PixelRect>();
+    for (let y = 0; y < imageData.height; y += 1) {
+      const runs: Array<{ x: number; width: number }> = [];
+      let start = -1;
+      for (let x = 0; x <= imageData.width; x += 1) {
+        const opaque = x < imageData.width && imageData.data[(y * imageData.width + x) * 4 + 3] >= 24;
+        if (opaque && start < 0) start = x;
+        if (!opaque && start >= 0) {
+          runs.push({ x: start, width: x - start });
+          start = -1;
+        }
+      }
+      const next = new Map<string, PixelRect>();
+      for (const run of runs) {
+        const key = `${run.x}:${run.width}`;
+        const continuing = active.get(key);
+        next.set(key, continuing ? { ...continuing, height: continuing.height + 1 } : { ...run, y, height: 1 });
+      }
+      for (const [key, rect] of active) if (!next.has(key)) completed.push(rect);
+      active = next;
+    }
+    completed.push(...active.values());
+    return completed.map((rect, index) => ({
+      id: `legacy_mask_${index + 1}`,
+      x: rect.x / imageData.width,
+      y: rect.y / imageData.height,
+      w: rect.width / imageData.width,
+      h: rect.height / imageData.height,
+    }));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export async function exportGodot(tiles: Tile[], horizontalOverlapPercent: number, verticalOverlapPercent: number) {
   const source = sourceTile(tiles);
   const sourceAsset = source.layers.ground!;
-  const { items, bounds } = await renderedTiles(tiles, 'overall');
+  const rendered = await renderedTiles(tiles, 'overall');
+  const exportedTiles = tiles.filter((tile) => hasVisibleAsset(tile, 'overall') || tile.collisions.length > 0);
+  const bounds = boundsFor(exportedTiles);
+  const items = rendered.items.map((item) => ({
+    ...item,
+    left: Math.round((item.tile.x - bounds.minX) * sourceAsset.width),
+    top: Math.round((item.tile.y - bounds.minY) * sourceAsset.height),
+  }));
   const zip = new JSZip();
   const images = zip.folder('images')!;
   const manifestTiles = [];
   const resources: string[] = [];
+  const subResources: string[] = [];
   const nodes: string[] = [];
+  const manifestCollisions = [];
 
   let resourceIndex = 0;
-  const zOrder: Record<EditableLayer, number> = { ground: 0, object: 10, black: 30, white: 40 };
+  let shapeIndex = 0;
+  const imageLayers = ASSET_LAYERS;
+  const zOrder: Record<EditableLayer, number> = { ground: 0, object: 10, foreground: 20, black: 30, white: 40 };
   for (const item of items) {
-    for (const layer of ['ground', 'object', 'black', 'white'] as const) {
+    for (const layer of imageLayers) {
       if (!item.tile.layers[layer]) continue;
       resourceIndex += 1;
       const layerCanvas = await renderTile(item.tile, source, layer);
@@ -421,90 +497,53 @@ export async function exportGodot(tiles: Tile[], horizontalOverlapPercent: numbe
     }
   }
 
+  for (const tile of exportedTiles) {
+    const tileWidth = Math.max(1, Math.round(tile.w * sourceAsset.width));
+    const tileHeight = Math.max(1, Math.round(tile.h * sourceAsset.height));
+    const tileLeft = Math.round((tile.x - bounds.minX) * sourceAsset.width);
+    const tileTop = Math.round((tile.y - bounds.minY) * sourceAsset.height);
+    const tileName = tile.key === CENTER_KEY ? 'source' : `tile_${tile.key.replace(',', '_')}`;
+    for (const collision of tile.collisions) {
+      shapeIndex += 1;
+      const width = Math.max(1, collision.w * tileWidth);
+      const height = Math.max(1, collision.h * tileHeight);
+      const x = tileLeft + collision.x * tileWidth + width / 2;
+      const y = tileTop + collision.y * tileHeight + height / 2;
+      const shapeId = `collision_shape_${shapeIndex}`;
+      const bodyName = `${tileName}_collision_${shapeIndex}`;
+      subResources.push(`[sub_resource type="RectangleShape2D" id="${shapeId}"]\nsize = Vector2(${width}, ${height})`);
+      nodes.push(
+        `[node name="${bodyName}" type="StaticBody2D" parent="Collisions"]\nposition = Vector2(${x}, ${y})\n\n[node name="CollisionShape2D" type="CollisionShape2D" parent="Collisions/${bodyName}"]\nshape = SubResource("${shapeId}")`,
+      );
+      manifestCollisions.push({
+        id: bodyName,
+        tileKey: tile.key,
+        normalized: { ...collision },
+        pixel: { x: x - width / 2, y: y - height / 2, width, height },
+      });
+    }
+  }
+
   const width = Math.ceil((bounds.maxX - bounds.minX) * sourceAsset.width);
   const height = Math.ceil((bounds.maxY - bounds.minY) * sourceAsset.height);
   const manifest = {
-    version: 2,
+    version: 3,
     generator: 'SceneMaker',
     coordinate_system: 'top_left_origin_y_down_pixels',
     canvas: { width, height },
     source: { file: sourceAsset.name, width: sourceAsset.width, height: sourceAsset.height },
     overlap: { horizontal_percent: horizontalOverlapPercent, vertical_percent: verticalOverlapPercent },
     tiles: manifestTiles,
+    collisions: manifestCollisions,
   };
   zip.file('map_stitch_godot.json', JSON.stringify(manifest, null, 2));
   zip.file(
     'map_stitch_godot.tscn',
-    `[gd_scene load_steps=${resourceIndex + 1} format=3]\n\n${resources.join('\n')}\n\n[node name="${baseFileName(sourceAsset.name)}" type="Node2D"]\n\n${nodes.join('\n\n')}\n`,
+    `[gd_scene load_steps=${resourceIndex + shapeIndex + 1} format=3]\n\n${resources.join('\n')}\n\n${subResources.join('\n\n')}\n\n[node name="${baseFileName(sourceAsset.name)}" type="Node2D"]\n\n[node name="Collisions" type="Node2D" parent="."]\n\n${nodes.join('\n\n')}\n`,
   );
   zip.file('README.txt', '将 images、map_stitch_godot.json 与 map_stitch_godot.tscn 复制到 Godot 4 项目中，然后打开场景文件。\n');
   const blob = await zip.generateAsync({ type: 'blob' });
   downloadBlob(blob, `${baseFileName(sourceAsset.name)}_godot_package.zip`);
-}
-
-function stableGuid(input: string) {
-  let a = 0x811c9dc5;
-  let b = 0x9e3779b9;
-  for (let index = 0; index < input.length; index += 1) {
-    a = Math.imul(a ^ input.charCodeAt(index), 0x01000193);
-    b = Math.imul(b ^ (input.charCodeAt(index) + index), 0x85ebca6b);
-  }
-  const part = (value: number) => (value >>> 0).toString(16).padStart(8, '0');
-  return `${part(a)}${part(b)}${part(a ^ b)}${part(Math.imul(a, b))}`.slice(0, 32);
-}
-
-function unityTextureMeta(guid: string) {
-  return `fileFormatVersion: 2\nguid: ${guid}\nTextureImporter:\n  internalIDToNameTable: []\n  externalObjects: {}\n  serializedVersion: 13\n  mipmaps:\n    mipMapMode: 0\n    enableMipMap: 0\n  isReadable: 0\n  textureType: 8\n  textureShape: 1\n  sRGBTexture: 1\n  alphaSource: 1\n  alphaIsTransparency: 1\n  spriteMode: 1\n  spritePixelsToUnits: 100\n  spriteAlignment: 7\n  spritePivot: {x: 0, y: 1}\n  filterMode: 0\n  wrapU: 1\n  wrapV: 1\n  maxTextureSize: 8192\n`;
-}
-
-export async function exportUnity(tiles: Tile[], horizontalOverlapPercent: number, verticalOverlapPercent: number) {
-  const source = sourceTile(tiles);
-  const sourceAsset = source.layers.ground!;
-  const { items, bounds } = await renderedTiles(tiles, 'overall');
-  const zip = new JSZip();
-  const root = zip.folder('Assets/SceneMaker')!;
-  const textures = root.folder('Textures')!;
-  const data = root.folder('Data')!;
-  const editor = root.folder('Editor')!;
-  const manifestTiles = [];
-
-  for (const item of items) {
-    const imageName = `${item.name}.png`;
-    const imagePath = `Assets/SceneMaker/Textures/${imageName}`;
-    const guid = stableGuid(`${sourceAsset.name}:${item.name}`);
-    textures.file(imageName, await canvasToBlob(item.canvas));
-    textures.file(`${imageName}.meta`, unityTextureMeta(guid));
-    manifestTiles.push({
-      key: item.tile.key,
-      name: item.name,
-      image: imagePath,
-      x: item.left,
-      y: item.top,
-      width: item.width,
-      height: item.height,
-      guid,
-    });
-  }
-
-  const manifest = {
-    version: 1,
-    generator: 'SceneMaker',
-    pixelsPerUnit: 100,
-    canvas: {
-      width: Math.ceil((bounds.maxX - bounds.minX) * sourceAsset.width),
-      height: Math.ceil((bounds.maxY - bounds.minY) * sourceAsset.height),
-    },
-    overlap: { horizontal_percent: horizontalOverlapPercent, vertical_percent: verticalOverlapPercent },
-    tiles: manifestTiles,
-  };
-  data.file('map_stitch_unity.json', JSON.stringify(manifest, null, 2));
-  editor.file(
-    'SceneMakerImporter.cs',
-    `using System;\nusing UnityEditor;\nusing UnityEngine;\n\npublic static class SceneMakerImporter {\n  [Serializable] private class Manifest { public float pixelsPerUnit = 100; public TileRecord[] tiles; }\n  [Serializable] private class TileRecord { public string key; public string name; public string image; public float x; public float y; public int width; public int height; }\n\n  [MenuItem("Tools/SceneMaker/Create Map From Manifest")]\n  public static void CreateMap() {\n    var jsonAsset = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/SceneMaker/Data/map_stitch_unity.json");\n    if (jsonAsset == null) { Debug.LogError("SceneMaker manifest not found."); return; }\n    var manifest = JsonUtility.FromJson<Manifest>(jsonAsset.text);\n    if (manifest == null || manifest.tiles == null) { Debug.LogError("SceneMaker manifest is invalid."); return; }\n    var root = new GameObject("SceneMaker Map");\n    Undo.RegisterCreatedObjectUndo(root, "Create SceneMaker Map");\n    for (var i = 0; i < manifest.tiles.Length; i++) {\n      var tile = manifest.tiles[i];\n      var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(tile.image);\n      if (sprite == null) { Debug.LogWarning("Missing sprite: " + tile.image); continue; }\n      var child = new GameObject(tile.name);\n      child.transform.SetParent(root.transform, false);\n      child.transform.localPosition = new Vector3(tile.x / manifest.pixelsPerUnit, -tile.y / manifest.pixelsPerUnit, -i * 0.001f);\n      child.AddComponent<SpriteRenderer>().sprite = sprite;\n    }\n    Selection.activeObject = root;\n    EditorGUIUtility.PingObject(root);\n  }\n}\n`,
-  );
-  root.file('README.txt', '解压到 Unity 项目根目录。Unity 会以 Point Filter / Sprite 模式导入图片。导入完成后使用菜单 Tools > SceneMaker > Create Map From Manifest 自动创建地图对象。\n');
-  const blob = await zip.generateAsync({ type: 'blob' });
-  downloadBlob(blob, `${baseFileName(sourceAsset.name)}_unity_package.zip`);
 }
 
 class BinaryWriter {
@@ -563,7 +602,7 @@ export async function exportPsd(tiles: Tile[]) {
 
   const psdItems: RenderedTile[] = [];
   for (const item of items) {
-    for (const layer of ['ground', 'object', 'black', 'white'] as const) {
+    for (const layer of ASSET_LAYERS) {
       if (!item.tile.layers[layer]) continue;
       psdItems.push({
         ...item,
@@ -659,6 +698,11 @@ export async function loadGodotPackage(file: File) {
       image: string;
       tile: { x: number; y: number; w: number; h: number };
       feather?: Feather;
+    }>;
+    collisions?: Array<{
+      id?: string;
+      tileKey?: string;
+      normalized?: { id?: string; x: number; y: number; w: number; h: number };
     }>;
   };
   if (!Array.isArray(manifest.tiles) || !manifest.tiles.length) throw new Error('Godot 地图清单中没有图片块');

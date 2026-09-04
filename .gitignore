@@ -38,3 +38,9 @@ next-env.d.ts
 /outputs/
 /work/
 /tmp/
+
+# local Python sprite pipeline runtime
+/Tools/SpritePipeline/.venv/
+/Tools/SpritePipeline/**/__pycache__/
+/Tools/SpritePipeline/.pytest_cache/
+/Tools/SpritePipeline/*.egg-info/

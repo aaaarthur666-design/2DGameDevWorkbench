@@ -1,6 +1,7 @@
 import {
   CENTER_KEY,
   EMPTY_FEATHER,
+  ASSET_LAYERS,
   type EditableLayer,
   type ImageAsset,
   type Tile,
@@ -62,7 +63,7 @@ function inferImageType(fileName: string) {
 
 export function revokeTileAssets(tiles: Tile[]) {
   for (const tile of tiles) {
-    for (const layer of ['ground', 'object', 'black', 'white'] as const) {
+    for (const layer of ASSET_LAYERS) {
       if (tile.layers[layer]) URL.revokeObjectURL(tile.layers[layer].url);
     }
   }
@@ -76,6 +77,7 @@ export function createCenterTile(asset: ImageAsset): Tile {
     w: 1,
     h: 1,
     layers: { ground: asset },
+    collisions: [],
     feather: { ...EMPTY_FEATHER },
     hidden: false,
   };
@@ -104,6 +106,7 @@ export function expandAroundTile(
       w: cleanNumber(horizontalSize),
       h: cleanNumber(horizontalSize),
       layers: {},
+      collisions: [],
       feather: { ...EMPTY_FEATHER },
       hidden: false,
     });
@@ -113,6 +116,7 @@ export function expandAroundTile(
       w: cleanNumber(horizontalSize),
       h: cleanNumber(horizontalSize),
       layers: {},
+      collisions: [],
       feather: { ...EMPTY_FEATHER },
       hidden: false,
     });
@@ -126,6 +130,7 @@ export function expandAroundTile(
       w: cleanNumber(verticalSize),
       h: cleanNumber(verticalSize),
       layers: {},
+      collisions: [],
       feather: { ...EMPTY_FEATHER },
       hidden: false,
     });
@@ -135,6 +140,7 @@ export function expandAroundTile(
       w: cleanNumber(verticalSize),
       h: cleanNumber(verticalSize),
       layers: {},
+      collisions: [],
       feather: { ...EMPTY_FEATHER },
       hidden: false,
     });
@@ -163,8 +169,8 @@ export function rectsIntersect(a: Tile, b: Tile) {
   );
 }
 
-export function preferredEditableLayer(layer: 'overall' | EditableLayer): EditableLayer {
-  return layer === 'overall' ? 'ground' : layer;
+export function preferredEditableLayer(layer: 'overall' | EditableLayer | 'collision'): EditableLayer {
+  return layer === 'overall' || layer === 'collision' ? 'ground' : layer;
 }
 
 export function safeFileName(name: string) {

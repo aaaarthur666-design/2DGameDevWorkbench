@@ -25,8 +25,11 @@ import {
   ImagePlus,
   Layers3,
   LoaderCircle,
+  Lock,
+  LockOpen,
   Maximize,
   Minus,
+  Paintbrush,
   Plus,
   Settings,
   Sparkles,
@@ -34,6 +37,8 @@ import {
   Upload,
   WandSparkles,
 } from 'lucide-react';
+import { CollisionRegionEditor } from '@/components/map-stitcher/editors/collision-region-editor';
+import { ImageFineEditor } from '@/components/map-stitcher/editors/image-fine-editor';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -55,19 +60,22 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Toaster, toast } from '@/components/ui/toast';
 import {
+  ASSET_LAYERS,
   CENTER_KEY,
   EMPTY_FEATHER,
   assetBytes,
   assetCount,
   clamp,
-  type EditableLayer,
   type Feather,
   type LayerId,
+  type ManagedLayer,
   type MaskMode,
   type SavedImageReference,
   type SceneMakerState,
   type Tile,
+  type VisualLayer,
   hasVisibleAsset,
+  isAssetLayer,
 } from '@/features/map-stitcher/map-types';
 import {
   blobToAsset,
@@ -90,10 +98,10 @@ import {
   exportPng,
   exportPsd,
   exportStateZip,
-  exportUnity,
   generateLayerVariant,
   generateLocalExpansion,
   imageReferenceToBlob,
+  legacyCollisionMaskToRectangles,
   loadGodotPackage,
   readStatePackage,
   renderTile,
@@ -104,6 +112,10 @@ const BASE_TILE_WIDTH = 360;
 const GEMINI_URL = 'https://gemini.google.com/gem/1lJTnukifhxITzO7l084Icn3Q_ctIID9g?usp=sharing';
 
 type GeneratorMode = 'local' | 'external';
+interface PaintSession {
+  tileKey: string;
+  layer: VisualLayer | 'collision';
+}
 
 interface GeneratorSettings {
   mode: GeneratorMode;
@@ -123,8 +135,12 @@ function formatPercent(value: number) {
   return `${Math.round(value)}%`;
 }
 
-function layerName(layer: EditableLayer) {
-  return { ground: '地表', object: '物件', black: '黑层', white: '白层' }[layer];
+function layerName(layer: ManagedLayer) {
+  return { ground: '地表', object: '物体', foreground: '遮挡', collision: '碰撞', black: '黑层', white: '白层' }[layer];
+}
+
+function collisionId() {
+  return `collision_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function sliderNumber(value: number | readonly number[], fallback: number) {
@@ -186,6 +202,23 @@ export function MapEditor() {
   const [hidePreviewBorders, setHidePreviewBorders] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [paintSession, setPaintSession] = useState<PaintSession | null>(null);
+  const [layerVisibility, setLayerVisibility] = useState<Record<ManagedLayer, boolean>>({
+    ground: true,
+    object: true,
+    foreground: true,
+    collision: false,
+    black: true,
+    white: true,
+  });
+  const [layerLocks, setLayerLocks] = useState<Record<ManagedLayer, boolean>>({
+    ground: false,
+    object: false,
+    foreground: false,
+    collision: false,
+    black: false,
+    white: false,
+  });
   const [generator, setGenerator] = useState<GeneratorSettings>(DEFAULT_GENERATOR);
   const [processingKeys, setProcessingKeys] = useState<string[]>([]);
   const workspaceRef = useRef<HTMLFormElement>(null);
@@ -196,6 +229,7 @@ export function MapEditor() {
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const tilesRef = useRef(tiles);
   const selectedTile = useMemo(() => tiles.find((tile) => tile.key === selectedKey) ?? null, [tiles, selectedKey]);
+  const paintTile = useMemo(() => paintSession ? tiles.find((tile) => tile.key === paintSession.tileKey) ?? null : null, [paintSession, tiles]);
   const source = useMemo(() => tiles.find((tile) => tile.key === CENTER_KEY), [tiles]);
   const sourceAspect = source?.layers.ground ? source.layers.ground.height / source.layers.ground.width : 1;
   const baseTileHeight = BASE_TILE_WIDTH * sourceAspect;
@@ -284,6 +318,10 @@ export function MapEditor() {
 
   const assignFilesToTiles = useCallback(async (files: File[]) => {
     if (!files.length) return;
+    if (activeLayer === 'collision') {
+      notify('碰撞层不接受图片', '请使用“编辑碰撞区域”在地图上拖出碰撞矩形。', 'warning');
+      return;
+    }
     if (!tilesRef.current.length) {
       await importSourceFiles(files);
       return;
@@ -312,7 +350,7 @@ export function MapEditor() {
     } catch (error) {
       notify('上传失败', error instanceof Error ? error.message : '无法读取图片', 'error');
     }
-  }, [editableLayer, importSourceFiles, selectedKey]);
+  }, [activeLayer, editableLayer, importSourceFiles, selectedKey]);
 
   const updateTile = useCallback((key: string, update: (tile: Tile) => Tile) => {
     setTiles((current) => {
@@ -321,6 +359,65 @@ export function MapEditor() {
       return next;
     });
   }, []);
+
+  const createBlankLayer = useCallback(async () => {
+    if (!selectedTile || !isAssetLayer(activeLayer) || layerLocks[activeLayer]) return;
+    const sourceAsset = source?.layers.ground;
+    if (!sourceAsset) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(selectedTile.w * sourceAsset.width));
+    canvas.height = Math.max(1, Math.round(selectedTile.h * sourceAsset.height));
+    const asset = await blobToAsset(await canvasToBlob(canvas), `${selectedTile.key.replace(',', '_')}_${activeLayer}.png`);
+    updateTile(selectedTile.key, (tile) => ({
+      ...tile,
+      hidden: false,
+      layers: { ...tile.layers, [activeLayer]: asset },
+    }));
+    notify(`${layerName(activeLayer)}图层已创建`, '现在可以直接在地图图片上绘制。', 'success');
+  }, [activeLayer, layerLocks, selectedTile, source, updateTile]);
+
+  const beginRegionPaint = useCallback(() => {
+    if (!selectedTile) return;
+    const layer = activeLayer === 'overall' ? 'ground' : activeLayer;
+    if (!(['ground', 'object', 'foreground', 'collision'] as const).includes(layer as VisualLayer | 'collision')) {
+      notify('该参考层不支持区域绘制', '请选择地表层、物体层、遮挡层或碰撞层。', 'warning');
+      return;
+    }
+    if (layerLocks[layer]) return;
+    if (selectedTile.hidden) updateTile(selectedTile.key, (tile) => ({ ...tile, hidden: false }));
+    if (activeLayer === 'overall') setActiveLayer('ground');
+    setPanMode(false);
+    setSpacePan(false);
+    setPaintSession({ tileKey: selectedTile.key, layer: layer as VisualLayer | 'collision' });
+  }, [activeLayer, layerLocks, selectedTile, updateTile]);
+
+  const applyFinePaint = useCallback(async (blob: Blob | null) => {
+    if (!paintSession || paintSession.layer === 'collision') return;
+    try {
+      const layer = paintSession.layer;
+      const replacement = blob ? await blobToAsset(blob, `${paintSession.tileKey.replace(',', '_')}_${layer}_painted.png`) : null;
+      updateTile(paintSession.tileKey, (tile) => {
+        const layers = { ...tile.layers };
+        const previous = layers[layer];
+        if (previous) URL.revokeObjectURL(previous.url);
+        if (replacement) layers[layer] = replacement;
+        else delete layers[layer];
+        return { ...tile, layers, hidden: false };
+      });
+      notify('区域绘制已保存', `${paintSession.tileKey} · ${layerName(layer)}图层`, 'success');
+      setPaintSession(null);
+    } catch (error) {
+      notify('区域绘制保存失败', error instanceof Error ? error.message : '无法生成图片', 'error');
+      throw error;
+    }
+  }, [paintSession, updateTile]);
+
+  const applyCollisionRegions = useCallback((collisions: Tile['collisions']) => {
+    if (!paintSession || paintSession.layer !== 'collision') return;
+    updateTile(paintSession.tileKey, (tile) => ({ ...tile, collisions, hidden: false }));
+    notify('碰撞区域已保存', `${paintSession.tileKey} · ${collisions.length} 个矩形`, 'success');
+    setPaintSession(null);
+  }, [paintSession, updateTile]);
 
   const setFeather = useCallback((side: keyof Feather, value: number) => {
     if (!selectedTile || selectedTile.key === CENTER_KEY) return;
@@ -332,6 +429,11 @@ export function MapEditor() {
 
   const removeSelectedImage = useCallback(() => {
     if (!selectedTile) return;
+    if (activeLayer === 'collision') {
+      updateTile(selectedTile.key, (tile) => ({ ...tile, collisions: [] }));
+      notify('已清空碰撞区域', undefined, 'success');
+      return;
+    }
     if (selectedTile.key === CENTER_KEY && editableLayer === 'ground') {
       notify('中心原图不能单独卸载', '可通过顶部“导入图片”替换整个地图。', 'warning');
       return;
@@ -344,7 +446,7 @@ export function MapEditor() {
       return { ...tile, layers };
     });
     notify('已卸载当前图层图片', undefined, 'success');
-  }, [editableLayer, selectedTile, updateTile]);
+  }, [activeLayer, editableLayer, selectedTile, updateTile]);
 
   const downloadTemplate = useCallback(async () => {
     if (!selectedTile) return;
@@ -357,6 +459,7 @@ export function MapEditor() {
   }, [activeLayer, selectedTile]);
 
   const generatedBlob = useCallback(async (target: Tile) => {
+    if (activeLayer === 'collision') throw new Error('碰撞层请使用碰撞区域编辑器');
     if (generator.mode === 'local') {
       if (editableLayer !== 'ground' && (target.layers.ground || target.layers.object)) {
         return generateLayerVariant(tilesRef.current, target, editableLayer);
@@ -434,6 +537,10 @@ export function MapEditor() {
       notify('请先导入地图原图', undefined, 'warning');
       return;
     }
+    if (activeLayer === 'collision') {
+      notify('碰撞层不使用图片生成', '请在画布上拖拽创建碰撞矩形。', 'warning');
+      return;
+    }
     let available = tilesRef.current.filter((tile) => {
       if (tile.layers[editableLayer]) return false;
       if (editableLayer === 'ground') return tile.key !== CENTER_KEY;
@@ -460,7 +567,7 @@ export function MapEditor() {
     if (completed) notify('扩图完成', `已生成 ${completed} 个${layerName(editableLayer)}图层卡片。`, 'success');
   };
 
-  const runExport = useCallback(async (kind: 'png' | 'psd' | 'state' | 'godot' | 'unity') => {
+  const runExport = useCallback(async (kind: 'png' | 'psd' | 'state' | 'godot') => {
     try {
       notify('正在准备导出', kind.toUpperCase(), 'info');
       if (kind === 'png') await exportPng(tilesRef.current, activeLayer);
@@ -477,15 +584,16 @@ export function MapEditor() {
           hideCards,
           activeLayer,
           maskMode,
+          layerVisibility,
+          layerLocks,
         });
       }
       if (kind === 'godot') await exportGodot(tilesRef.current, horizontalOverlap, verticalOverlap);
-      if (kind === 'unity') await exportUnity(tilesRef.current, horizontalOverlap, verticalOverlap);
       notify('导出已开始', '文件将保存到浏览器下载目录。', 'success');
     } catch (error) {
       notify('导出失败', error instanceof Error ? error.message : '未知错误', 'error');
     }
-  }, [activeLayer, expandSplit, hideCards, hidePreviewBorders, horizontalOverlap, maskMode, pan, selectedKey, verticalOverlap, zoom]);
+  }, [activeLayer, expandSplit, hideCards, hidePreviewBorders, horizontalOverlap, layerLocks, layerVisibility, maskMode, pan, selectedKey, verticalOverlap, zoom]);
 
   const restoreState = useCallback(async (file: File) => {
     try {
@@ -503,6 +611,8 @@ export function MapEditor() {
         hideCards?: boolean;
         activeLayer?: LayerId;
         maskMode?: MaskMode;
+        layerVisibility?: SceneMakerState['layerVisibility'];
+        layerLocks?: SceneMakerState['layerLocks'];
         source?: SavedImageReference;
         tiles?: SceneMakerState['tiles'] | Record<string, { x: number; y: number; w: number; h: number }>;
         tileUploads?: Record<string, SavedImageReference>;
@@ -511,15 +621,22 @@ export function MapEditor() {
       };
       const restored: Tile[] = [];
 
-      if (manifest.format === 'scenemaker-map-stitch-state' && manifest.version === 3 && Array.isArray(manifest.tiles)) {
+      if (manifest.format === 'scenemaker-map-stitch-state' && [3, 4, 5].includes(Number(manifest.version)) && Array.isArray(manifest.tiles)) {
         for (const record of manifest.tiles) {
           if (![record.x, record.y, record.w, record.h].every(Number.isFinite) || record.w <= 0 || record.h <= 0) continue;
           const layers: Tile['layers'] = {};
-          for (const layer of ['ground', 'object', 'black', 'white'] as const) {
+          for (const layer of ASSET_LAYERS) {
             const reference = record.layers?.[layer];
             if (!reference) continue;
             const blob = await imageReferenceToBlob(reference, zip);
             layers[layer] = await blobToAsset(blob, reference.fileName || `${record.key}_${layer}.png`);
+          }
+          let collisions = Array.isArray(record.collisions)
+            ? record.collisions.filter((rect) => [rect.x, rect.y, rect.w, rect.h].every(Number.isFinite) && rect.w > 0 && rect.h > 0).map((rect) => ({ ...rect, id: rect.id || collisionId() }))
+            : [];
+          const legacyCollisionReference = (record.layers as Record<string, SavedImageReference | undefined> | undefined)?.collision;
+          if (!collisions.length && legacyCollisionReference) {
+            collisions = await legacyCollisionMaskToRectangles(await imageReferenceToBlob(legacyCollisionReference, zip));
           }
           restored.push({
             key: String(record.key),
@@ -528,6 +645,7 @@ export function MapEditor() {
             w: Number(record.w),
             h: Number(record.h),
             layers,
+            collisions,
             hidden: Boolean(record.hidden),
             feather: {
               top: clamp(Number(record.feather?.top) || 0, 0, 50),
@@ -554,6 +672,7 @@ export function MapEditor() {
             w: geometry.w,
             h: geometry.h,
             layers: ground ? { ground } : {},
+            collisions: [],
             hidden: Boolean(manifest.hiddenPreviewTiles?.[key]),
             feather: {
               top: clamp(Number(feather.top) || 0, 0, 50),
@@ -576,8 +695,10 @@ export function MapEditor() {
       setZoom(clamp(Number(manifest.zoom) || 1, 0.05, 8));
       setHidePreviewBorders(Boolean(manifest.hidePreviewBorders));
       setHideCards(Boolean(manifest.hideCards));
-      setActiveLayer(['overall', 'ground', 'object', 'black', 'white'].includes(String(manifest.activeLayer)) ? manifest.activeLayer as LayerId : 'overall');
+      setActiveLayer(['overall', 'ground', 'object', 'foreground', 'collision', 'black', 'white'].includes(String(manifest.activeLayer)) ? manifest.activeLayer as LayerId : 'overall');
       setMaskMode(manifest.maskMode === 'black' ? 'black' : 'white');
+      if (manifest.layerVisibility) setLayerVisibility((current) => ({ ...current, ...manifest.layerVisibility }));
+      if (manifest.layerLocks) setLayerLocks((current) => ({ ...current, ...manifest.layerLocks }));
       notify('状态已恢复', `载入 ${restored.length} 个地图卡片。`, 'success');
     } catch (error) {
       notify('状态加载失败', error instanceof Error ? error.message : '文件无效', 'error');
@@ -602,10 +723,18 @@ export function MapEditor() {
             w: record.tile.w,
             h: record.tile.h,
             layers: { [layer]: asset },
+            collisions: [],
             feather: record.feather ?? { ...EMPTY_FEATHER },
             hidden: false,
           });
         }
+      }
+      for (const collision of manifest.collisions ?? []) {
+        if (!collision.tileKey || !collision.normalized) continue;
+        const tile = restored.find((candidate) => candidate.key === collision.tileKey);
+        const rect = collision.normalized;
+        if (!tile || ![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite) || rect.w <= 0 || rect.h <= 0) continue;
+        tile.collisions.push({ id: rect.id || collision.id || collisionId(), x: rect.x, y: rect.y, w: rect.w, h: rect.h });
       }
       if (!restored.find((tile) => tile.key === CENTER_KEY)) throw new Error('Godot 包缺少中心图片');
       replaceTiles(restored);
@@ -667,8 +796,11 @@ export function MapEditor() {
         event.preventDefault();
         setSpacePan(true);
       }
-      if (event.key.toLowerCase() === 'h' && tilesRef.current.length) setHideCards((value) => !value);
-      if (event.key === 'Escape') setSelectedKey(null);
+      if (event.key.toLowerCase() === 'h' && tilesRef.current.length && !paintSession) setHideCards((value) => !value);
+      if (event.key === 'Escape') {
+        if (paintSession) setPaintSession(null);
+        else setSelectedKey(null);
+      }
       if (event.key === '0') fitView();
       if (event.key === '+' || event.key === '=') setZoom((value) => clamp(value * 1.15, 0.05, 8));
       if (event.key === '-') setZoom((value) => clamp(value / 1.15, 0.05, 8));
@@ -685,7 +817,7 @@ export function MapEditor() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [fitView]);
+  }, [fitView, paintSession]);
 
   useEffect(() => {
     const modelContext = (document as Document & {
@@ -788,7 +920,7 @@ export function MapEditor() {
         {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- The editor surface handles pointer pan, wheel zoom, and file drop. */}
         <form
           ref={workspaceRef}
-          className={`workspace ${isPanning ? 'is-panning' : ''} ${panMode || spacePan ? 'pan-mode' : ''} mask-${maskMode}`}
+          className={`workspace ${isPanning ? 'is-panning' : ''} ${panMode || spacePan ? 'pan-mode' : ''} ${paintSession ? 'paint-mode' : ''} mask-${maskMode}`}
           aria-label="地图编辑工作区"
           onSubmit={(event) => event.preventDefault()}
           onWheel={onWheel}
@@ -802,11 +934,36 @@ export function MapEditor() {
         >
           <div className="canvas-grain" />
 
-          {tiles.length > 0 && (
+          {paintSession && paintTile && source?.layers.ground && paintSession.layer === 'collision' && (
+            <CollisionRegionEditor
+              width={Math.max(1, Math.round(paintTile.w * source.layers.ground.width))}
+              height={Math.max(1, Math.round(paintTile.h * source.layers.ground.height))}
+              tileKey={paintTile.key}
+              assets={paintTile.layers}
+              visibility={{ ground: layerVisibility.ground, object: layerVisibility.object, foreground: layerVisibility.foreground }}
+              collisions={paintTile.collisions}
+              onCancel={() => setPaintSession(null)}
+              onApply={applyCollisionRegions}
+            />
+          )}
+
+          {paintSession && paintTile && source?.layers.ground && paintSession.layer !== 'collision' && (
+            <ImageFineEditor
+              width={Math.max(1, Math.round(paintTile.w * source.layers.ground.width))}
+              height={Math.max(1, Math.round(paintTile.h * source.layers.ground.height))}
+              tileKey={paintTile.key}
+              layerLabel={`${layerName(paintSession.layer)}图层`}
+              imageUrl={paintTile.layers[paintSession.layer]?.url}
+              onCancel={() => setPaintSession(null)}
+              onApply={applyFinePaint}
+            />
+          )}
+
+          {tiles.length > 0 && !paintSession && (
             <div className="stage" style={stageStyle} aria-label="可缩放地图画布">
               {visibleTiles.map((tile) => {
                 const selected = selectedKey === tile.key;
-                const empty = !hasVisibleAsset(tile, activeLayer);
+                const empty = activeLayer === 'collision' ? !hasVisibleAsset(tile, 'overall') : !hasVisibleAsset(tile, activeLayer);
                 const processing = processingKeys.includes(tile.key);
                 return (
                   <button
@@ -820,32 +977,42 @@ export function MapEditor() {
                     }}
                     onClick={(event) => {
                       event.stopPropagation();
-                      if (!isPanning) setSelectedKey(tile.key);
+                      if (!isPanning && !paintSession) setSelectedKey(tile.key);
                     }}
                     aria-label={`${tile.key === CENTER_KEY ? '中心地图' : `地图卡片 ${tile.key}`}${empty ? '，未上传' : '，已上传'}`}
                     aria-pressed={selected}
                   >
                     {!tile.hidden && (
                       <>
-                        {(activeLayer === 'overall' || activeLayer === 'ground') && tile.layers.ground && (
+                        {layerVisibility.ground && (activeLayer === 'overall' || activeLayer === 'ground' || activeLayer === 'collision') && tile.layers.ground && (
                           // Blob URLs are local editor data and intentionally bypass image optimization.
                           // eslint-disable-next-line next/no-img-element
-                          <img src={tile.layers.ground.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
+                          <img className="tile-layer-ground" src={tile.layers.ground.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
                         )}
-                        {(activeLayer === 'overall' || activeLayer === 'object') && tile.layers.object && (
+                        {layerVisibility.object && (activeLayer === 'overall' || activeLayer === 'object' || activeLayer === 'collision') && tile.layers.object && (
                           // Blob URLs are local editor data and intentionally bypass image optimization.
                           // eslint-disable-next-line next/no-img-element
-                          <img src={tile.layers.object.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
+                          <img className="tile-layer-object" src={tile.layers.object.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
+                        )}
+                        {layerVisibility.foreground && (activeLayer === 'overall' || activeLayer === 'foreground' || activeLayer === 'collision') && tile.layers.foreground && (
+                          // Blob URLs are local editor data and intentionally bypass image optimization.
+                          // eslint-disable-next-line next/no-img-element
+                          <img className="tile-layer-foreground" src={tile.layers.foreground.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
                         )}
                         {activeLayer === 'black' && tile.layers.black && (
                           // Blob URLs are local editor data and intentionally bypass image optimization.
                           // eslint-disable-next-line next/no-img-element
-                          <img src={tile.layers.black.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
+                          <img className="tile-layer-mask" src={tile.layers.black.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
                         )}
                         {activeLayer === 'white' && tile.layers.white && (
                           // Blob URLs are local editor data and intentionally bypass image optimization.
                           // eslint-disable-next-line next/no-img-element
-                          <img src={tile.layers.white.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
+                          <img className="tile-layer-mask" src={tile.layers.white.url} alt="" draggable={false} style={featherPreviewStyle(tile)} />
+                        )}
+                        {layerVisibility.collision && (activeLayer === 'collision' || activeLayer === 'overall') && (
+                          <div className="collision-overlay" aria-label="碰撞层预览">
+                            {tile.collisions.map((rect) => <span key={rect.id} className="collision-rect" style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, height: `${rect.h * 100}%` }} />)}
+                          </div>
                         )}
                       </>
                     )}
@@ -853,7 +1020,7 @@ export function MapEditor() {
                       <span className="tile-empty-copy"><LoaderCircle className="spin" /><strong>正在扩图</strong><small>保持此页面打开</small></span>
                     ) : empty ? (
                       <span className="tile-empty-copy"><ImagePlus /><strong>点击激活</strong><small>上传或生成重叠模板</small></span>
-                    ) : !hideCards && (
+                    ) : !hideCards && !paintSession && (
                       <span className="tile-status"><strong>{tile.key === CENTER_KEY ? '中心原图' : '点击操作'}</strong><small>{tile.key}</small></span>
                     )}
                   </button>
@@ -882,15 +1049,30 @@ export function MapEditor() {
 
           <aside className="side-panel" aria-label="地图操作">
             <section className="layer-panel">
-              <span className="panel-label">当前图层</span>
-              <div className="segmented segmented-three" aria-label="当前图层">
-                {([['overall', '整体层'], ['ground', '地表层'], ['object', '物件层']] as const).map(([value, label]) => (
-                  <button key={value} aria-pressed={activeLayer === value} className={activeLayer === value ? 'active' : ''} onClick={() => setActiveLayer(value)}>{label}</button>
+              <span className="panel-label">视觉图层 · 上方显示在最前</span>
+              <button className={`layer-overall ${activeLayer === 'overall' ? 'active' : ''}`} disabled={Boolean(paintSession)} onClick={() => setActiveLayer('overall')}><Layers3 /> 整体预览</button>
+              <div className="layer-stack" aria-label="地图图层">
+                {([
+                  ['foreground', '遮挡层'],
+                  ['object', '物体层'],
+                  ['ground', '地表层'],
+                ] as const).map(([value, label]) => (
+                  <div className={`layer-stack-row ${activeLayer === value ? 'active' : ''}`} key={value}>
+                    <button disabled={Boolean(paintSession)} onClick={() => setActiveLayer(value)}>{label}</button>
+                    <button aria-label={`${label}${layerVisibility[value] ? '隐藏' : '显示'}`} onClick={() => setLayerVisibility((current) => ({ ...current, [value]: !current[value] }))}>{layerVisibility[value] ? <Eye /> : <EyeOff />}</button>
+                    <button aria-label={`${label}${layerLocks[value] ? '解锁' : '锁定'}`} onClick={() => setLayerLocks((current) => ({ ...current, [value]: !current[value] }))}>{layerLocks[value] ? <Lock /> : <LockOpen />}</button>
+                  </div>
                 ))}
               </div>
-              <div className="segmented" aria-label="遮罩底色">
-                <button aria-pressed={activeLayer === 'black'} className={activeLayer === 'black' ? 'active' : ''} onClick={() => { setActiveLayer('black'); setMaskMode('black'); }}>黑层</button>
-                <button aria-pressed={activeLayer === 'white'} className={activeLayer === 'white' ? 'active' : ''} onClick={() => { setActiveLayer('white'); setMaskMode('white'); }}>白层</button>
+              <span className="panel-label layer-debug-label">调试层 · 不参与画面合成</span>
+              <div className={`layer-stack-row layer-debug-row ${activeLayer === 'collision' ? 'active' : ''}`}>
+                <button disabled={Boolean(paintSession)} onClick={() => { setActiveLayer('collision'); setLayerVisibility((current) => ({ ...current, collision: true })); }}>碰撞层</button>
+                <button aria-label={`碰撞层${layerVisibility.collision ? '隐藏' : '显示'}`} onClick={() => setLayerVisibility((current) => ({ ...current, collision: !current.collision }))}>{layerVisibility.collision ? <Eye /> : <EyeOff />}</button>
+                <button aria-label={`碰撞层${layerLocks.collision ? '解锁' : '锁定'}`} onClick={() => setLayerLocks((current) => ({ ...current, collision: !current.collision }))}>{layerLocks.collision ? <Lock /> : <LockOpen />}</button>
+              </div>
+              <div className="layer-reference-row" aria-label="生成参考层">
+                <button disabled={Boolean(paintSession)} className={activeLayer === 'black' ? 'active' : ''} onClick={() => { setActiveLayer('black'); setMaskMode('black'); }}>黑底参考</button>
+                <button disabled={Boolean(paintSession)} className={activeLayer === 'white' ? 'active' : ''} onClick={() => { setActiveLayer('white'); setMaskMode('white'); }}>白底参考</button>
               </div>
             </section>
             <div className="inline-control">
@@ -902,38 +1084,56 @@ export function MapEditor() {
             </div>
             <Button variant="outline" className="panel-button" onClick={() => setSettingsOpen(true)}><Settings /> 设置</Button>
             <Button variant="outline" className="panel-button" onClick={() => window.open(GEMINI_URL, '_blank', 'noopener,noreferrer')}><WandSparkles /> 手动生成</Button>
-            <Button variant="outline" className="panel-button accent-button" disabled={!tiles.length || processingKeys.length > 0} onClick={() => void autoGenerate()}>
+            <Button variant="outline" className="panel-button accent-button" disabled={!tiles.length || activeLayer === 'collision' || processingKeys.length > 0} onClick={() => void autoGenerate()}>
               {processingKeys.length ? <LoaderCircle className="spin" /> : <Sparkles />} 全自动扩图
             </Button>
             <Button variant="outline" className="panel-button" onClick={() => stateInputRef.current?.click()}><Upload /> 加载状态</Button>
             <Button variant="outline" className="panel-button" onClick={() => godotInputRef.current?.click()}><Upload /> 加载 Godot</Button>
             <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void runExport('state')}><FileArchive /> 保存状态</Button>
             <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void runExport('godot')}><Download /> Godot 包</Button>
-            <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void runExport('unity')}><Download /> Unity 包</Button>
-            <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => setHideCards((value) => !value)}>{hideCards ? <Eye /> : <EyeOff />} {hideCards ? '显示卡片' : '隐藏卡片'}</Button>
+            <Button variant="outline" className="panel-button" disabled={!tiles.length || Boolean(paintSession)} onClick={() => setHideCards((value) => !value)}>{hideCards ? <Eye /> : <EyeOff />} {hideCards ? '显示卡片' : '隐藏卡片'}</Button>
           </aside>
 
-          {selectedTile && !hideCards && (
+          {selectedTile && !hideCards && !paintSession && (
             <aside className="tile-inspector" aria-label="当前卡片设置">
               <header>
                 <div><small>{selectedTile.key === CENTER_KEY ? '中心地图' : '扩图卡片'}</small><strong>{selectedTile.key}</strong></div>
-                <Button variant="ghost" size="icon-sm" aria-label="关闭卡片设置" onClick={() => setSelectedKey(null)}><ChevronDown /></Button>
+                <Button variant="ghost" size="icon-sm" aria-label="关闭卡片设置" disabled={Boolean(paintSession)} onClick={() => setSelectedKey(null)}><ChevronDown /></Button>
               </header>
-              <div className="inspector-status">
-                <span>{layerName(editableLayer)}图层</span>
-                <strong className={selectedTile.layers[editableLayer] ? 'status-ready' : 'status-waiting'}>{selectedTile.layers[editableLayer] ? '已上传' : '待补全'}</strong>
-              </div>
-              <div className="inspector-grid">
-                <Button variant="outline" onClick={() => tileInputRef.current?.click()}><Upload /> 上传</Button>
-                <Button variant="outline" disabled={!hasVisibleAsset(selectedTile, activeLayer)} onClick={() => void downloadTileLayer(tilesRef.current, selectedTile, activeLayer).catch((error) => notify('下载失败', error instanceof Error ? error.message : '未知错误', 'error'))}><Download /> 下载</Button>
-                <Button variant="outline" disabled={selectedTile.key === CENTER_KEY} onClick={() => void downloadTemplate()}><Download /> 模板</Button>
-                <Button variant="outline" disabled={(selectedTile.key === CENTER_KEY && editableLayer === 'ground') || processingKeys.includes(selectedTile.key)} onClick={() => void generateOne(selectedTile).then(() => notify('卡片扩图完成', selectedTile.key, 'success')).catch((error) => notify('扩图失败', error instanceof Error ? error.message : '未知错误', 'error'))}><Sparkles /> 生成</Button>
-                <Button variant="outline" onClick={() => addExpansion(selectedTile)}><Expand /> 扩展</Button>
-                <Button variant="outline" disabled={!selectedTile.layers[editableLayer]} onClick={() => void removeWatermark()}><Eraser /> 去水印</Button>
-                <Button variant="outline" onClick={() => updateTile(selectedTile.key, (tile) => ({ ...tile, hidden: !tile.hidden }))}>{selectedTile.hidden ? <Eye /> : <EyeOff />} 预览</Button>
-                <Button variant="destructive" disabled={!selectedTile.layers[editableLayer]} onClick={removeSelectedImage}><Trash2 /> 卸载</Button>
-              </div>
-              {selectedTile.key !== CENTER_KEY && (
+              {activeLayer === 'collision' ? (
+                <>
+                  <div className="inspector-status">
+                    <span>碰撞层</span>
+                    <strong className={hasVisibleAsset(selectedTile, 'collision') ? 'status-ready' : 'status-waiting'}>{hasVisibleAsset(selectedTile, 'collision') ? `${selectedTile.collisions.length} 个矩形` : '尚未绘制'}</strong>
+                  </div>
+                  <p className="collision-hint">打开碰撞区域编辑后，直接在地图上拖出红色矩形。碰撞层不保存图片，也不使用画笔。</p>
+                  <div className="inspector-grid">
+                    <Button variant="outline" disabled={layerLocks.collision} onClick={beginRegionPaint}><Paintbrush /> 编辑碰撞区域</Button>
+                    <Button variant="outline" onClick={() => addExpansion(selectedTile)}><Expand /> 扩展</Button>
+                    <Button variant="destructive" disabled={!selectedTile.collisions.length || layerLocks.collision} onClick={removeSelectedImage}><Trash2 /> 清空碰撞</Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="inspector-status">
+                    <span>{layerName(editableLayer)}图层</span>
+                    <strong className={selectedTile.layers[editableLayer] ? 'status-ready' : 'status-waiting'}>{selectedTile.layers[editableLayer] ? '已创建' : '尚未创建'}</strong>
+                  </div>
+                  <div className="inspector-grid">
+                    <Button variant="outline" disabled={layerLocks[editableLayer]} onClick={() => tileInputRef.current?.click()}><Upload /> 上传</Button>
+                    <Button variant="outline" disabled={Boolean(selectedTile.layers[editableLayer]) || layerLocks[editableLayer]} onClick={() => void createBlankLayer()}><Plus /> 创建空白层</Button>
+                    <Button variant="outline" disabled={!hasVisibleAsset(selectedTile, activeLayer)} onClick={() => void downloadTileLayer(tilesRef.current, selectedTile, activeLayer).catch((error) => notify('下载失败', error instanceof Error ? error.message : '未知错误', 'error'))}><Download /> 下载</Button>
+                    <Button variant="outline" disabled={selectedTile.key === CENTER_KEY} onClick={() => void downloadTemplate()}><Download /> 模板</Button>
+                    <Button variant="outline" disabled={layerLocks[editableLayer] || (selectedTile.key === CENTER_KEY && editableLayer === 'ground') || processingKeys.includes(selectedTile.key)} onClick={() => void generateOne(selectedTile).then(() => notify('卡片扩图完成', selectedTile.key, 'success')).catch((error) => notify('扩图失败', error instanceof Error ? error.message : '未知错误', 'error'))}><Sparkles /> 生成</Button>
+                    <Button variant="outline" onClick={() => addExpansion(selectedTile)}><Expand /> 扩展</Button>
+                    <Button variant="outline" disabled={!['ground', 'object', 'foreground'].includes(editableLayer) || layerLocks[editableLayer]} onClick={beginRegionPaint}><Paintbrush /> 区域绘制</Button>
+                    <Button variant="outline" disabled={!selectedTile.layers[editableLayer] || layerLocks[editableLayer]} onClick={() => void removeWatermark()}><Eraser /> 去水印</Button>
+                    <Button variant="outline" onClick={() => updateTile(selectedTile.key, (tile) => ({ ...tile, hidden: !tile.hidden }))}>{selectedTile.hidden ? <Eye /> : <EyeOff />} 预览</Button>
+                    <Button variant="destructive" disabled={!selectedTile.layers[editableLayer] || layerLocks[editableLayer]} onClick={removeSelectedImage}><Trash2 /> 删除图层内容</Button>
+                  </div>
+                </>
+              )}
+              {activeLayer !== 'collision' && selectedTile.key !== CENTER_KEY && (
                 <div className="feather-controls">
                   <div className="feather-heading"><span>边缘羽化</span><small>0–50%</small></div>
                   {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
@@ -1007,8 +1207,8 @@ export function MapEditor() {
           <ol className="map-stitcher-help-steps">
             <li><span>1</span><div><strong>导入中心地图</strong><p>支持 PNG、JPG、JFIF、WebP，单张不超过 30 MB。一次选择多图会自动填入首圈卡片。</p></div></li>
             <li><span>2</span><div><strong>生成或上传邻接图</strong><p>点击空卡片，可下载带透明区的重叠模板、调用本地/外部扩图，或手动上传结果。</p></div></li>
-            <li><span>3</span><div><strong>消除接缝</strong><p>通过四边羽化控制重叠透明度；切换整体、地表、物件图层检查合成。</p></div></li>
-            <li><span>4</span><div><strong>保存与交付</strong><p>导出拼接 PNG、带图层 PSD、可恢复状态包，或 Godot / Unity 工程资源包。</p></div></li>
+            <li><span>3</span><div><strong>当前图层区域绘制</strong><p>先在右侧选择地表、物体或遮挡层，再打开区域绘制；编辑器只会修改当前图层。碰撞层使用独立的矩形区域编辑器。</p></div></li>
+            <li><span>4</span><div><strong>保存与交付</strong><p>导出拼接 PNG、带图层 PSD、可恢复状态包；Godot 包会包含分层 Sprite2D 与 StaticBody2D 碰撞节点。</p></div></li>
           </ol>
           <div className="map-stitcher-shortcut-list"><kbd>滚轮</kbd><span>缩放</span><kbd>中键 / 右键</kbd><span>平移</span><kbd>H</kbd><span>隐藏卡片</span><kbd>0</kbd><span>适配画布</span><kbd>Esc</kbd><span>取消选择</span></div>
           <DialogFooter><Button onClick={() => setHelpOpen(false)}>知道了</Button></DialogFooter>

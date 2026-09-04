@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "action_id": "forward_thrust",
+  "display_name": "向前突刺",
+  "frame_count": 16,
+  "fps": 12,
+  "loop": false,
+  "grounded": true,
+  "sheet_columns": 4,
+  "sheet_rows": 4,
+  "action_description": "A 16-frame forward thrust. Keep frame 1 unchanged; frames 2-5 anticipate, frames 6-9 lunge forward, frame 10 is the sword contact pose, frames 11-12 hold and follow through, and frames 13-16 recover smoothly to the starting stance.",
+  "locked_constraints": [
+    "fixed side-view camera",
+    "no camera movement",
+    "do not change outfit",
+    "do not change weapon length",
+    "no additional limbs",
+    "transparent background"
+  ]
+}

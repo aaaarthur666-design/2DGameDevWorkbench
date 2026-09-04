@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "action_id": "run",
+  "display_name": "奔跑循环",
+  "frame_count": 16,
+  "fps": 14,
+  "loop": true,
+  "grounded": false,
+  "sheet_columns": 4,
+  "sheet_rows": 4,
+  "action_description": "16-frame in-place run. Frame 1 stays unchanged; 2-8 form the first stride and brief airborne phase, 9 is opposite contact, and 10-16 form the second stride and return smoothly.",
+  "locked_constraints": [
+    "animate in place with no horizontal travel",
+    "use restrained vertical bounce",
+    "preserve outfit, equipment, proportions, and palette",
+    "preserve every limb and accessory",
+    "keep the full character inside the canvas"
+  ],
+  "loop_constraint": "The last frame must flow into frame 1 with continuous stride timing and momentum."
+}

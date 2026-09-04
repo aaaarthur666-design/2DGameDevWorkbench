@@ -1,4 +1,4 @@
-import { SpriteWorkspacePreview } from '@/components/sprite-generator/sprite-workspace-preview';
+import { SpritePipelineWorkspace } from '@/components/sprite-generator/sprite-pipeline-workspace';
 import { workbenchModules } from '@/lib/workbench/modules';
 
 export default function SpriteGeneratorPage() {
@@ -8,5 +8,9 @@ export default function SpriteGeneratorPage() {
 
   if (!spriteModule) return null;
 
-  return <SpriteWorkspacePreview module={spriteModule} />;
+  return (
+    <div className="h-[calc(100svh-var(--workbench-nav-height))] min-h-0 overflow-hidden">
+      <SpritePipelineWorkspace module={spriteModule} />
+    </div>
+  );
 }

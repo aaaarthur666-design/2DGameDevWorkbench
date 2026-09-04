@@ -35,10 +35,10 @@
       "ui": {
         "icon": "frames",
         "accent": "violet",
-        "status": "beta",
+        "status": "ready",
         "route": "/tools/sprite-generator",
-        "surface": "preview",
-        "capabilities": ["角色动作", "帧序管理", "精灵表导出"]
+        "surface": "editor",
+        "capabilities": ["角色动作生成", "播放检查", "逐帧修补", "精灵表导出"]
       },
       "connector": {
         "type": "http",
@@ -93,7 +93,7 @@
         "status": "ready",
         "route": "/tools/map-stitcher",
         "surface": "editor",
-        "capabilities": ["切片编排", "边界预览", "地图导出"]
+        "capabilities": ["切片编排", "分层绘制", "碰撞层", "Godot 导出"]
       },
       "connector": {
         "type": "http",

@@ -16,10 +16,10 @@
 
 ## 首批工具
 
-| 工具          | 用途                                         | 当前接入策略                           |
-| ------------- | -------------------------------------------- | -------------------------------------- |
-| 2D 序列帧生成 | 从角色与动作描述组织动画帧、预览并导出精灵表 | 已提供统一功能预览页，生成服务待接入     |
-| 地图拼接      | 编排地图切片、检查边界并导出完整关卡画布     | 浏览器编辑器已完整并入主应用             |
+| 工具          | 用途                                               | 当前接入策略                                 |
+| ------------- | -------------------------------------------------- | -------------------------------------------- |
+| 2D 序列帧生成 | 从角色与动作描述组织动画帧、检查、修补并导出精灵表 | 已整合 NativeFramesGeneration 本地完整工作台 |
+| 地图拼接      | 编排地图切片、检查边界并导出完整关卡画布           | 浏览器编辑器已完整并入主应用                 |
 
 地图拼接的本地编辑、补全与导出逻辑位于本仓库；外部生成能力继续通过 Manifest 中的服务端 Connector 接入。
 
@@ -73,8 +73,9 @@ Web 可视化控制台 ── 服务端网关 ─┘
 app/                         开始页、工具路由与连接器网关
 components/workbench/        公共导航、首页与 AI 预览组件
 components/map-stitcher/      地图拼接编辑器与隔离样式
-components/sprite-generator/  序列帧工作区预览
+components/sprite-generator/  序列帧管线连接与嵌入工作区
 features/map-stitcher/        地图类型、图片处理与导出逻辑
+Tools/SpritePipeline/          本地生成、检查、修补与导出管线
 lib/workbench/                Manifest 驱动的前端模块映射
 lib/workbench/runtime.mjs    MCP 与 CLI 共享运行时
 workbench/manifest.json       网页与 Agent 的统一能力清单
@@ -93,17 +94,24 @@ outputs/                      本地产物目录（不提交）
 
 ## 本地运行
 
-环境要求：Node.js 22.13 或更高版本。
+环境要求：Node.js 22.13 或更高版本；完整序列帧工作区还需要 Python 3.11 或更高版本。
 
 ```bash
 npm install
 npm run dev
 ```
 
+首次使用序列帧工作区时，安装并在另一个终端启动本地管线：
+
+```powershell
+npm run sprite-pipeline:setup
+npm run sprite-pipeline
+```
+
 页面入口：
 
 - `/`：统一开始页
-- `/tools/sprite-generator`：序列帧工作区预览
+- `/tools/sprite-generator`：完整序列帧生成、检查、修补与导出工作区
 - `/tools/map-stitcher`：完整地图拼接编辑器
 
 生产构建与代码检查：
@@ -158,4 +166,4 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 ## 当前状态
 
-统一开始页、公共导航、两项工具路由和地图拼接编辑器已经整合在同一个 Vinext 应用中；外部 Agent 客户端 MCP/Skill/CLI 入口、统一能力协议、共享任务运行时和服务端 API 网关也已接通。序列帧页面与首页 AI 对话目前明确标记为功能预览；未配置外部 API 时，任务会明确停在 `awaiting_configuration`，不会伪造生成结果。
+统一开始页、公共导航、两项工具路由、地图拼接编辑器和 NativeFramesGeneration 序列帧工作台已经整合。序列帧管线作为只监听本机的 Python sidecar 保留生成、播放检查、逐帧修补、恢复和确定性导出能力；首页 AI 对话仍明确标记为功能预览。未配置外部 API 时，Agent 任务会明确停在 `awaiting_configuration`，不会伪造生成结果。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)。
