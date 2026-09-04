@@ -169,17 +169,6 @@
     @apply relative flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors hover:bg-white/[0.04] hover:text-white/75;
   }
 
-  .composer-glow:focus-within {
-    border-color: oklch(0.64 0.16 285 / 45%);
-    box-shadow:
-      0 0 0 3px oklch(0.62 0.18 282 / 8%),
-      0 20px 50px oklch(0.02 0.02 275 / 40%);
-  }
-
-  .agent-avatar {
-    box-shadow: inset 0 1px 0 oklch(1 0 0 / 8%);
-  }
-
   .pixel-thumb {
     background-image:
       linear-gradient(45deg, oklch(0.67 0.18 285 / 6%) 25%, transparent 25%),

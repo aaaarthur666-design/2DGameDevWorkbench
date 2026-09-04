@@ -2,19 +2,19 @@
 
 ## Role boundary
 
-The main Agent runs in the client that opened this repository, such as Codex or another WorkBuddy-style client with STDIO MCP support. The browser interface is the workbench's visual control and monitoring surface. It can submit a task directly, but it does not host or imitate the main language model.
+The main Agent runs in the client that opened this repository, such as Codex or another WorkBuddy-style client with STDIO MCP support. The browser interface is a visual task monitor and a surface for review or fine-grained operations that should remain under human control. It does not host or imitate the main language model, and the home page does not provide a chat or generic task-submission composer.
 
 All clients, the CLI, and the web interface ultimately use `workbench/manifest.json` and the same adapter contracts.
 
 ## Supported entry points
 
-| Entry point | Intended use | Configuration |
-| --- | --- | --- |
-| MCP STDIO | Preferred Agent-client integration | `.mcp.json` or `.codex/config.toml` |
-| Repository Skill | Workflow guidance and safe capability selection | `.agents/skills/2d-game-workbench/SKILL.md` |
-| CLI | Fallback for clients without MCP and for debugging | `npm run workbench -- ...` |
-| Web console | Human control, task visibility, and direct submission | `npm run dev` |
-| WebMCP | Optional page-aware host integration | Registered by the browser page |
+| Entry point      | Intended use                                             | Configuration                               |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------- |
+| MCP STDIO        | Preferred Agent-client integration                       | `.mcp.json` or `.codex/config.toml`         |
+| Repository Skill | Workflow guidance and safe capability selection          | `.agents/skills/2d-game-workbench/SKILL.md` |
+| CLI              | Fallback for clients without MCP and for debugging       | `npm run workbench -- ...`                  |
+| Web console      | Task visibility, artifact review, and human-only editing | `npm run dev`                               |
+| WebMCP           | Optional page-aware host integration                     | Registered by the browser page              |
 
 `npm run dev` starts both the Worker-compatible web process and the loopback Node Runtime Bridge. The web API proxies through that bridge instead of importing Node filesystem or native image modules into the Worker runtime. A hosted page cannot read a developer machine's local tasks unless an explicitly secured remote bridge is configured.
 
@@ -34,13 +34,13 @@ Clients that understand `.mcp.json` can load the checked-in configuration. Codex
 
 The server exposes one read-only manifest resource, `workbench://manifest`, and five tools:
 
-| Tool | Effect |
-| --- | --- |
-| `workbench_list_capabilities` | Lists registered capabilities, local adapters, and optional external-service readiness |
-| `workbench_describe_capability` | Returns one capability's schema and workflow contract |
-| `workbench_prepare_task` | Validates input and records a task without running its adapter or making an external call |
-| `workbench_run_task` | Runs an authorized manifest-selected adapter; external-only steps can record `awaiting_configuration` |
-| `workbench_get_task` | Reads a task and, while it is running, polls its existing upstream job once and persists the refreshed state and artifacts |
+| Tool                            | Effect                                                                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `workbench_list_capabilities`   | Lists registered capabilities, local adapters, and optional external-service readiness                                     |
+| `workbench_describe_capability` | Returns one capability's schema and workflow contract                                                                      |
+| `workbench_prepare_task`        | Validates input and records a task without running its adapter or making an external call                                  |
+| `workbench_run_task`            | Runs an authorized manifest-selected adapter; external-only steps can record `awaiting_configuration`                      |
+| `workbench_get_task`            | Reads a task and, while it is running, polls its existing upstream job once and persists the refreshed state and artifacts |
 
 The expected Agent flow is discover → describe → prepare or run → inspect status → report exact output paths. Calling `workbench_get_task` is idempotent: it never submits a second generation, and a transient upstream polling error leaves the durable task in its previous state with a separate refresh error.
 

@@ -2,38 +2,34 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowUp,
+  Activity,
+  ArrowUpRight,
   Box,
   Check,
   ChevronDown,
   CircleDot,
   CircleAlert,
   CircleX,
+  Clock3,
   Command,
   FileImage,
   FolderOpen,
   GitBranch,
+  Hand,
   LayoutDashboard,
   MoreHorizontal,
-  PanelRight,
-  Play,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
-  Sparkles,
   TerminalSquare,
   WandSparkles,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from '@/components/ui/progress';
+import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { WorkbenchModule } from '@/lib/workbench/modules';
 import { ModuleIcon } from './module-icon';
@@ -48,10 +44,15 @@ type Task = {
   id: string;
   capabilityId: string;
   name: string;
+  operation: string;
   detail: string;
-  progress: number;
   state: TaskState;
+  status: string;
+  input: Record<string, unknown>;
   outputs: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  requiredEnvironment?: string;
 };
 
 type StoredTask = {
@@ -61,13 +62,10 @@ type StoredTask = {
   input?: Record<string, unknown>;
   outputs?: string[];
   error?: string;
+  refreshError?: string;
   requiredEnvironment?: string;
-};
-
-type Message = {
-  id: string;
-  role: 'workbench' | 'user';
-  content: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type BrowserAgentTool = {
@@ -91,38 +89,36 @@ type AgentAwareDocument = Document & {
   };
 };
 
-const promptIdeas: Record<string, string[]> = {
+const manualWork: Record<string, string[]> = {
   'sprite-generator': [
-    '{"operation":"create","characterId":"diagnostic_dummy","actionId":"idle","provider":"fixture"}',
-    '{"operation":"get","jobId":"在这里填写 SpritePipeline 作业 ID"}',
+    '逐帧审看动作连续性与角色一致性',
+    '像素级修补、候选帧取舍与冲突处理',
+    '播放确认并决定最终精灵表导出',
   ],
   'map-stitcher': [
-    '{"operation":"compose","images":["Tools/SpritePipeline/presets/characters/diagnostic_dummy/idle_reference.png"],"columns":1,"checkSeams":true}',
-    '{"operation":"compose","images":["仓库内/地图块01.png","仓库内/地图块02.png"],"columns":2,"engineTargets":["godot"]}',
+    '画布位置、重叠和羽化参数微调',
+    '遮挡、碰撞、调节与顶部区域绘制',
+    '图层检查以及 Godot / Unity 最终交付确认',
   ],
 };
 
-const initialMessages: Message[] = [
-  {
-    id: 'welcome',
-    role: 'workbench',
-    content:
-      '这是工作台的人工直调控制台。主 Agent 运行在打开本项目的 WorkBuddy、Codex 等客户端中，并通过 MCP 或 CLI 驱动同一套能力与任务记录。',
-  },
-];
-
 const capabilityAssets = [
-  { name: 'Skill', detail: '项目级工作流', state: 'ready' },
-  { name: 'Expert', detail: '2D 生产专家', state: 'ready' },
+  { name: 'MCP', detail: '5 个外部 Agent 工具', state: 'ready' },
+  { name: 'CLI', detail: '无 MCP 客户端回退', state: 'ready' },
   { name: 'Adapter', detail: '2 个本地协议适配器', state: 'ready' },
-  { name: 'MCP Server', detail: '5 个客户端工具', state: 'ready' },
-  { name: 'WebMCP', detail: '8 个页面工具（含 6 个地图工具）', state: 'ready' },
-  { name: 'Workflow', detail: '5 步预置流程', state: 'ready' },
+  { name: 'Manifest', detail: '统一能力与输入约束', state: 'ready' },
+  { name: 'Task ledger', detail: '任务与产物共享记录', state: 'ready' },
 ] as const;
 
-function storedTaskView(task: StoredTask, modules: readonly WorkbenchModule[]): Task {
-  const capabilityModule = modules.find((candidate) => candidate.id === task.capabilityId);
-  const operation = typeof task.input?.operation === 'string' ? task.input.operation : 'task';
+function storedTaskView(
+  task: StoredTask,
+  modules: readonly WorkbenchModule[],
+): Task {
+  const capabilityModule = modules.find(
+    (candidate) => candidate.id === task.capabilityId,
+  );
+  const operation =
+    typeof task.input?.operation === 'string' ? task.input.operation : 'task';
   const state: TaskState =
     task.status === 'completed'
       ? 'complete'
@@ -135,17 +131,56 @@ function storedTaskView(task: StoredTask, modules: readonly WorkbenchModule[]): 
     complete: '已完成',
     failed: '失败',
     running: '运行中',
-    waiting: task.status === 'awaiting_configuration' ? '等待外部服务配置' : '需要处理',
+    waiting:
+      task.status === 'awaiting_configuration'
+        ? '等待外部服务配置'
+        : '需要处理',
   };
   return {
     id: task.id,
     capabilityId: task.capabilityId,
     name: `${capabilityModule?.shortName ?? task.capabilityId} · ${operation}`,
-    detail: task.error ?? `${statusLabel[state]}${task.requiredEnvironment ? ` · ${task.requiredEnvironment}` : ''}`,
-    progress: state === 'complete' ? 100 : state === 'running' ? 45 : 0,
+    operation,
+    detail:
+      task.error ??
+      task.refreshError ??
+      `${statusLabel[state]}${task.requiredEnvironment ? ` · ${task.requiredEnvironment}` : ''}`,
     state,
+    status: task.status,
+    input: task.input ?? {},
     outputs: Array.isArray(task.outputs) ? task.outputs : [],
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    requiredEnvironment: task.requiredEnvironment,
   };
+}
+
+function taskStateLabel(task: Task) {
+  if (task.state === 'complete') return '已完成';
+  if (task.state === 'running') return '运行中';
+  if (task.state === 'failed') return '失败';
+  if (task.status === 'awaiting_configuration') return '等待配置';
+  if (task.status === 'prepared') return '已准备';
+  return '等待人工处理';
+}
+
+function formatTaskTime(value?: string) {
+  if (!value) return '时间未记录';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function taskInputPreview(input: Record<string, unknown>) {
+  const serialized = JSON.stringify(input, null, 2);
+  return serialized.length > 1600
+    ? `${serialized.slice(0, 1600)}\n…`
+    : serialized;
 }
 
 function StatusMark({ state }: { state: TaskState }) {
@@ -183,9 +218,8 @@ function StatusMark({ state }: { state: TaskState }) {
 
 export function WorkbenchShell({ modules }: WorkbenchShellProps) {
   const [activeId, setActiveId] = useState(modules[0]?.id ?? '');
-  const [prompt, setPrompt] = useState('');
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [runtimeOnline, setRuntimeOnline] = useState(false);
 
   const activeModule = useMemo(
@@ -193,22 +227,59 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
     [activeId, modules],
   );
 
-  const ideas = activeModule ? (promptIdeas[activeModule.id] ?? []) : [];
+  const activeTasks = useMemo(
+    () => tasks.filter((task) => task.capabilityId === activeId),
+    [activeId, tasks],
+  );
+  const selectedTask = useMemo(
+    () =>
+      activeTasks.find((task) => task.id === selectedTaskId) ??
+      activeTasks[0] ??
+      null,
+    [activeTasks, selectedTaskId],
+  );
+  const taskSummary = useMemo(
+    () => ({
+      running: tasks.filter((task) => task.state === 'running').length,
+      attention: tasks.filter(
+        (task) => task.state === 'waiting' || task.state === 'failed',
+      ).length,
+      complete: tasks.filter((task) => task.state === 'complete').length,
+    }),
+    [tasks],
+  );
+  const manualItems = activeModule ? (manualWork[activeModule.id] ?? []) : [];
   const recentOutputs = useMemo(
-    () => tasks.flatMap((task) => task.outputs.map((output) => ({ taskId: task.id, output }))).slice(0, 5),
+    () =>
+      tasks
+        .flatMap((task) =>
+          task.outputs.map((output) => ({ taskId: task.id, output })),
+        )
+        .slice(0, 5),
     [tasks],
   );
 
   const refreshTasks = useCallback(async () => {
     try {
-      const response = await fetch('/api/workbench/tasks?limit=30&refresh=true', {
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        '/api/workbench/tasks?limit=30&refresh=true',
+        {
+          cache: 'no-store',
+        },
+      );
       setRuntimeOnline(response.ok);
       if (!response.ok) return;
       const payload = (await response.json()) as { tasks?: StoredTask[] };
       if (Array.isArray(payload.tasks)) {
-        setTasks(payload.tasks.map((task) => storedTaskView(task, modules)));
+        const nextTasks = payload.tasks.map((task) =>
+          storedTaskView(task, modules),
+        );
+        setTasks(nextTasks);
+        setSelectedTaskId((current) =>
+          current && nextTasks.some((task) => task.id === current)
+            ? current
+            : (nextTasks[0]?.id ?? null),
+        );
       }
     } catch {
       setRuntimeOnline(false);
@@ -237,28 +308,26 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
       );
       if (!targetModule) throw new Error(`未找到能力：${requestedModuleId}`);
 
-      const operation = typeof input.operation === 'string' ? input.operation : 'task';
+      const operation =
+        typeof input.operation === 'string' ? input.operation : 'task';
       const taskId = `pending-${crypto.randomUUID().slice(0, 8)}`;
+      const startedAt = new Date().toISOString();
       const nextTask: Task = {
         id: taskId,
         capabilityId: targetModule.id,
         name: `${targetModule.shortName} · ${operation}`,
+        operation,
         detail: '正在校验并交给本地适配器',
-        progress: 12,
         state: 'running',
+        status: 'running',
+        input,
         outputs: [],
+        createdAt: startedAt,
+        updatedAt: startedAt,
       };
 
       setActiveId(targetModule.id);
-      setMessages((current) => [
-        ...current,
-        { id: `${taskId}-user`, role: 'user', content: JSON.stringify(input) },
-        {
-          id: `${taskId}-agent`,
-          role: 'workbench',
-          content: `已把结构化输入交给「${targetModule.name}」适配器；右侧队列会同步 MCP、CLI 和网页创建的同一批任务。`,
-        },
-      ]);
+      setSelectedTaskId(taskId);
       setTasks((current) => [nextTask, ...current]);
 
       try {
@@ -285,36 +354,19 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
           outputs: result.outputs,
           error: result.error,
           requiredEnvironment: result.requiredEnvironment,
+          createdAt: startedAt,
+          updatedAt: new Date().toISOString(),
         };
         const view = storedTaskView(stored, modules);
         setTasks((current) =>
           current.map((task) => (task.id === taskId ? view : task)),
         );
+        setSelectedTaskId(result.taskId ?? taskId);
 
-        if (view.state === 'waiting') {
-          setMessages((current) => [
-            ...current,
-            {
-              id: `${taskId}-configuration`,
-              role: 'workbench',
-              content: result.requiredEnvironment
-                ? `任务已持久化；配置 ${result.requiredEnvironment} 后可继续对应的外部步骤。`
-                : '任务已持久化，当前状态需要人工检查。',
-            },
-          ]);
-        } else if (view.state === 'failed') {
-          setMessages((current) => [
-            ...current,
-            {
-              id: `${taskId}-error`,
-              role: 'workbench',
-              content:
-                result.error ?? '适配器调用失败，请检查任务输入和本地服务。',
-            },
-          ]);
-        }
-
-        window.setTimeout(() => void refreshTasks().catch(() => undefined), 150);
+        window.setTimeout(
+          () => void refreshTasks().catch(() => undefined),
+          150,
+        );
 
         return {
           taskId: result.taskId ?? taskId,
@@ -329,7 +381,10 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
               ? {
                   ...task,
                   state: 'failed',
-                  detail: error instanceof Error ? error.message : '工作台服务不可用',
+                  status: 'failed',
+                  detail:
+                    error instanceof Error ? error.message : '工作台服务不可用',
+                  updatedAt: new Date().toISOString(),
                 }
               : task,
           ),
@@ -393,7 +448,8 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
               },
               input: {
                 type: 'object',
-                description: '必须符合该能力在 workbench/manifest.json 中声明的 inputSchema。',
+                description:
+                  '必须符合该能力在 workbench/manifest.json 中声明的 inputSchema。',
               },
             },
             required: ['capabilityId', 'input'],
@@ -416,7 +472,10 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
             ) {
               throw new Error('capabilityId 必须是字符串，input 必须是对象。');
             }
-            return startTask(values.input as Record<string, unknown>, values.capabilityId);
+            return startTask(
+              values.input as Record<string, unknown>,
+              values.capabilityId,
+            );
           },
         },
         registrationOptions,
@@ -429,28 +488,6 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
 
     return () => lifecycle.abort();
   }, [modules, startTask]);
-
-  function runPrompt() {
-    const trimmed = prompt.trim();
-    if (!trimmed || !activeModule) return;
-    try {
-      const input = JSON.parse(trimmed) as unknown;
-      if (!input || typeof input !== 'object' || Array.isArray(input)) {
-        throw new Error('能力输入必须是 JSON 对象。');
-      }
-      void startTask(input as Record<string, unknown>, activeModule.id);
-      setPrompt('');
-    } catch (error) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: `input-error-${Date.now()}`,
-          role: 'workbench',
-          content: error instanceof Error ? error.message : '无法解析能力输入 JSON。',
-        },
-      ]);
-    }
-  }
 
   return (
     <main className="h-svh overflow-hidden p-2.5 sm:p-3">
@@ -479,7 +516,9 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                     : 'border-amber-300/20 bg-amber-400/7 text-amber-200',
                 )}
               >
-                {runtimeOnline ? 'Runtime bridge ready' : 'Runtime bridge offline'}
+                {runtimeOnline
+                  ? 'Runtime bridge ready'
+                  : 'Runtime bridge offline'}
               </Badge>
             </div>
           </div>
@@ -551,7 +590,14 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                       <button
                         key={module.id}
                         type="button"
-                        onClick={() => setActiveId(module.id)}
+                        onClick={() => {
+                          setActiveId(module.id);
+                          setSelectedTaskId(
+                            tasks.find(
+                              (task) => task.capabilityId === module.id,
+                            )?.id ?? null,
+                          );
+                        }}
                         className={cn(
                           'nav-item group w-full text-white/48',
                           module.id === activeId &&
@@ -628,191 +674,344 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h1 className="truncate text-sm font-semibold text-white/92">
-                      {activeModule?.name ?? '任务控制台'}
+                      任务控制台
                     </h1>
-                    <ChevronDown className="size-3.5 text-white/28" />
+                    <Badge
+                      variant="outline"
+                      className="hidden h-5 border-white/8 bg-white/[0.025] px-1.5 text-[10px] font-normal text-white/38 sm:inline-flex"
+                    >
+                      {activeModule?.shortName}
+                    </Badge>
                   </div>
                   <p className="truncate text-xs text-white/35">
-                    外部主 Agent · MCP / CLI 已就绪
+                    外部 Agent 驱动 · 页面负责监控与人工接管
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <Button
+                  aria-label="刷新任务"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => void refreshTasks()}
+                  className="text-white/38 hover:bg-white/5 hover:text-white"
+                >
+                  <RefreshCw className="size-3.5" />
+                </Button>
+                <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    if (prompt.trim()) runPrompt();
-                    else setPrompt(ideas[0] ?? '');
+                    if (activeModule) window.location.assign(activeModule.href);
                   }}
-                  className="hidden border-white/10 bg-white/[0.025] text-white/55 hover:bg-white/5 hover:text-white md:inline-flex"
+                  className="hidden border-white/10 bg-white/[0.025] text-white/55 hover:bg-white/5 hover:text-white sm:inline-flex"
                 >
-                  <Play className="size-3.5" />
-                  直接运行
-                </Button>
-                <Button
-                  aria-label="切换上下文面板"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-white/38 hover:bg-white/5 hover:text-white xl:hidden"
-                >
-                  <PanelRight />
+                  <FolderOpen className="size-3.5" />
+                  打开人工工作区
+                  <ArrowUpRight className="size-3.5" />
                 </Button>
               </div>
             </div>
 
             <ScrollArea className="min-h-0 flex-1">
-              <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-7 sm:px-8 sm:py-9">
-                <div className="mb-8 flex items-center gap-3 text-xs text-white/28">
-                  <span className="h-px flex-1 bg-white/7" />
-                  <span>今天 · 当前项目</span>
-                  <span className="h-px flex-1 bg-white/7" />
-                </div>
-
-                <section className="mb-7 flex flex-col gap-3 rounded-xl border border-cyan-300/12 bg-cyan-400/[0.035] p-3.5 sm:flex-row sm:items-center">
+              <div className="mx-auto w-full max-w-6xl space-y-4 p-4 sm:p-5 lg:p-6">
+                <section className="flex flex-col gap-3 rounded-xl border border-cyan-300/12 bg-cyan-400/[0.035] p-3.5 sm:flex-row sm:items-center">
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/18 bg-cyan-400/8 text-cyan-200">
                     <TerminalSquare className="size-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-white/78">
-                      主 Agent 在外部客户端运行
+                      生产指令来自外部 Agent
                     </p>
                     <p className="mt-0.5 text-xs leading-5 text-white/38">
-                      WorkBuddy、Codex 等客户端从项目对话通过 MCP 或 CLI
-                      调用；本页负责人工直调与任务监控。
+                      WorkBuddy、Codex 等客户端通过 MCP 或 CLI
+                      写入任务；本页只呈现真实状态、产物和需要人工判断的步骤。
                     </p>
                   </div>
                   <Badge
                     variant="outline"
                     className="w-fit border-cyan-300/18 bg-cyan-400/6 text-[10px] font-normal text-cyan-200/75"
                   >
-                    MCP STDIO
+                    外部 Agent 通道
                   </Badge>
                 </section>
 
-                <div className="space-y-7">
-                  {messages.map((message) => (
-                    <article
-                      key={message.id}
-                      className={cn(
-                        'flex gap-3.5',
-                        message.role === 'user' && 'justify-end',
-                      )}
-                    >
-                      {message.role === 'workbench' ? (
-                        <div className="agent-avatar mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-violet-300/20 bg-violet-500/12 text-violet-200">
-                          <TerminalSquare className="size-4" />
-                        </div>
-                      ) : null}
-                      <div
+                <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+                  <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-white/36">Runtime</span>
+                      <span
                         className={cn(
-                          'max-w-[82%] text-[15px] leading-6',
-                          message.role === 'workbench'
-                            ? 'text-white/72'
-                            : 'rounded-2xl rounded-tr-md border border-white/9 bg-white/[0.045] px-4 py-2.5 text-white/82',
+                          'size-2 rounded-full',
+                          runtimeOnline ? 'bg-emerald-400' : 'bg-amber-300',
                         )}
-                      >
-                        {message.content}
-                      </div>
-                    </article>
-                  ))}
+                      />
+                    </div>
+                    <p className="mt-3 text-lg font-semibold text-white/82">
+                      {runtimeOnline ? '在线' : '离线'}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-white/27">
+                      任务记录桥接
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-cyan-300/10 bg-cyan-400/[0.025] p-3.5">
+                    <div className="flex items-center justify-between text-xs text-white/36">
+                      <span>运行中</span>
+                      <Activity className="size-3.5 text-cyan-300/65" />
+                    </div>
+                    <p className="mt-3 text-lg font-semibold tabular-nums text-white/82">
+                      {taskSummary.running}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-white/27">
+                      自动同步状态
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-amber-300/10 bg-amber-400/[0.025] p-3.5">
+                    <div className="flex items-center justify-between text-xs text-white/36">
+                      <span>需要处理</span>
+                      <Hand className="size-3.5 text-amber-300/65" />
+                    </div>
+                    <p className="mt-3 text-lg font-semibold tabular-nums text-white/82">
+                      {taskSummary.attention}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-white/27">
+                      配置、审查或修复
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-300/10 bg-emerald-400/[0.025] p-3.5">
+                    <div className="flex items-center justify-between text-xs text-white/36">
+                      <span>已完成</span>
+                      <Check className="size-3.5 text-emerald-300/65" />
+                    </div>
+                    <p className="mt-3 text-lg font-semibold tabular-nums text-white/82">
+                      {taskSummary.complete}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-white/27">
+                      产物已落盘
+                    </p>
+                  </div>
                 </div>
 
-                {messages.length === 1 ? (
-                  <div className="mt-8 pl-0 sm:pl-11">
-                    <p className="mb-2.5 text-xs font-medium text-white/34">
-                      可以从这里开始
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {ideas.map((idea) => (
+                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.08fr)_minmax(330px,0.92fr)]">
+                  <section className="overflow-hidden rounded-xl border border-white/8 bg-white/[0.015]">
+                    <div className="flex items-center justify-between border-b border-white/7 px-4 py-3.5">
+                      <div>
+                        <h2 className="text-sm font-medium text-white/76">
+                          {activeModule?.shortName}任务流
+                        </h2>
+                        <p className="mt-0.5 text-[11px] text-white/28">
+                          按最近更新时间排序
+                        </p>
+                      </div>
+                      <span className="text-xs tabular-nums text-white/30">
+                        {activeTasks.length} 项
+                      </span>
+                    </div>
+                    <div className="space-y-2 p-3">
+                      {activeTasks.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/9 px-4 py-8 text-center">
+                          <Activity className="mx-auto size-5 text-white/20" />
+                          <p className="mt-3 text-sm text-white/52">
+                            等待外部 Agent 创建任务
+                          </p>
+                          <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-white/28">
+                            新任务会从 MCP 或 CLI
+                            自动进入这里，无需在网页重复输入。
+                          </p>
+                        </div>
+                      ) : null}
+                      {activeTasks.map((task) => (
                         <button
-                          key={idea}
+                          key={task.id}
                           type="button"
-                          onClick={() => setPrompt(idea)}
-                          className="group rounded-xl border border-white/8 bg-white/[0.018] p-3 text-left text-sm leading-5 text-white/52 transition hover:border-violet-300/25 hover:bg-violet-400/[0.045] hover:text-white/78"
+                          onClick={() => setSelectedTaskId(task.id)}
+                          className={cn(
+                            'w-full rounded-xl border p-3.5 text-left transition',
+                            selectedTask?.id === task.id
+                              ? 'border-violet-300/25 bg-violet-400/[0.055]'
+                              : 'border-white/7 bg-black/10 hover:border-white/13 hover:bg-white/[0.025]',
+                          )}
                         >
-                          <Sparkles className="mb-2 size-3.5 text-violet-300/65 transition group-hover:text-violet-200" />
-                          {idea}
+                          <div className="flex items-start gap-3">
+                            <StatusMark state={task.state} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-white/72">
+                                    {task.name}
+                                  </p>
+                                  <p className="mt-1 truncate text-xs text-white/30">
+                                    {task.detail}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 rounded-md border border-white/7 bg-black/15 px-1.5 py-1 text-[10px] text-white/35">
+                                  {taskStateLabel(task)}
+                                </span>
+                              </div>
+                              <div className="mt-3 flex items-center justify-between gap-3 text-[10px] text-white/24">
+                                <span className="truncate font-mono">
+                                  {task.id}
+                                </span>
+                                <span className="flex shrink-0 items-center gap-1">
+                                  <Clock3 className="size-3" />
+                                  {formatTaskTime(
+                                    task.updatedAt ?? task.createdAt,
+                                  )}
+                                </span>
+                              </div>
+                              {task.state === 'running' ? (
+                                <Progress value={null} className="mt-3 gap-1.5">
+                                  <ProgressLabel className="text-[10px] font-normal text-cyan-200/55">
+                                    适配器处理中
+                                  </ProgressLabel>
+                                </Progress>
+                              ) : null}
+                            </div>
+                          </div>
                         </button>
                       ))}
                     </div>
-                  </div>
-                ) : null}
+                  </section>
 
-                <div className="flex-1" />
+                  <div className="space-y-4">
+                    <section className="rounded-xl border border-white/8 bg-white/[0.015]">
+                      <div className="flex items-center justify-between border-b border-white/7 px-4 py-3.5">
+                        <div>
+                          <h2 className="text-sm font-medium text-white/76">
+                            任务检查器
+                          </h2>
+                          <p className="mt-0.5 text-[11px] text-white/28">
+                            输入、状态与真实产物
+                          </p>
+                        </div>
+                        {selectedTask ? (
+                          <StatusMark state={selectedTask.state} />
+                        ) : null}
+                      </div>
+                      {selectedTask ? (
+                        <div className="space-y-4 p-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-lg border border-white/7 bg-black/12 p-2.5">
+                              <p className="text-[10px] text-white/26">
+                                当前状态
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-white/65">
+                                {taskStateLabel(selectedTask)}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-white/7 bg-black/12 p-2.5">
+                              <p className="text-[10px] text-white/26">
+                                输出文件
+                              </p>
+                              <p className="mt-1 text-xs font-medium tabular-nums text-white/65">
+                                {selectedTask.outputs.length}
+                              </p>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="mb-2 text-[11px] font-medium text-white/38">
+                              任务输入
+                            </p>
+                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-white/7 bg-black/20 p-3 font-mono text-[11px] leading-5 text-white/42">
+                              {taskInputPreview(selectedTask.input)}
+                            </pre>
+                          </div>
+                          {selectedTask.requiredEnvironment ? (
+                            <div className="rounded-lg border border-amber-300/14 bg-amber-400/[0.035] p-3">
+                              <p className="text-xs font-medium text-amber-100/72">
+                                等待服务配置
+                              </p>
+                              <p className="mt-1 break-all font-mono text-[11px] text-amber-100/42">
+                                {selectedTask.requiredEnvironment}
+                              </p>
+                            </div>
+                          ) : null}
+                          {selectedTask.outputs.length > 0 ? (
+                            <div>
+                              <p className="mb-2 text-[11px] font-medium text-white/38">
+                                任务产物
+                              </p>
+                              <div className="space-y-1.5">
+                                {selectedTask.outputs
+                                  .slice(0, 5)
+                                  .map((output) => (
+                                    <a
+                                      key={output}
+                                      href={`/api/workbench/artifacts?path=${encodeURIComponent(output)}`}
+                                      className="flex items-center gap-2 rounded-lg border border-white/7 bg-black/12 px-2.5 py-2 text-xs text-white/48 transition hover:border-white/14 hover:text-white/72"
+                                    >
+                                      <FileImage className="size-3.5 shrink-0 text-violet-200/55" />
+                                      <span className="min-w-0 flex-1 truncate">
+                                        {output.split('/').at(-1)}
+                                      </span>
+                                      <ArrowUpRight className="size-3 shrink-0" />
+                                    </a>
+                                  ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="px-4 py-10 text-center text-xs text-white/28">
+                          选择一项任务后查看详情。
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="rounded-xl border border-amber-300/10 bg-amber-400/[0.02] p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/16 bg-amber-400/7 text-amber-200">
+                          <Hand className="size-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-sm font-medium text-white/74">
+                            人工处理台
+                          </h2>
+                          <p className="mt-0.5 text-[11px] leading-5 text-white/30">
+                            只保留需要视觉判断和精细交互的操作。
+                          </p>
+                        </div>
+                      </div>
+                      <ul className="mt-3 space-y-2">
+                        {manualItems.map((item) => (
+                          <li
+                            key={item}
+                            className="flex items-start gap-2 text-xs leading-5 text-white/42"
+                          >
+                            <span className="mt-2 size-1 rounded-full bg-amber-300/55" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (activeModule)
+                            window.location.assign(activeModule.href);
+                        }}
+                        className="mt-4 w-full border-amber-300/14 bg-amber-400/[0.035] text-amber-100/65 hover:bg-amber-400/[0.075] hover:text-amber-100"
+                      >
+                        <FolderOpen className="size-3.5" />
+                        打开{activeModule?.shortName}工作区
+                      </Button>
+                    </section>
+                  </div>
+                </div>
               </div>
             </ScrollArea>
-
-            <div className="shrink-0 px-3 pb-3 sm:px-5 sm:pb-5">
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  runPrompt();
-                }}
-                className="composer-glow mx-auto max-w-3xl rounded-2xl border border-white/11 bg-[#11141c] p-2 shadow-xl shadow-black/30"
-              >
-                <Textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      runPrompt();
-                    }
-                  }}
-                  placeholder={`粘贴${activeModule?.shortName ?? '工作台'}能力输入 JSON…`}
-                  aria-label="提交结构化工作台任务"
-                  className="min-h-[66px] resize-none border-0 bg-transparent px-2.5 py-2 text-[15px] leading-6 text-white/85 shadow-none placeholder:text-white/25 focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
-                />
-                <div className="flex items-center justify-between gap-2 px-1 pt-1">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="添加项目文件"
-                      className="text-white/38 hover:bg-white/6 hover:text-white"
-                    >
-                      <Plus />
-                    </Button>
-                    <button
-                      type="button"
-                      className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-white/38 transition hover:bg-white/5 hover:text-white/62"
-                    >
-                      <ModuleIcon
-                        icon={activeModule?.icon ?? 'frames'}
-                        className="size-3.5 shrink-0"
-                      />
-                      <span className="truncate">
-                        {activeModule?.shortName}
-                      </span>
-                      <ChevronDown className="size-3" />
-                    </button>
-                  </div>
-                  <Button
-                    type="submit"
-                    size="icon"
-                    disabled={!prompt.trim()}
-                    aria-label="发送并运行"
-                    className="rounded-xl bg-violet-500 text-white shadow-lg shadow-violet-950/40 hover:bg-violet-400"
-                  >
-                    <ArrowUp />
-                  </Button>
-                </div>
-              </form>
-              <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-white/22">
-                网页与 MCP 使用同一 Manifest、适配器和本地任务记录
-              </p>
-            </div>
           </section>
 
           <aside className="hidden min-h-0 flex-col border-l border-white/8 bg-[#0d0f15] xl:flex">
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/8 px-4">
               <div>
                 <h2 className="text-sm font-medium text-white/78">
-                  运行上下文
+                  项目上下文
                 </h2>
-                <p className="text-[11px] text-white/30">项目状态与任务产物</p>
+                <p className="text-[11px] text-white/30">
+                  能力、通道与最近产物
+                </p>
               </div>
               <Button
                 variant="ghost"
@@ -918,52 +1117,28 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                 <section>
                   <div className="mb-2.5 flex items-center justify-between px-0.5">
                     <h3 className="text-xs font-medium text-white/48">
-                      任务队列
+                      Agent 通道
                     </h3>
-                    <span className="text-[11px] tabular-nums text-white/26">
-                      {tasks.length} 项
-                    </span>
+                    <span className="text-[10px] text-white/24">外部驱动</span>
                   </div>
-                  <div className="space-y-2">
-                    {tasks.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-white/8 px-3 py-4 text-xs text-white/28">
-                        暂无任务；MCP、CLI 或本页创建任务后会自动出现。
-                      </p>
-                    ) : null}
-                    {tasks.map((task) => (
-                      <div
-                        key={task.id}
-                        className="rounded-xl border border-white/8 bg-white/[0.018] p-3"
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <StatusMark state={task.state} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="truncate text-xs font-medium text-white/68">
-                                {task.name}
-                              </p>
-                              <span className="text-[10px] tabular-nums text-white/22">
-                                {task.id}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 truncate text-[10px] text-white/28">
-                              {task.detail}
-                            </p>
-                          </div>
-                        </div>
-                        {task.state === 'running' ? (
-                          <Progress
-                            value={task.progress}
-                            className="mt-3 gap-1.5"
-                          >
-                            <ProgressLabel className="text-[10px] font-normal text-white/30">
-                              处理中
-                            </ProgressLabel>
-                            <ProgressValue className="text-[10px] text-white/26" />
-                          </Progress>
-                        ) : null}
+                  <div className="overflow-hidden rounded-xl border border-white/8 bg-white/[0.018]">
+                    <div className="flex items-center gap-3 p-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/14 bg-cyan-400/6 text-cyan-200/65">
+                        <TerminalSquare className="size-3.5" />
                       </div>
-                    ))}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-white/60">
+                          MCP / CLI
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-white/27">
+                          任务写入统一运行记录
+                        </p>
+                      </div>
+                      <span className="size-1.5 rounded-full bg-emerald-400" />
+                    </div>
+                    <div className="border-t border-white/7 px-3 py-2.5 text-[10px] leading-4 text-white/28">
+                      网页不提供对话或通用任务输入，只承接监控、审查和精细编辑。
+                    </div>
                   </div>
                 </section>
 
@@ -987,8 +1162,12 @@ export function WorkbenchShell({ modules }: WorkbenchShellProps) {
                           <FileImage className="size-4 text-violet-200/65" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs text-white/62">{output.split('/').at(-1)}</p>
-                          <p className="mt-0.5 truncate text-[10px] text-white/25">{taskId}</p>
+                          <p className="truncate text-xs text-white/62">
+                            {output.split('/').at(-1)}
+                          </p>
+                          <p className="mt-0.5 truncate text-[10px] text-white/25">
+                            {taskId}
+                          </p>
                         </div>
                         <ChevronDown className="size-3.5 -rotate-90 text-white/25" />
                       </a>
