@@ -9,7 +9,7 @@ export default function SpriteGeneratorPage() {
   if (!spriteModule) return null;
 
   return (
-    <div className="h-[calc(100svh-var(--workbench-nav-height))] min-h-0 overflow-hidden">
+    <div className="h-full min-h-0 overflow-hidden">
       <SpritePipelineWorkspace module={spriteModule} />
     </div>
   );

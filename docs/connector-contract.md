@@ -32,26 +32,44 @@ Set `SPRITE_PIPELINE_API_URL` only when the API is not available at the default 
 - `seam-report.json`
 - `region-annotations.json`
 - `pixelwork-state.zip`
-- optional `godot-package.zip` and `unity-package.zip`
+- optional `godot-package.zip`
 
-File paths are resolved inside the repository, and every artifact stays inside `outputs/<task-id>/`. The Pixelwork ZIP can be reopened by the FrameRonin mode editor.
+File paths are resolved inside the repository, and every artifact stays inside `outputs/<task-id>/`. The Pixelwork ZIP can be reopened by the FrameRonin mode editor. New `godot-package.zip` files embed the same editable state as `source_state.zip`, so the map page can also reopen the Godot package without losing its source layout. Older packages without that source can only recover the image and metadata they actually contain.
 
 ## Map adapter: external layer generation
 
-`operation: "generate-layer"` is the same contract used by the map page. The server removes `operation` and forwards exactly these fields to `MAP_STITCHER_API_URL`:
+`operation: "generate-layer"` is the same contract used by the map page and is limited to the overall image layer:
 
 ```json
 {
   "image": "data:image/png;base64,...",
-  "prompt": "保持原图像素风并向右扩展",
+  "prompt": "the single overall-layer prompt",
+  "provider": "nano-banana",
   "tile": { "key": "1,0", "x": 1, "y": 0, "w": 1, "h": 1 },
   "layer": "overall",
   "mask_mode": "white"
 }
 ```
 
-The service may return `image`, `data`, or `url`, either at the top level or under `result`. URL results must be HTTP(S), contain no embedded credentials, remain on the configured connector origin, and are downloaded without redirects using size and image-type checks. Every accepted result is decoded and normalized to `outputs/<task-id>/generated-layer.png`; a URL alone is never treated as a completed artifact. The browser page submits this operation through the same runtime task API, so browser, MCP, and CLI runs share one task ledger. If `MAP_STITCHER_API_URL` is absent, only this operation becomes `awaiting_configuration`; local compose remains available.
+The provider definitions live in `workbench/manifest.json`:
+
+- `nano-banana` maps to Google's stable Nano Banana 2 model, `gemini-3.1-flash-image`, through the Generate Content endpoint. The adapter sends the prompt and source PNG as `inline_data`, requests the `IMAGE` response modality, and decodes the returned `inlineData`.
+- `gpt-image-2` maps to OpenAI's `gpt-image-2` Images Edits endpoint. The adapter sends a multipart `image[]` plus `model` and `prompt`, then decodes `data[0].b64_json`.
+
+Every accepted result is normalized to `outputs/<task-id>/generated-layer.png`. Browser, MCP, and CLI runs share the same task ledger. Keys come from the Runtime Bridge's process-memory settings or `GEMINI_API_KEY` / `OPENAI_API_KEY`; they are never added to task input, adapter metadata, result files, or logs. If the selected key is absent, only `generate-layer` becomes `awaiting_configuration`; local compose and local derived-layer generation remain available.
+
+The input PNG's alpha channel defines the editable area: only pixels with alpha zero may be replaced. After either provider returns, the adapter normalizes the output to template dimensions and restores every non-transparent template RGBA pixel, including partially transparent edges. Substantially different aspect ratios are rejected instead of stretched. `mask_mode` remains a legacy compatibility field, not a black/white color mask and not a provider mask parameter. Provider generation itself still receives the source image and prompt; overlap preservation is enforced locally before the artifact is written.
+
+## Interactable adapter: direct Godot export
+
+`interactable-editor` accepts `operation: "export-godot"`, `project`, and optional `selectedDefinitionIds`. The authoritative editor defaults and detailed field constraints are in `features/interactable-editor/contract.mjs`; usage and a complete request example are in `docs/interactable-editor.md` and `examples/requests/interactable-export.json`.
+
+The local adapter packages fixed GDScript runtime files, `.tres` definitions, editable `.tscn` object scenes, original image/audio bytes, installation instructions, and round-trip source data. It does not invoke Godot or contact copyWorms or another service. Basic serialization and file-read errors return normal task errors without adding an approval or validation phase.
+
+The browser can upload each asset as raw bytes to `POST /api/workbench/interactable-assets`, proxied to `POST /v1/interactable-assets`. The `Content-Type` declares PNG/JPEG/WebP/WAV/OGG/MP3; each asset is limited to 64 MB. The response contains `source` (workspace-relative), `mime`, and `size`. `GET` on the same endpoint with `?path=...` previews supported local media. Task JSON carries those paths rather than large base64 uploads. CLI/MCP may also supply supported data URLs. All local asset paths must resolve inside this workspace.
+
+Outputs are `interactables.zip`, portable `interactable-project.json`, and the shared runtime's `result.json`. Export is immediately `completed` when these files exist; no engine validation report is generated.
 
 ## Persistence and errors
 
-Every authorized run creates `work/tasks/<task-id>.json`. Standardized adapter output is stored in `outputs/<task-id>/result.json`. Before a generated artifact path is recorded, the runtime verifies that it is a real file inside the task output directory. Non-2xx responses, invalid protocol bodies, timeouts, and local processing errors mark the task failed with a concise error. Transient refresh failures do not overwrite a previously running task. Tokens and connector URLs are never written to task records.
+Every authorized run creates `work/tasks/<task-id>.json`. Standardized adapter output is stored in `outputs/<task-id>/result.json`. Before a generated artifact path is recorded, the runtime verifies that it is a real file inside the task output directory. Non-2xx responses, invalid protocol bodies, timeouts, and local processing errors mark the task failed with a concise error. Transient refresh failures do not overwrite a previously running task. API keys are never written to task records.

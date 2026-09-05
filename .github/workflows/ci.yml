@@ -26,8 +26,12 @@ jobs:
       - run: npm run test:mcp
       - run: npm run test:adapters
       - run: npm run test:http
+      - run: npm run test:interactable
+      - run: npm run test:interactable-http
       - run: npm run test:map-stitcher
+      - run: npm run test:dev-supervisor
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run build
       - run: test -f THIRD_PARTY_NOTICES.md
 

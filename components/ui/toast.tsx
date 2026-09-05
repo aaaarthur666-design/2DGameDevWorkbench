@@ -69,7 +69,7 @@ function ToastContent({ className, ...props }: ToastPrimitive.Content.Props) {
     <ToastPrimitive.Content
       data-slot="toast-content"
       className={cn(
-        'flex h-full items-center gap-3 overflow-hidden p-4 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100',
+        'flex items-center gap-3 overflow-hidden p-4 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100',
         className,
       )}
       {...props}
@@ -197,6 +197,24 @@ function Toaster({
   toastManager = toast,
   ...props
 }: ToastPrimitive.Provider.Props) {
+  React.useEffect(() => {
+    const preventResizeObserverOverlay = (event: ErrorEvent) => {
+      if (
+        event.message === 'ResizeObserver loop completed with undelivered notifications.' ||
+        event.message === 'ResizeObserver loop limit exceeded'
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+
+    // Browsers report deferred ResizeObserver delivery as an ErrorEvent. The
+    // development overlay treats it as an application crash even though the
+    // observer retries on the next frame.
+    window.addEventListener('error', preventResizeObserverOverlay, true);
+    return () => window.removeEventListener('error', preventResizeObserverOverlay, true);
+  }, []);
+
   return (
     <ToastProvider toastManager={toastManager} {...props}>
       {children}

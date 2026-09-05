@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '2D Game Dev Workbench · AI 游戏生产工作台',
-  description: '供外部 Agent 客户端与网页控制台共同驱动的 2D 游戏生产工作台。',
+  title: '2D Game Dev Workbench · 游戏资产生产工作台',
+  description: '制作玩家动画、拼接地图和交互物，保存草稿并从制作记录继续。',
 };
 
 export default function RootLayout({

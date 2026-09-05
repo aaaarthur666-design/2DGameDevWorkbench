@@ -116,10 +116,15 @@ async function main() {
           adapter: published.connector.adapter,
           configured: published.connector.configured,
           ...(published.connector.urlEnv ? { urlEnv: published.connector.urlEnv } : {}),
-          ...(published.connector.generationUrlEnv
+          ...(published.connector.providers
             ? {
-                generationUrlEnv: published.connector.generationUrlEnv,
+                providers: published.connector.providers.map((provider) => ({
+                  id: provider.id,
+                  model: provider.model,
+                  configured: provider.configured,
+                })),
                 externalGenerationConfigured: published.connector.externalGenerationConfigured,
+                activeGenerationProvider: published.connector.activeGenerationProvider,
               }
             : {}),
         };

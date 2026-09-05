@@ -9,7 +9,13 @@ const port = await availablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['scripts/workbench-http.mjs'], {
   cwd: process.cwd(),
-  env: { ...process.env, WORKBENCH_RUNTIME_PORT: String(port) },
+  env: {
+    ...process.env,
+    WORKBENCH_RUNTIME_PORT: String(port),
+    GEMINI_API_KEY: '',
+    OPENAI_API_KEY: '',
+    MAP_STITCHER_IMAGE_PROVIDER: '',
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
 });
@@ -21,6 +27,27 @@ try {
   const health = await jsonFetch(`${baseUrl}/health`);
   assert.equal(health.ok, true);
   assert.equal(health.service, '2d-game-workbench-runtime');
+
+  const initialSettings = await jsonFetch(`${baseUrl}/v1/map-stitcher/settings`);
+  assert.equal(initialSettings.active, false);
+  assert.deepEqual(initialSettings.providers.map((provider) => provider.id), ['nano-banana', 'gpt-image-2']);
+  assert.equal(JSON.stringify(initialSettings).includes('apiKey'), false);
+
+  const settingsResponse = await fetch(`${baseUrl}/v1/map-stitcher/settings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'nano-banana',
+      active: true,
+      apiKey: 'runtime-test-secret',
+    }),
+  });
+  assert.equal(settingsResponse.status, 200);
+  const savedSettings = await settingsResponse.json();
+  assert.equal(savedSettings.active, true);
+  assert.equal(savedSettings.provider, 'nano-banana');
+  assert.equal(savedSettings.providers.find((provider) => provider.id === 'nano-banana').configured, true);
+  assert.equal(JSON.stringify(savedSettings).includes('runtime-test-secret'), false);
 
   const tile = await sharp({
     create: { width: 3, height: 3, channels: 4, background: { r: 220, g: 80, b: 30, alpha: 1 } },

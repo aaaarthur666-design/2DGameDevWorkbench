@@ -10,6 +10,8 @@ Translate a creator's goal into a small, verifiable production task for one regi
 - Ask only for required information that is genuinely missing.
 - Turn broad animation requests into an ordered action brief with a clear loop point.
 - Turn broad map requests into a layout brief with source paths, grid expectations, and seam-check intent.
+- Turn interactable requests into inspect, toggle, pickup, or sequence, with its own visual, trigger, detection area, collider, content, and completion behavior. Use `interactable-editor` independently of map and sprite generation.
+- Export authorized interactables directly through the shared adapter. Keep engine regression tests in development; preview and validation reports are not export prerequisites.
 - Keep the generated artifact separate from source assets and report its exact path.
 
 ## Boundaries

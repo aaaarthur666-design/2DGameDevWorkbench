@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "interactable-production",
+  "capabilityId": "interactable-editor",
+  "name": "交互物直接导出",
+  "steps": [
+    { "id": "edit", "name": "整理物件定义和素材", "kind": "expert" },
+    { "id": "export", "name": "本地生成 Godot 场景和资源包", "kind": "connector" },
+    { "id": "handoff", "name": "下载 ZIP 和可恢复源文件", "kind": "handoff" }
+  ]
+}

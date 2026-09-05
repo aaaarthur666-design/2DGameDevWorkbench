@@ -1,0 +1,48 @@
+{
+  "operation": "export-godot",
+  "project": {
+    "schemaVersion": 1,
+    "projectId": "interaction-examples",
+    "name": "四类独立交互物示例",
+    "assets": [],
+    "objects": [
+      {
+        "definitionId": "example-sign",
+        "displayName": "路牌",
+        "content": { "pages": ["前方是森林。", "再次按 E 关闭。"] },
+        "behavior": { "kind": "inspect" }
+      },
+      {
+        "definitionId": "example-switch",
+        "displayName": "开关",
+        "behavior": {
+          "kind": "toggle",
+          "states": [
+            { "name": "关闭", "appearance": { "tint": "#ff9966", "solidEnabled": true } },
+            { "name": "开启", "appearance": { "tint": "#77ffbb", "solidEnabled": false } }
+          ]
+        },
+        "cooldownSeconds": 0.3
+      },
+      {
+        "definitionId": "example-pickup",
+        "displayName": "收集点",
+        "visual": { "dot": true, "float": true },
+        "behavior": { "kind": "pickup" },
+        "completion": "hide"
+      },
+      {
+        "definitionId": "example-sequence",
+        "displayName": "分段机关",
+        "behavior": {
+          "kind": "sequence",
+          "entries": [
+            { "name": "启动", "pages": ["机关已启动。"], "appearance": { "tint": "#ffee88" } },
+            { "name": "完成", "pages": ["机关已完成。"], "appearance": { "tint": "#88bbff" } }
+          ],
+          "onEnd": "stop"
+        }
+      }
+    ]
+  }
+}
