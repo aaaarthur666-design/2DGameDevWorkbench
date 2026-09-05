@@ -30,6 +30,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local WorkBuddy client state
+/.workbuddy/
+
 # deployment and generated files
 .vercel
 next-env.d.ts
