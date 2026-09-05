@@ -1,6 +1,6 @@
 # Third-party source and license status
 
-This file records provenance and the license status of incorporated source.
+This current-maintenance file records provenance and the license status of incorporated or behaviorally referenced source. It does not grant rights to user-supplied assets or externally generated media.
 
 ## NativeFramesGeneration / SpritePipeline
 
@@ -16,7 +16,7 @@ The workbench's `sprite-pipeline` adapter communicates with this component throu
 
 - Upstream: <https://github.com/systemchester/FrameRonin.git>
 - Website behavior reference: <https://frameronin.com/>
-- No FrameRonin source is included in the tracked workbench files added by this repair. The map editor is a modular compatibility implementation built around the public Pixelwork v2 state shape and observed user-facing behavior.
+- No FrameRonin source is included in the tracked workbench. The map editor is a modular compatibility implementation built around the public Pixelwork v2 state shape and observed user-facing behavior.
 - Any local reference clone under ignored runtime directories is research material only and must not be packaged or published.
 
 ## copyWorms interaction reference
@@ -29,3 +29,9 @@ The workbench's `sprite-pipeline` adapter communicates with this component throu
 ## Package dependencies
 
 JavaScript and Python dependencies retain their own licenses and notices. Exact installed JavaScript versions are recorded in `package-lock.json`; exact SpritePipeline Python versions are recorded in `Tools/SpritePipeline/requirements.lock`.
+
+## External API services
+
+Optional map layer generation can call Google Gemini (`gemini-3.1-flash-image`) or OpenAI Images (`gpt-image-2`). Those services and their model outputs are not incorporated source dependencies; use is subject to the account owner's provider terms, configuration, usage limits, and content rights. No provider credential is distributed with this repository.
+
+SpritePipeline can use providers configured within that component. Its provider-specific behavior and terms are documented by the upstream component and service; the workbench does not redistribute provider credentials.

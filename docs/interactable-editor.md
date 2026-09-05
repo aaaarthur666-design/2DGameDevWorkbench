@@ -1,10 +1,19 @@
 # 独立交互物编辑器
 
+> 状态：当前维护。项目字段的编辑源是 `features/interactable-editor/contract.mjs`，同步后的机器契约位于 `workbench/manifest.json`。
+
 工作台能力为 `interactable-editor`，页面为 `/tools/interactable-editor`，运行时为 **Workbench Interaction Kit 1.0.0**，目标引擎为 Godot 4.6.x。实现基于 copyWorms 的范围感知、最近物件选择和一次性完成逻辑，整理为独立配置与运行时，不依赖原游戏的单例、人物、背包或关卡。
+
+| 使用方式 | 适合场景 | 数据去向 |
+| --- | --- | --- |
+| Web 编辑器 | 画面、范围、碰撞、文本、动画、声音和模拟等人工操作 | 草稿在浏览器；导出时建立 runtime 任务并下载源文件/ZIP |
+| MCP / CLI `export-godot` | Agent 已有结构化项目，需要可审计导出 | `work/tasks/` 与 `outputs/<task-id>/` |
+
+两种入口使用相同导出器，但浏览器草稿只有在执行导出后才成为 runtime 任务；它不会自动变成外部 Agent 发起的任务。交互物与地图可以分别导入 Godot；自动把交互物摆进某张地图场景不属于当前能力。
 
 ## 开始编辑
 
-运行 `npm run dev:interactable`，然后进入交互物编辑器。此命令启动网页与本地导出服务，不启动序列帧服务，也不需要 Python、图片生成 API 或 Godot。更新代码后，已运行的 Node Runtime Bridge 需要重启才能加载新适配器。
+运行 `npm run dev:interactable`，然后进入交互物编辑器。此命令启动网页与本地导出服务，不启动序列帧服务，也不需要 Python、图片生成 API 或 Godot。完整工作台也可使用 `npm run dev`。更新代码后，已运行的 Node Runtime Bridge 需要重启才能加载新适配器。
 
 1. 左侧新建“查看、切换、拾取、序列”物件，或复制已有物件。复制会生成新的定义 ID。
 2. 导入 PNG、JPEG、WebP 图片和 WAV、OGG、MP3 音效。可按自然文件名顺序导入多张动画帧，也可按单帧尺寸和帧数对规则精灵表从左上角依次切片。
@@ -105,7 +114,7 @@ npm run workbench -- status <task-id> --json
 
 MCP 使用 `workbench_list_capabilities`、`workbench_describe_capability`、`workbench_run_task`、`workbench_get_task`。用户已要求导出时可以直接 run；prepare 只用于希望单独检查输入的情形。
 
-输入外层字段为 `operation: "export-godot"`、`project`、可选的 `selectedDefinitionIds` 和 `targetProfile: "generic" | "copyworms"`（默认 generic）。省略选择表示导出全部；网页默认导出当前物件。项目至少包含 `projectId` 和 `objects`，物件至少包含 `definitionId`，其余字段有默认值。模板定义如下：
+输入外层字段为 `operation: "export-godot"`、`project`、可选的 `selectedDefinitionIds` 和 `targetProfile: "generic" | "copyworms"`（默认 generic）。省略选择表示导出全部；网页默认导出当前物件。项目至少包含 `projectId` 和 `objects`，物件至少包含 `definitionId`，其余字段有默认值。不要从本文手工复制一份 schema；模板分组用于理解，实际约束以 contract/manifest 为准：
 
 | 配置组 | 主要字段 |
 | --- | --- |
@@ -143,4 +152,6 @@ npm run build
 
 Godot 参数也可通过 `GODOT_46_BIN` 提供；无参数只运行 JavaScript 检查。引擎回归测试生成隔离项目，覆盖四类行为、重叠焦点、输入消费、碰撞 mask、自动进入、文本、取消、冷却、媒体、释放、实例隔离和状态恢复。HTTP 测试覆盖上传、直接导出和源包导回。这些开发检查均不会在用户导出时执行。
 
-修改 `contract.mjs` 后运行 `npm run schema:interactable`，将完整字段 schema 同步到 manifest；JavaScript 测试会检查两者一致。此脚本只更新交互物能力的 project 字段，保留其他能力配置。Windows 隔离环境偶尔无法读取系统根证书，离线引擎测试会单独报告该环境提示，仍严格检查脚本错误和测试退出状态。
+修改 `contract.mjs` 后运行 `npm run schema:interactable`，将完整字段 schema 同步到 manifest；JavaScript 测试会检查两者一致。此脚本只更新交互物能力的 project 字段，保留其他能力配置。同步结果必须与代码一起提交，并运行 doctor。Windows 隔离环境偶尔无法读取系统根证书，离线引擎测试会单独报告该环境提示，仍严格检查脚本错误和测试退出状态。
+
+完整验证矩阵见 [开发与验证指南](development.md)。早期设计取舍保留在 [实施计划历史快照](INTERACTABLE_EDITOR_PLAN.md)，不应据此覆盖当前契约。

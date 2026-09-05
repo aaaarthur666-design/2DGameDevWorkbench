@@ -1,6 +1,8 @@
 # 工作台界面与制作流程
 
-外层工作台围绕玩家与场景组织资产生产，保持已有序列帧、地图、交互物工具的内部编辑方式。界面保留深色科技风：深蓝黑背景、细网格、小圆角、紫色玩家路线、青色场景路线；中文操作名优先，技术参数集中到工具内部或高级工具页。
+外层工作台围绕玩家与场景组织资产生产，保持已有序列帧、地图、交互物工具的内部编辑方式。它是外部 Agent 的可视协作面：展示真实任务、进度和产物，并承载画布、图层、碰撞区等不适合纯对话操作的内容；页面不提供通用 Agent 对话框。
+
+界面采用深蓝黑、网格和明确的玩家/场景色彩语义，不再使用仿 macOS 的窗口灯或系统标题栏装饰。中文操作名优先，协议参数集中到工具内部或高级页。
 
 ## 入口与流程
 
@@ -10,10 +12,11 @@
 | `/tools/sprite-generator` | 玩家直接进入原有序列帧工作区；选角色与动作 → 生成序列帧 → 检查与导出 |
 | `/scene` | 提供地图与交互物两个平行入口，用户可以任意选择先后 |
 | `/tools/map-stitcher` | 原有地图编辑器，外层增加草稿恢复和流程位置 |
+| `/tools/map-stitcher-legacy` | 旧地图页面的兼容入口，仅用于回归或迁移，不作为默认制作路线 |
 | `/tools/interactable-editor` | 原有交互物编辑器，支持按项目与对象定位恢复 |
-| `/advanced` | 服务连接、执行记录、输入快照和真实产物路径 |
+| `/advanced` | 服务连接、执行记录、输入快照和真实产物路径；不承担 Agent 对话 |
 
-导航、流程条、制作状态栏常驻。工具内的视图、图层、生成、预览、导入和导出继续沿用现有操作。地图和交互物分别导出后在 Godot 组合；跨工具自动关联与统一场景打包属于后续能力，本次没有实现或展示可用按钮。
+导航、流程条、制作状态栏常驻。工具内的视图、图层、生成、预览、导入和导出继续沿用现有操作。地图和交互物分别导出后在 Godot 组合；跨工具自动关联与统一场景打包目前尚未实现，也不会展示虚假的可用按钮。
 
 ## 新手引导
 
@@ -34,7 +37,7 @@
 
 `prepared` 和 `awaiting_configuration` 明确显示尚未执行或等待配置。序列帧 `created` 表示作业保存、`review_required` 表示等待检查、`approved` 表示可导出，只有 `exported` 才表示完成。未知服务状态显示需要处理。服务断连时保留上次读取的状态，并提示连接中断；不会补造进度百分比。
 
-后台记录与原生作业每 6 秒刷新，刷新只查询已有作业。测试 fixture 与诊断作业不进入原生资产列表。
+后台记录与原生作业每 6 秒刷新，刷新只查询已有作业，不重新发起生成。测试 fixture 与诊断作业不进入原生资产列表。
 
 ## 保存与恢复
 
@@ -61,10 +64,26 @@
 - `app/api/workbench/sprite-pipeline/jobs/route.ts`：原生作业摘要白名单，不向浏览器暴露连接器令牌。
 - `Tools/SpritePipeline/sprite_pipeline/ui.py`：`workbench_job` 恢复入口与选中作业通知。已运行的 Python UI 需重新启动以加载源代码变化。
 
-浏览器 Agent 桥注册在公共 Provider，MCP / CLI 继续使用原有运行时。工具算法保持在原工具、适配器或连接器中。
+公共 Provider 在浏览器宿主支持 `document.modelContext` 时注册 `list_workbench_capabilities` 与 `start_workbench_task`。地图页另外注册七个作用于当前可见编辑器的工具：
+
+- `map_stitcher_read_summary`
+- `map_stitcher_set_view`
+- `map_stitcher_import_images`
+- `map_stitcher_generate_layer`
+- `map_stitcher_create_regions`
+- `map_stitcher_export`
+- `map_stitcher_generation_queue`
+
+这些 Browser WebMCP 工具复用页面的选择、锁定、版本检查和忙碌状态。它们不替代仓库级 STDIO MCP；MCP / CLI 继续使用共享运行时，工具算法保持在原工具、适配器或服务端连接器中。
+
+## 本地与托管边界
+
+Web 的同源 API 通过 `WORKBENCH_RUNTIME_URL` 访问默认位于 `127.0.0.1:8790` 的 runtime bridge。托管页面无法自然读取开发者电脑上的回环服务、任务目录或另一 origin 的 IndexedDB。远程使用需要单独部署经过认证和访问控制的 runtime；只发布界面不会让本地能力自动上线。
 
 ## 验证
 
 常规验证：`npm run lint`、`npm run typecheck`、`npm run build`。
 
 外壳回归：`npm run test:workbench-shell`，覆盖 Manifest 路线、状态真实性、执行尝试去重、本机恢复链接优先、保存失败及繁忙操作的离开保护。既有地图、交互物与 MCP 检查保持原命令。
+
+完整测试矩阵见 [开发与验证指南](development.md#验证矩阵)，整体分层见 [系统架构](architecture.md)。

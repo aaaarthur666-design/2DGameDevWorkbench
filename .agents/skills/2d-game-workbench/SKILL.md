@@ -5,7 +5,7 @@ description: Drive this repository's reusable 2D game production capabilities wh
 
 # 2D Game Workbench
 
-You are the main Agent running in an external client. Use the repository capability registry and bridge so your conversation drives the same task contract shown by the visual workbench. The web page is a control and monitoring surface, not another Agent to delegate reasoning to.
+You are the main Agent running in an external client. The user's request controls scope and authorization. Use the repository registry and bridge so conversation-driven work follows the same task contract shown by the visual workbench. The web app provides task visibility and direct editing; it is not another Agent.
 
 ## Choose the bridge
 
@@ -14,12 +14,12 @@ You are the main Agent running in an external client. Use the repository capabil
 
 ## Workflow with MCP
 
-1. Call `workbench_list_capabilities`. Do not infer an unregistered capability.
+1. Call `workbench_list_capabilities`. Do not infer an unregistered capability or operation.
 2. Call `workbench_describe_capability` and shape the request to its declared input schema.
 3. Keep user source files in place. Pass repository-relative paths when possible and never overwrite source assets.
 4. Call `workbench_prepare_task` when an adapter operation could call an unapproved external service, incur cost, or the user only requested a plan.
 5. Call `workbench_run_task` only when execution is authorized.
-6. Read the returned task record with `workbench_get_task` and report the exact output paths.
+6. Read or refresh the returned task with `workbench_get_task`. Report its exact ID, status, error or required configuration, and existing output paths.
 
 ## CLI fallback
 
@@ -28,25 +28,31 @@ You are the main Agent running in an external client. Use the repository capabil
 3. Keep user source files in place. Pass repository-relative paths when possible and never overwrite source assets.
 4. Run `npm run workbench -- prepare <capability-id> --input <json-file>` first when an adapter operation could call an unapproved external service, incur cost, or the user only requested a plan.
 5. When execution is authorized, run `npm run workbench -- run <capability-id> --input <json-file>`; local-only operations do not require an external URL.
-6. Read the returned task record. Use `npm run workbench -- status <task-id> --json` for follow-up and report the exact output paths.
+6. Use `npm run workbench -- status <task-id> --json` for follow-up. Report its exact ID, status, error or required configuration, and existing output paths.
 
 ## Guardrails
 
 - Treat `workbench/manifest.json` as the source of truth shared with the web interface.
-- Do not claim that text entered in the web console was processed by an LLM; it is a direct manual task submission path.
+- Do not imply that the web app contains a general Agent chat. Browser page tools, when the host exposes them, are controls for the visible editor and do not replace repository MCP.
 - Never invent a successful API response or claim an asset was generated when a task is only prepared or awaiting configuration.
 - Read optional service URLs and tokens from environment variables named in the manifest. Never write secrets to the repository, task record, command output, or chat.
 - If required input is missing, ask only for those fields. If an operation returns `awaiting_configuration`, preserve the task and explain the exact environment variable; do not treat other local adapter operations as unavailable.
 - Keep task records under `work/` and generated or downloaded artifacts under `outputs/`; both are local runtime data and should remain uncommitted.
+- Poll an asynchronous task with `get` or `status`; do not call `run` again merely to query progress.
 - A task is complete only when its task record says `completed` and every reported output path exists.
 
 ## Capability selection
 
-- Use `sprite-generator` for real SpritePipeline `create`, `create-and-generate`, `generate-existing`, `get`, and `export` operations. Use preset IDs declared by the pipeline; do not infer IDs from free text.
-- Use `map-stitcher` `compose` for deterministic local tile placement, seam checks, Pixelwork state, regions, and engine packages. Use `generate-layer` only for the optional external image-generation step.
-- Use `interactable-editor` `export-godot` for inspect, toggle, pickup, and sequence objects. The independent editor is `/tools/interactable-editor`; its contract and examples are in `docs/interactable-editor.md` and `examples/requests/interactable-export.json`.
-- Interactable export is local and requires no credentials, SpritePipeline, or Godot installation. An authorized export can run directly; do not insert mandatory preview, engine validation, or a validation-report step.
-- Supply `project` and optionally `selectedDefinitionIds`. Assets can be workspace paths or supported image/audio data URLs. The adapter returns a Godot ZIP, a portable source JSON, and metadata under that task's `outputs/` directory. Re-import the ZIP or source JSON to continue editing.
-- Choose `targetProfile: "copyworms"` when copyWorms compatibility is requested; omit it (or use `generic`) for the standalone kit. This adds actor/input/lock integration and optional `object.copyworms.objectId` event forwarding, without editing the game project or requiring engine validation. The exported INSTALL.md names the compatible runtime scene and reference commit; original quest progression remains controlled by the game's FSM.
-- A completed interactable task means files were exported; it does not mean the user's target game was tested. Engine regression tests belong to development, outside the export flow.
+- Use `sprite-generator` for SpritePipeline `create`, `create-and-generate`, `generate-existing`, `get`, and `export`. Use declared preset IDs; do not derive IDs from free text.
+- Use `map-stitcher` `compose` for deterministic local composition and exports. Use `generate-layer` only for the optional external image-generation step.
+- Use `interactable-editor` `export-godot` for inspect, toggle, pickup, and sequence objects. Export is local and does not require credentials, SpritePipeline, a Godot installation, or a mandatory validation step.
+- For copyWorms compatibility, use the declared `copyworms` target profile. Export success means files were created, not that the target game passed engine regression tests.
 - When a request spans capabilities, run separate tasks as authorized, then summarize their outputs together.
+
+## Read only what the task needs
+
+- Overall architecture and state boundaries: `docs/architecture.md`.
+- Sprite operations and asynchronous behavior: `docs/sprite-generator.md`.
+- Map composition, external generation, state, and export: `docs/map-stitcher.md`.
+- Interactable schema, assets, profiles, and Godot handoff: `docs/interactable-editor.md`.
+- Protocol and troubleshooting: `docs/connector-contract.md` and `docs/agent-clients.md`.

@@ -1,5 +1,7 @@
 # 地图拼接前端修复方案
 
+> 历史快照：本文保留修复前问题、当时行号和实施目标，不再作为当前产品规范。当前行为见 [地图编辑器](map-stitcher.md)，当前模块边界见 [地图拼接架构](MAP_STITCHER_ARCHITECTURE.md)。
+
 实施说明：以下问题表与行号保留为修复前的审查记录。三阶段实现、回归证据和剩余验证边界记录在 [修复验收](MAP_STITCHER_REPAIR_VERIFICATION.md)，当前操作说明见 [地图编辑器](map-stitcher.md)。
 
 本方案针对当前主入口 `/tools/map-stitcher`，以本轮读取的工作区代码为依据，对照 [FrameRonin 线上地图拼接工具](https://frameronin.com/) 的可观察功能。Unity 不在范围内。保留现有 Pixelwork 状态兼容、Godot 导出、图片精修和 Agent 接口。

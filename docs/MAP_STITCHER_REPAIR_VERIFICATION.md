@@ -1,5 +1,7 @@
 # 地图拼接前端修复验收
 
+> 历史快照：本文记录 2026-09-04 至 2026-09-05 的一次验收结果，命令数量与测试计数只代表当时提交。当前验证要求见 [开发指南](development.md)，当前行为见 [地图编辑器](map-stitcher.md)。
+
 实施日期：2026-09-04（America/New_York；验证跨至 2026-09-05 UTC）。范围为主入口 `/tools/map-stitcher`，按 [修复方案](MAP_STITCHER_FRONTEND_REPAIR_PLAN.md) 完成三个阶段。旧入口保留；Unity 不在范围内。当前使用方式见 [地图编辑器](map-stitcher.md)，代码职责见 [架构说明](MAP_STITCHER_ARCHITECTURE.md)。
 
 ## 已实施的行为

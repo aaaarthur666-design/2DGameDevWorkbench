@@ -1,6 +1,8 @@
 # 地图拼接架构
 
-当前主入口 `app/(workbench)/tools/map-stitcher/page.tsx` 组合模块化的 FrameRonin 编辑器。旧版路由保留为迁移回退；Unity 不在能力范围内。
+> 状态：当前维护。本文只描述地图子系统；Agent、MCP、Runtime 与 Web 的总体关系见 [系统架构](architecture.md)。
+
+当前主入口 `app/(workbench)/tools/map-stitcher/page.tsx` 组合模块化的 FrameRonin 编辑器。旧版路由保留为迁移回退；Unity 不在能力范围内。能力入口、输入和输出以 `workbench/manifest.json` 为准，本文中的内部模块名用于维护定位。
 
 ## 模块边界
 
@@ -55,4 +57,4 @@ PNG 导出预览与 Godot 默认可见图层共享就绪判定。图片拼接、
 
 模块能力只登记在 `workbench/manifest.json`。仓库 MCP、CLI 与 Web 通过共享 Runtime / adapter 保持相同连接器契约；页面七个 WebMCP 工具是对当前浏览器文档的操作入口，共用控制器，不另建编辑模型。服务端密钥不进入客户端、任务记录、日志或编辑状态。
 
-测试和使用方式见 [用户文档](map-stitcher.md) 与 [修复验收](MAP_STITCHER_REPAIR_VERIFICATION.md)。
+测试和使用方式见 [用户文档](map-stitcher.md) 与 [开发指南](development.md)。[修复验收](MAP_STITCHER_REPAIR_VERIFICATION.md) 是历史快照，只用于追溯该轮修复。

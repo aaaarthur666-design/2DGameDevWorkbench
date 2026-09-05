@@ -1,17 +1,25 @@
 # 地图拼接编辑器
 
-主入口为 `/tools/map-stitcher`，使用 FrameRonin / Pixelwork v2 数据模型。旧版保留在 `/tools/map-stitcher-legacy`。Unity 功能不在本工具范围内。
+> 状态：当前维护。机器契约以 `workbench/manifest.json` 中的 `map-stitcher` 为准。
+
+主入口为 `/tools/map-stitcher`，使用 FrameRonin / Pixelwork v2 数据模型。旧版保留在 `/tools/map-stitcher-legacy` 供回归和迁移。Unity 功能不在本工具范围内。
+
+| 需求 | 使用路径 | 外部 API |
+| --- | --- | --- |
+| 在可视画布中布图、画区域、修图和导出 | Web 地图编辑器 | 仅主动启用整体层生成时需要 |
+| 确定性拼接已有图片并生成状态/引擎包 | Agent/CLI `compose` | 不需要 |
+| 填充透明模板的整体图层 | Agent/Web `generate-layer` | 需要已配置 Gemini 或 OpenAI Images |
 
 ## 开始编辑
 
-运行 `npm run dev:interactable` 可以启动网页和 Runtime Bridge，且不启动序列帧服务；完整工作台使用 `npm run dev`。访问 `http://localhost:3000/tools/map-stitcher`。
+完整工作台运行 `npm run dev`。只开发地图/交互物而不启动序列帧服务时，可运行名称沿用现状的 `npm run dev:interactable`；两者都会启动网页和 Runtime Bridge。访问 `http://localhost:3000/tools/map-stitcher`。
 
 1. “新建 / 导入”将第一张图片作为中心地图，按顺序填入首圈卡片。PNG、JPEG、JFIF、WebP 单张上限 30 MB。新建前先保存当前地图。
 2. 单击地图块标签选择卡片。“地图块”页签的上传替换当前图片；多张图片继续填入同视图的空卡片。拖入画布时会提示目标卡片和视图。
 3. 使用 4 / 8 / 12 分扩展卡片，设置横纵重叠比例，从所选卡片继续向外扩展。参数只影响之后建立的卡片。
 4. 在项目栏保存 Pixelwork 状态，或从导出窗口选择资源格式。
 
-图片保存在当前页面内存中。只有激活图片 API 并发起整体层生成时，重叠模板与提示词才通过 Runtime Bridge 发送给已选服务。
+编辑中的解码图片与 Blob URL 保存在页面内存中，原始图片字节会随工作台草稿写入当前 origin 的 IndexedDB。只有激活图片 API 并发起整体层生成时，重叠模板与提示词才通过 Runtime Bridge 发送给已选服务。草稿不是仓库任务，也不会跨浏览器自动同步。
 
 ## 图片视图与分层素材
 
@@ -92,12 +100,12 @@ SceneMaker 的 ground 映射到 surface，整体图由旧视觉层合成，矩�
 
 生成设置只保留已有连接器实际支持的参数：服务选择、密钥、是否激活，以及唯一整体层提示词。Host 和 Model 由 Manifest 定义。密钥仅保存在 Runtime Bridge 进程内存或服务端环境变量中，页面只接收“已配置”状态，状态包和日志不包含密钥。
 
-仓库 MCP / CLI 的 `map-stitcher` 能力仍通过 `workbench/manifest.json` 和共享 Runtime 执行。`compose` 本地拼接，`generate-layer` 仅支持整体层外部生成；生产产物写入 `outputs/<task-id>/`。具体输入见 [连接器契约](connector-contract.md)。
+仓库 MCP / CLI 的 `map-stitcher` 能力通过 `workbench/manifest.json` 和共享 Runtime 执行。`compose` 本地拼接，`generate-layer` 仅支持整体层外部生成；生产产物写入 `outputs/<task-id>/`。具体输入见 [连接器契约](connector-contract.md)。
 
-页面 WebMCP 另提供七个操作入口：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。页面内本地编辑不产生仓库级生产任务 ID。
+页面 WebMCP 另提供七个操作入口：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入与 MCP/CLI 相同的 runtime task ledger。
 
 ## 验证
 
-运行 `npm run test:map-stitcher`、`npm run typecheck`、`npm run lint`、`npm run build`。修改 Manifest 后运行 doctor；修改 Agent 桥接后运行 MCP 回归。
+运行 `npm run test:map-stitcher`、`npm run typecheck`、`npm run lint`、`npm run build`。修改 Manifest 后运行 doctor；修改 Agent 桥接后运行 MCP 回归。完整矩阵见 [开发与验证指南](development.md)。
 
-`node tests/map-stitcher/fixtures.mjs` 生成纯几何测试素材和兼容状态，写入不提交的 `work/map-ui-repair/fixtures/`。实际浏览器导出后的回读检查见 `tests/map-stitcher/verify-ui-exports.mjs`，验收记录见 [前端修复验证](MAP_STITCHER_REPAIR_VERIFICATION.md)。
+`node tests/map-stitcher/fixtures.mjs` 生成纯几何测试素材和兼容状态，写入不提交的 `work/map-ui-repair/fixtures/`。实际浏览器导出后的回读检查见 `tests/map-stitcher/verify-ui-exports.mjs`。历史验收上下文保留在 [前端修复验证快照](MAP_STITCHER_REPAIR_VERIFICATION.md)，它不替代当前测试与本文契约。

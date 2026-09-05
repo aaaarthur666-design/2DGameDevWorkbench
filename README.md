@@ -1,18 +1,18 @@
 # 2D Game Dev Workbench
 
-面向 2D 游戏开发流程的可复用 AI 生产工作台，也是 2026 腾讯云黑客松总决赛赛题一「生产工作台」方向的参赛项目。
+面向 2D 游戏开发流程的可复用 Agent 生产工作台，也是 2026 腾讯云黑客松总决赛赛题一「生产工作台」方向的参赛项目。
 
-项目把地图编辑器、序列帧能力、本地适配器、可选外部 API 和固定流程收进同一个工作台。创作者从开始页的「玩家」「场景」进入制作，通过常驻状态栏恢复具体资产；WorkBuddy、Codex 等外部 Agent 客户端也可以把本仓库作为项目，通过 MCP 驱动同一套工具链。
+项目把地图编辑器、序列帧能力、独立交互物编辑、本地适配器、可选外部 API 和固定流程收进同一个工作台。创作者从开始页的「玩家」「场景」进入制作，通过常驻状态栏恢复具体资产；WorkBuddy、Codex 等外部 Agent 客户端则把本仓库作为项目，通过 MCP 驱动同一套工具链。网页不内置主 Agent 或通用对话框。
 
 ## 核心目标
 
 - **两条直观制作路线**：玩家直达序列帧工具，场景连接地图拼接与交互物编辑；深色科技风外壳统一导航、流程位置和制作状态。
 - **外部主 Agent**：主 Agent 运行在打开本项目的 WorkBuddy、Codex 等客户端中，不由网页伪装或替代。
-- **两种协作界面**：外部 Agent 负责编排和执行；网页工作区负责监控、审查与精细人工操作。
+- **明确的人机分工**：外部 Agent 负责编排和执行；网页工作区负责监控、审查与精细人工操作。
 - **按资产继续制作**：状态栏合并本机草稿、序列帧作业和共享执行记录；首次进入提供可跳过、可重看的三步引导。
 - **可插拔能力层**：工具可以是本地流程、项目 Skill、命令行适配器或外接 API。
 - **可复用于其他游戏**：项目约定、能力说明和接入接口都随仓库交付，不依赖原作者现场操作。
-- **明确的产物边界**：Agent 任务写入项目目录；浏览器编辑器导出到用户下载目录，不伪造落盘状态。
+- **明确的产物边界**：Agent 任务写入项目目录；浏览器草稿与下载单独标识，不伪装成已执行的后台任务。
 
 ## 首批工具
 
@@ -47,6 +47,8 @@ Web 可视化控制台 ── 共享任务 API ─┘
                      统一任务状态与项目产物目录
 ```
 
+完整的分层、状态机、服务拓扑和安全边界见 [系统架构](docs/architecture.md)。
+
 ### 台面层
 
 开始页提供「玩家」「场景」两个入口，工具内部的制作方式保留。全局状态栏以动作、地图、交互物为单位显示可继续的工作；执行输入、服务状态和产物路径放在 `/advanced`。地图和交互物草稿保存在当前浏览器的 IndexedDB，序列帧作业保存在本地服务中。网页仍由共享任务 API 读取 `work/tasks/`，外部主 Agent 的 MCP / CLI 工作流保持一致。详见 [工作台界面与制作流程](docs/workbench-interface.md)。
@@ -65,7 +67,7 @@ Web 可视化控制台 ── 共享任务 API ─┘
 
 仓库已经提供面向外部 Agent 客户端的三层入口：
 
-- 标准 STDIO MCP Server：向支持 MCP 的客户端提供 5 个类型化工具与能力清单资源。
+- 标准 STDIO MCP Server：向支持 MCP 的客户端提供 5 个类型化工具和只读 Manifest 资源。
 - 根目录 `AGENTS.md` 与 `.agents/skills/`：让 Codex 等客户端理解项目规则与生产流程。
 - 统一 CLI 后备入口：供不支持 MCP 的客户端列出能力、检查输入、发起任务、查询状态和定位产物。
 - 机器可读模块清单：保证网页与 Agent 使用同一来源，避免行为漂移。
@@ -74,15 +76,14 @@ Web 可视化控制台 ── 共享任务 API ─┘
 
 ```text
 app/                         开始页、工具路由与连接器网关
-components/workbench/        公共导航、首页与 AI 预览组件
+components/workbench/        公共导航、生产入口、状态与任务可视化组件
 components/map-stitcher/      地图拼接编辑器与隔离样式
 components/sprite-generator/  序列帧管线连接与嵌入工作区
 components/interactable-editor/ 独立交互物编辑与预览
 features/map-stitcher/        地图类型、图片处理与导出逻辑
 features/interactable-editor/  交互物契约、模拟器与 Godot 运行时模板
 Tools/SpritePipeline/          本地生成、检查、修补与导出管线
-lib/workbench/                Manifest 驱动的前端模块映射
-lib/workbench/runtime.mjs    MCP 与 CLI 共享运行时
+lib/workbench/                Manifest 驱动的前端映射、共享运行时与适配器
 workbench/manifest.json       网页与 Agent 的统一能力清单
 workbench/experts/            专家角色约定
 workbench/workflows/          预置生产流程
@@ -92,14 +93,14 @@ scripts/workbench-mcp.mjs     外部 Agent 客户端 STDIO MCP Server
 .codex/config.toml            Codex 项目级 MCP 配置
 .agents/skills/               项目级 Agent Skill
 examples/requests/            可直接验证的请求样例
-docs/connector-contract.md    外接 API 协议
+docs/                         架构、接入、开发与各能力说明
 work/                         本地任务记录（不提交）
 outputs/                      本地产物目录（不提交）
 ```
 
 ## 本地运行
 
-环境要求：Node.js 22.13 或更高版本；完整序列帧工作区还需要 Python 3.11 或更高版本。
+环境要求：Node.js 22.13 或更高版本；完整序列帧工作区需要 Python 3.11 或更高版本（CI 使用 3.12）。
 
 ```bash
 npm install
@@ -130,7 +131,10 @@ npm run sprite-pipeline:setup
 ```bash
 npm run build
 npm run lint
+npm run typecheck
 ```
+
+拆分启动、环境变量和按变更范围选择测试的完整说明见 [开发与验证指南](docs/development.md)。
 
 ## 通过 Agent 使用
 
@@ -152,7 +156,7 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 任务记录保存在 `work/tasks/`。本地适配器的标准化结果保存在 `outputs/<task-id>/result.json`，地图拼接及引擎包也写入同一个任务目录。全局制作记录和高级工具读取这些真实记录；本机编辑草稿以独立来源合并展示，不伪装成已经执行的后台任务。
 
-完整的客户端接入方式和角色边界见 [`docs/agent-clients.md`](docs/agent-clients.md)。Codex 的项目指令、仓库 Skill 和 MCP 分层方式参见 [OpenAI 官方自定义文档](https://learn.chatgpt.com/zh-Hans/docs/customization/overview) 与 [MCP 文档](https://learn.chatgpt.com/zh-Hans/docs/extend/mcp)。
+完整的客户端接入方式和角色边界见 [Agent 客户端接入](docs/agent-clients.md)。
 
 ## 连接现有工具
 
@@ -174,11 +178,13 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 2. API 密钥只通过本地运行时内存或环境变量提供，不写入仓库、浏览器存储或任务记录。
 3. 外部 API 不可用时，界面必须给出明确错误和恢复路径。
 4. 新工具应通过注册表加入，不修改工作台核心导航逻辑。
-5. Agent 与网页端产生的任务使用相同结构，并把结果保存在项目内可定位的位置。
+5. Agent 与网页端提交到 Runtime 的任务使用相同结构，并把结果保存在项目内可定位的位置。
 
 ## 当前状态
 
 统一开始页、新手引导、资产制作状态栏、公共导航、本地适配器、FrameRonin 模式地图编辑器和 SpritePipeline 工作台已经整合。地图 `compose` 无需外部服务；`generate-layer` 直接适配 Google Generate Content 与 OpenAI Images Edits 协议，缺少所选模型密钥时会明确停在 `awaiting_configuration`。序列帧适配器默认连接本机工作台的真实 REST API，不再发送通用连接器 envelope。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)，第三方来源与许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+完整文档索引、权威顺序和历史资料入口见 [文档中心](docs/README.md)。贡献前请阅读 [贡献指南](CONTRIBUTING.md)；安全边界和私下报告方式见 [安全策略](SECURITY.md)。
 
 ## License
 

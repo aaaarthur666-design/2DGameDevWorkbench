@@ -1,5 +1,7 @@
 # 独立交互物编辑器实施方案
 
+> 历史快照：本文记录 2026-09-04 的实施方案，已完成，不再作为当前字段、接口或验收规范。当前行为见 [交互物编辑器](interactable-editor.md)，整体架构见 [系统架构](architecture.md)。
+
 日期：2026-09-04。状态：已实现。实际用法、字段与开发检查见 [交互物编辑器说明](interactable-editor.md)。
 
 新增工作台能力 `interactable-editor`，显示名称为“交互物编辑器”，Godot 运行时包名为 **Workbench Interaction Kit**，首个目标为 Godot 4.6.x。
