@@ -40,7 +40,67 @@ assert.equal(
   ).status,
   'blocked',
 );
+// A pooled HTTP connection can fail with a reset/socket error when the listener closes.
+// Make these platform-dependent failures deterministic while exercising a real TCP port.
+async function withFetchFailure(code, run) {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError('fetch failed', {
+      cause:
+        typeof code === 'string'
+          ? Object.assign(new Error('socket closed'), { code })
+          : code,
+    });
+  };
+  try {
+    await run();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+for (const code of ['ECONNRESET', 'UND_ERR_SOCKET']) {
+  await withFetchFailure(code, async () => {
+    assert.equal(
+      (await probe()).state,
+      'unreachable',
+      'a listening service must not be restarted',
+    );
+    assert.equal(
+      (
+        await startManagedFrontendProcess(
+          root,
+          'occupied-reset',
+          { args: ['missing.js'] },
+          probe,
+        )
+      ).status,
+      'blocked',
+    );
+  });
+}
+await withFetchFailure(
+  {
+    code: 'ECONNREFUSED',
+    errors: [{ code: 'ECONNREFUSED' }, { code: 'ETIMEDOUT' }],
+  },
+  async () => {
+    assert.equal(
+      (await probe()).state,
+      'unreachable',
+      'one refused address does not prove all addresses are offline',
+    );
+  },
+);
 await new Promise((resolve) => server.close(resolve));
+for (const code of ['ECONNRESET', 'UND_ERR_SOCKET']) {
+  await withFetchFailure(code, async () => {
+    assert.equal(
+      (await probe()).state,
+      'offline',
+      'confirm the closed listener independently of pooled HTTP errors',
+    );
+  });
+}
 assert.equal((await probe()).state, 'offline');
 
 const fixture = path.join(root, 'fixture.mjs');
@@ -122,5 +182,5 @@ try {
   }
 }
 console.log(
-  'Frontend service: identity, offline, conflict, cold start, concurrent reuse and stale lock checks passed.',
+  'Frontend service: identity, pooled socket failures, occupied-port protection, offline, cold start, concurrent reuse and stale lock checks passed.',
 );
