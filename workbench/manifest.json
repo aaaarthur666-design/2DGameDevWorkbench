@@ -6,7 +6,7 @@
     "outputDirectory": "outputs"
   },
   "productionLines": [
-    { "id": "player", "name": "玩家", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/tools/sprite-generator", "summary": ["角色图片", "动作序列帧", "导出"] },
+    { "id": "player", "name": "序列帧", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/tools/sprite-generator", "summary": ["角色图片", "动作序列帧", "导出"] },
     { "id": "scene", "name": "场景", "eyebrow": "SCENE / INTERACTION", "description": "搭建地图，制作可以互动的物件。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作"] }
   ],
   "agentAssets": {

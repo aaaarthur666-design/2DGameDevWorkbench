@@ -16,7 +16,7 @@ export function WorkbenchShell() {
     <main className="wb-page wb-home">
       <div className="wb-eyebrow">ASSET PRODUCTION</div>
       <h1>开始制作游戏资产</h1>
-      <p className="wb-intro">选择玩家或场景，进入对应的制作流程。</p>
+      <p className="wb-intro">选择序列帧或场景，进入对应的制作流程。</p>
       <div className="wb-production-lines">
         {lines.map((line) => (
           <a
