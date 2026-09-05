@@ -24,8 +24,12 @@ let baseUrl = '';
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null;
-  requests.push({ method: request.method, url: request.url, headers: request.headers, body });
+  const rawBody = Buffer.concat(chunks);
+  const contentType = request.headers['content-type'] ?? '';
+  const body = rawBody.length && contentType.includes('application/json')
+    ? JSON.parse(rawBody.toString('utf8'))
+    : null;
+  requests.push({ method: request.method, url: request.url, headers: request.headers, body, rawBody });
   response.setHeader('content-type', 'application/json');
 
   if (request.method === 'POST' && request.url === '/v1/jobs') {
@@ -49,17 +53,14 @@ const server = http.createServer(async (request, response) => {
     response.end(generatedTile);
     return;
   }
-  if (request.method === 'POST' && request.url === '/map') {
+  if (request.method === 'POST' && request.url === '/gemini') {
     response.end(JSON.stringify({
-      url: body.prompt === 'unsafe foreign URL'
-        ? 'http://127.0.0.1:1/private.png'
-        : `${baseUrl}/generated.png`,
+      candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: generatedTile.toString('base64') } }] } }],
     }));
     return;
   }
-  if (request.method === 'GET' && request.url === '/generated.png') {
-    response.setHeader('content-type', 'image/png');
-    response.end(generatedTile);
+  if (request.method === 'POST' && request.url === '/openai') {
+    response.end(JSON.stringify({ data: [{ b64_json: generatedTile.toString('base64') }] }));
     return;
   }
   response.statusCode = 404;
@@ -71,9 +72,15 @@ const address = server.address();
 assert(address && typeof address === 'object');
 baseUrl = `http://127.0.0.1:${address.port}`;
 const previousSpriteUrl = process.env.SPRITE_PIPELINE_API_URL;
-const previousMapUrl = process.env.MAP_STITCHER_API_URL;
+const previousGeminiUrl = process.env.MAP_STITCHER_GEMINI_API_URL;
+const previousOpenAIUrl = process.env.MAP_STITCHER_OPENAI_API_URL;
+const previousGeminiKey = process.env.GEMINI_API_KEY;
+const previousOpenAIKey = process.env.OPENAI_API_KEY;
 process.env.SPRITE_PIPELINE_API_URL = baseUrl;
-process.env.MAP_STITCHER_API_URL = `${baseUrl}/map`;
+process.env.MAP_STITCHER_GEMINI_API_URL = `${baseUrl}/gemini`;
+process.env.MAP_STITCHER_OPENAI_API_URL = `${baseUrl}/openai`;
+process.env.GEMINI_API_KEY = 'test-gemini-key';
+process.env.OPENAI_API_KEY = 'test-openai-key';
 
 try {
   const manifest = await loadManifest();
@@ -124,6 +131,12 @@ try {
 
   const blue = await solidPng(0, 80, 220);
   const green = await solidPng(0, 190, 90);
+  assert(validateInput(map, {
+    operation: 'compose',
+    images: [dataUrl(blue)],
+    engineTargets: ['unity'],
+  }).length > 0);
+  assert.equal(map.outputs.includes('unityPackage'), false);
   const composeResult = await runConnector(manifest, map, {
     operation: 'compose',
     images: [dataUrl(blue), dataUrl(green)],
@@ -140,7 +153,7 @@ try {
         points: [{ x: 0, y: 0 }, { x: 2, y: 2 }],
       },
     ],
-    engineTargets: ['godot', 'unity'],
+    engineTargets: ['godot'],
   });
   assert.equal(composeResult.task.status, 'completed');
   for (const suffix of [
@@ -148,10 +161,10 @@ try {
     'seam-report.json',
     'pixelwork-state.zip',
     'godot-package.zip',
-    'unity-package.zip',
   ]) {
     assert(composeResult.task.outputs.some((output) => output.endsWith(suffix)), `missing ${suffix}`);
   }
+  assert.equal(composeResult.task.outputs.some((output) => /unity/i.test(output)), false);
   const stitchedPath = outputPath(composeResult.task.outputs, 'stitched-map.png');
   const metadata = await sharp(stitchedPath).metadata();
   assert.equal(metadata.width, 8);
@@ -165,6 +178,7 @@ try {
 
   const generationResult = await runConnector(manifest, map, {
     operation: 'generate-layer',
+    provider: 'nano-banana',
     image: dataUrl(blue),
     prompt: 'extend the test tile',
     tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
@@ -172,22 +186,51 @@ try {
     mask_mode: 'white',
   });
   assert.equal(generationResult.task.status, 'completed');
+  assert.equal(generationResult.task.adapter.model, 'gemini-3.1-flash-image');
   assert(generationResult.task.outputs.some((output) => output.endsWith('generated-layer.png')));
-  const mapRequest = requests.find((item) => item.url === '/map');
-  assert.deepEqual(Object.keys(mapRequest.body).sort(), ['image', 'layer', 'mask_mode', 'prompt', 'tile']);
-  assert.equal(mapRequest.body.layer, 'overall');
-
-  await assert.rejects(
-    runConnector(manifest, map, {
-      operation: 'generate-layer',
-      image: dataUrl(blue),
-      prompt: 'unsafe foreign URL',
-      tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
-      layer: 'overall',
-      mask_mode: 'white',
-    }),
-    /image URL must use the connector origin/,
+  const generationMetadata = JSON.parse(
+    await readFile(outputPath(generationResult.task.outputs, 'result.json'), 'utf8'),
   );
+  assert.equal(generationMetadata.provider, 'nano-banana');
+  assert.equal(generationMetadata.model, 'gemini-3.1-flash-image');
+  assert.equal((await readFile(path.resolve(repositoryRoot, generationResult.taskPath), 'utf8')).includes('test-gemini-key'), false);
+  const geminiRequest = requests.find((item) => item.url === '/gemini');
+  assert.equal(geminiRequest.headers['x-goog-api-key'], 'test-gemini-key');
+  assert.equal(geminiRequest.body.contents[0].parts[0].text, 'extend the test tile');
+  assert.equal(geminiRequest.body.contents[0].parts[1].inline_data.mime_type, 'image/png');
+  assert.deepEqual(geminiRequest.body.generationConfig.responseModalities, ['IMAGE']);
+
+  const openAIResult = await runConnector(manifest, map, {
+    operation: 'generate-layer',
+    provider: 'gpt-image-2',
+    image: dataUrl(blue),
+    prompt: 'complete the transparent test tile',
+    tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
+    layer: 'overall',
+    mask_mode: 'white',
+  });
+  assert.equal(openAIResult.task.status, 'completed');
+  assert.equal((await readFile(path.resolve(repositoryRoot, openAIResult.taskPath), 'utf8')).includes('test-openai-key'), false);
+  const openAIRequest = requests.find((item) => item.url === '/openai');
+  assert.equal(openAIRequest.headers.authorization, 'Bearer test-openai-key');
+  assert.match(openAIRequest.headers['content-type'], /^multipart\/form-data; boundary=/);
+  const multipart = openAIRequest.rawBody.toString('latin1');
+  assert.match(multipart, /name="model"[\s\S]*gpt-image-2/);
+  assert.match(multipart, /name="prompt"[\s\S]*complete the transparent test tile/);
+  assert.match(multipart, /name="image\[\]"; filename="map-input.png"/);
+
+  delete process.env.OPENAI_API_KEY;
+  const awaitingKey = await runConnector(manifest, map, {
+    operation: 'generate-layer',
+    provider: 'gpt-image-2',
+    image: dataUrl(blue),
+    prompt: 'do not call without a key',
+    tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
+    layer: 'overall',
+    mask_mode: 'white',
+  });
+  assert.equal(awaitingKey.task.status, 'awaiting_configuration');
+  assert.equal(awaitingKey.requiredEnvironment, 'OPENAI_API_KEY');
 
   process.stdout.write(`${JSON.stringify({
     spriteAdapter: 'ok',
@@ -200,8 +243,10 @@ try {
 } finally {
   if (previousSpriteUrl === undefined) delete process.env.SPRITE_PIPELINE_API_URL;
   else process.env.SPRITE_PIPELINE_API_URL = previousSpriteUrl;
-  if (previousMapUrl === undefined) delete process.env.MAP_STITCHER_API_URL;
-  else process.env.MAP_STITCHER_API_URL = previousMapUrl;
+  restoreEnvironment('MAP_STITCHER_GEMINI_API_URL', previousGeminiUrl);
+  restoreEnvironment('MAP_STITCHER_OPENAI_API_URL', previousOpenAIUrl);
+  restoreEnvironment('GEMINI_API_KEY', previousGeminiKey);
+  restoreEnvironment('OPENAI_API_KEY', previousOpenAIKey);
   await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 }
 
@@ -239,4 +284,9 @@ function outputPath(outputs, suffix) {
   const relative = outputs.find((output) => output.endsWith(suffix));
   assert(relative, `missing ${suffix}`);
   return path.resolve(repositoryRoot, relative);
+}
+
+function restoreEnvironment(name, value) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }

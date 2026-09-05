@@ -29,6 +29,12 @@ if ([string]::IsNullOrWhiteSpace($env:SPRITE_PIPELINE_EXPORTS_DIR)) {
 
 $command = if ($Mode -eq 'api') { 'serve-api' } else { 'serve-ui' }
 & $pipelinePython $pipelineCli $command
-if ($LASTEXITCODE -ne 0) {
-    throw "Sprite pipeline $command exited with code $LASTEXITCODE"
+$pipelineExitCode = $LASTEXITCODE
+$normalCancellationExitCodes = @(-1, 130, -1073741510, 3221225786)
+if ($pipelineExitCode -in $normalCancellationExitCodes) {
+    Write-Verbose "Sprite pipeline $command was stopped by the user."
+    exit 0
+}
+if ($pipelineExitCode -ne 0) {
+    throw "Sprite pipeline $command exited with code $pipelineExitCode"
 }

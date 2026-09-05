@@ -97,7 +97,7 @@ const manualWork: Record<string, string[]> = {
   'map-stitcher': [
     '画布位置、重叠和羽化参数微调',
     '遮挡、碰撞、调节与顶部区域绘制',
-    '图层检查以及 Godot / Unity 最终交付确认',
+    '图层检查以及 Godot 最终交付确认',
   ],
 };
 

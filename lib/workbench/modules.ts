@@ -1,6 +1,6 @@
 import manifest from '@/workbench/manifest.json';
 
-export type WorkbenchModuleIcon = 'frames' | 'map';
+export type WorkbenchModuleIcon = 'frames' | 'map' | 'interactable';
 
 export type WorkbenchModule = {
   id: string;
@@ -26,7 +26,7 @@ export const workbenchModules: readonly WorkbenchModule[] =
     shortName: capability.shortName,
     description: capability.description,
     href: capability.ui.route,
-    icon: capability.ui.icon === 'map' ? 'map' : 'frames',
+    icon: capability.ui.icon === 'interactable' ? 'interactable' : capability.ui.icon === 'map' ? 'map' : 'frames',
     accent: capability.ui.accent === 'cyan' ? 'cyan' : 'violet',
     capabilities: capability.ui.capabilities,
     status:

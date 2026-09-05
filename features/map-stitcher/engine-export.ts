@@ -97,12 +97,7 @@ export function buildGodotRegionRuntime() {
   return `class_name FrameRoninRegions\n\nextends RefCounted\n\nstatic func load_manifest(path: String = "res://regions.json") -> Dictionary:\n\tvar file := FileAccess.open(path, FileAccess.READ)\n\tif file == null:\n\t\tpush_error("Unable to open FrameRonin region manifest: " + path)\n\t\treturn {}\n\tvar parsed = JSON.parse_string(file.get_as_text())\n\treturn parsed if parsed is Dictionary else {}\n\nstatic func regions_for_layer(manifest: Dictionary, layer: String) -> Array:\n\treturn manifest.get("regions", []).filter(func(region): return region.get("layer", "") == layer)\n`;
 }
 
-export function buildUnityRegionRuntime() {
-  return `using System;\nusing UnityEngine;\n\n[Serializable] public class FrameRoninPoint { public float x; public float y; }\n[Serializable] public class FrameRoninRegion { public string id; public string tileKey; public string mapLayer; public string layer; public string mode; public FrameRoninPoint[] points; }\n[Serializable] public class FrameRoninCanvas { public float originX; public float originY; public float width; public float height; }\n[Serializable] public class FrameRoninRegionManifest { public string format; public int version; public FrameRoninCanvas canvas; public string coordinateSystem; public FrameRoninRegion[] regions; }\n\npublic static class FrameRoninRegions\n{\n    public static FrameRoninRegionManifest Parse(TextAsset json)\n    {\n        if (json == null) throw new ArgumentNullException(nameof(json));\n        return JsonUtility.FromJson<FrameRoninRegionManifest>(json.text);\n    }\n\n    public static Vector2 ToUnity(FrameRoninPoint point, float pixelsPerUnit = 1f)\n    {\n        return new Vector2(point.x / pixelsPerUnit, -point.y / pixelsPerUnit);\n    }\n}\n`;
-}
-
-export async function exportEnginePackage(
-  target: 'godot' | 'unity',
+export async function exportGodotPackage(
   tiles: FrameRoninTile[],
   shapes: RegionShape[],
   sourceWidth: number,
@@ -137,23 +132,18 @@ export async function exportEnginePackage(
   zip.file('map_export.json', JSON.stringify({
     format: 'frame-ronin-engine-package',
     version: 1,
-    target,
+    target: 'godot',
     generatedAt: new Date().toISOString(),
     layers: exportedLayers,
     source: { width: sourceWidth, height: sourceHeight },
     canvas: manifest.canvas,
   }, null, 2));
 
-  if (target === 'godot') {
-    zip.file('project.godot', '[application]\nconfig/name="FrameRonin Map"\nrun/main_scene="res://map_scene.tscn"\n\n[display]\nwindow/stretch/mode="canvas_items"\n\n[rendering]\ntextures/default_filters/use_nearest_mipmap_filter=false\ntextures/canvas_textures/default_texture_filter=0\n');
-    zip.file('map_scene.tscn', buildGodotScene(manifest, exportedLayers));
-    zip.file('frame_ronin_regions.gd', buildGodotRegionRuntime());
-  } else {
-    zip.file('FrameRoninRegions.cs', buildUnityRegionRuntime());
-    zip.file('README.md', unityReadme());
-  }
+  zip.file('project.godot', '[application]\nconfig/name="FrameRonin Map"\nrun/main_scene="res://map_scene.tscn"\n\n[display]\nwindow/stretch/mode="canvas_items"\n\n[rendering]\ntextures/default_filters/use_nearest_mipmap_filter=false\ntextures/canvas_textures/default_texture_filter=0\n');
+  zip.file('map_scene.tscn', buildGodotScene(manifest, exportedLayers));
+  zip.file('frame_ronin_regions.gd', buildGodotRegionRuntime());
   const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-  const fileName = `${safeFileName(projectName.replace(/\.[^.]+$/, ''))}_${target}.zip`;
+  const fileName = `${safeFileName(projectName.replace(/\.[^.]+$/, ''))}_godot.zip`;
   downloadBlob(blob, fileName);
   return { blob, fileName, manifest, layers: exportedLayers };
 }
@@ -171,8 +161,4 @@ function godotName(layer: string) {
 function clean(value: number) {
   const rounded = Math.round(value * 1000) / 1000;
   return Object.is(rounded, -0) ? 0 : rounded;
-}
-
-function unityReadme() {
-  return `# FrameRonin map export\n\n1. Copy the PNG files into your Unity project and set Filter Mode to Point.\n2. Copy \`regions.json\` into a Resources folder or load it as a TextAsset.\n3. Use \`FrameRoninRegions.Parse\` to read collision, occlusion, adjust, and top annotations.\n4. Pixel coordinates use a downward Y axis; \`FrameRoninRegions.ToUnity\` converts them to Unity coordinates.\n`;
 }

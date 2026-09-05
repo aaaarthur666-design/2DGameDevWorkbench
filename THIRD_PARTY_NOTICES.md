@@ -19,6 +19,13 @@ The workbench's `sprite-pipeline` adapter communicates with this component throu
 - No FrameRonin source is included in the tracked workbench files added by this repair. The map editor is a modular compatibility implementation built around the public Pixelwork v2 state shape and observed user-facing behavior.
 - Any local reference clone under ignored runtime directories is research material only and must not be packaged or published.
 
+## copyWorms interaction reference
+
+- Upstream: <https://github.com/flxBurnOut/copyWorms>
+- Reference revision: `bb1581d12c9626e294e403a01db5f3cffb229cd8`.
+- Reference files: `LevelModule/Formal/InteractiveObject.gd`, the input and nearest-object selection in `LevelModule/Formal/Level_01.gd`, and `Tools/DropItem.gd`.
+- `features/interactable-editor/godot-templates/` implements generalized range, focus, completion, and pickup behavior informed by those files, with new configuration, state isolation, dialogue, and packaging code. It does not embed copyWorms assets, game scenes, player controllers, singletons, or a source checkout. Exports are self-contained and never download upstream code.
+
 ## Package dependencies
 
 JavaScript and Python dependencies retain their own licenses and notices. Exact installed JavaScript versions are recorded in `package-lock.json`; exact SpritePipeline Python versions are recorded in `Tools/SpritePipeline/requirements.lock`.

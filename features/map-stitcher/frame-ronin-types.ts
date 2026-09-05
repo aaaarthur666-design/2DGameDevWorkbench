@@ -39,7 +39,7 @@ export const REGION_LAYER_META: Record<RegionLayer, {
     color: '#ff6868',
     fill: 'rgba(255, 104, 104, 0.24)',
     order: 110,
-    description: '导出为 Godot / Unity 的碰撞多边形。',
+    description: '导出为 Godot 的碰撞多边形。',
   },
   adjust: {
     label: '调整层',
@@ -92,13 +92,6 @@ export interface SavedFrameRoninTile {
   hidden: boolean;
 }
 
-export interface LayerPromptMap {
-  surface: string;
-  black: string;
-  white: string;
-  object: string;
-}
-
 export type PixelworkLayerUploads = Record<
   Exclude<MapDisplayLayer, 'overall'>,
   Record<string, SavedImageReference>
@@ -139,18 +132,14 @@ export interface PixelworkMapStateV2 {
   drawShapes: RegionShape[];
   /** Workbench-only UI preferences; ignored safely by FrameRonin readers. */
   workbench?: {
+    overallLayerPrompt?: string;
     layerVisibility: Partial<Record<MapDisplayLayer | RegionLayer, boolean>>;
     layerLocks: Partial<Record<MapImageLayer | RegionLayer, boolean>>;
     regionVisibility: Partial<Record<RegionLayer, boolean>>;
   };
 }
 
-export const DEFAULT_LAYER_PROMPTS: LayerPromptMap = {
-  surface: '仅保留可行走地表，移除独立物体与角色前景，保持像素风和原始透视。',
-  black: '生成黑色背景版本，保持前景物体颜色与位置完全一致。',
-  white: '生成白色背景版本，保持前景物体颜色与位置完全一致。',
-  object: '根据黑白底参考恢复带透明通道的独立物体层。',
-};
+export const DEFAULT_OVERALL_PROMPT = `You are a professional background artist specializing in large-scale 2D maps. Using the uploaded image, which contains artwork only along its outer edges, fill only the transparent pixels, matching the original style seamlessly while improving clarity and incorporating the user's requirements. The completed area must use a pure flat orthographic plan view: the ground plane is exactly parallel to the image plane, with no camera tilt or viewing angle, zero perspective distortion, zero foreshortening, and uniform scale throughout. It must not use an angled overhead, isometric, axonometric, oblique, three-quarter, or 45-degree view. All buildings and structures must follow the same flat orthographic projection. Render in high resolution with clear textures, sharp contours, intricate detail, and uniform sharp focus across the entire image. Exclude people, text, and smoke, and transition naturally between different terrain types.`;
 
 export const DEFAULT_DISPLAY_VISIBILITY: Record<MapDisplayLayer, boolean> = {
   overall: true,

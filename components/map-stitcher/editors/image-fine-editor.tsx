@@ -200,11 +200,26 @@ export function ImageFineEditor({
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const update = () => setViewport({ width: wrap.clientWidth, height: wrap.clientHeight });
+    let animationFrame = 0;
+    const update = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const width = wrap.clientWidth;
+        const height = wrap.clientHeight;
+        setViewport((current) => (
+          current.width === width && current.height === height
+            ? current
+            : { width, height }
+        ));
+      });
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(wrap);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(animationFrame);
+    };
   }, []);
 
   useEffect(() => {

@@ -151,12 +151,12 @@ export function SpritePipelineWorkspace({
               </span>
               <div>
                 <h1 className="text-lg font-semibold text-white/90">
-                  启动本地序列帧管线
+                  本地序列帧管线未就绪
                 </h1>
                 <p className="mt-1.5 text-sm leading-6 text-white/46">
                   完整的生成、播放检查、逐帧修补和 Sprite Sheet
                   导出界面由本项目内置的 Python
-                  管线提供。首次使用先安装一次依赖，然后启动服务。
+                  管线提供。正常情况下它会随 Workbench 自动启动；首次使用只需安装一次依赖。
                 </p>
               </div>
             </div>
@@ -169,7 +169,7 @@ export function SpritePipelineWorkspace({
                 </code>
               </div>
               <div className="border-t border-white/7 pt-3">
-                <p className="mb-1 text-xs font-sans text-white/34">每次启动</p>
+                <p className="mb-1 text-xs font-sans text-white/34">仅单独调试管线时</p>
                 <code className="select-all text-cyan-200/90">
                   npm run sprite-pipeline
                 </code>

@@ -10,13 +10,12 @@ import { CENTER_KEY, EMPTY_FEATHER, type SavedImageReference } from './map-types
 import {
   DEFAULT_DISPLAY_VISIBILITY,
   DEFAULT_IMAGE_LOCKS,
-  DEFAULT_LAYER_PROMPTS,
+  DEFAULT_OVERALL_PROMPT,
   DEFAULT_REGION_LOCKS,
   DEFAULT_REGION_VISIBILITY,
   MAP_DISPLAY_LAYERS,
   REGION_LAYERS,
   type FrameRoninTile,
-  type LayerPromptMap,
   type MapDisplayLayer,
   type MapImageLayer,
   type PixelworkLayerUploads,
@@ -37,7 +36,7 @@ export interface FrameRoninEditorSnapshot {
   pan: { x: number; y: number };
   zoom: number;
   activeMapLayer: MapDisplayLayer;
-  layerPrompts: LayerPromptMap;
+  overallPrompt: string;
   hidePreviewBorders: boolean;
   hidePreviewCards: boolean;
   displayVisibility: Record<MapDisplayLayer, boolean>;
@@ -133,9 +132,9 @@ export async function createPixelworkStatePackage(snapshot: FrameRoninEditorSnap
     hidePreviewBorders: snapshot.hidePreviewBorders,
     hidePreviewCards: snapshot.hidePreviewCards,
     activeMapLayer: snapshot.activeMapLayer,
-    surfaceLayerPrompt: snapshot.layerPrompts.surface,
-    blackLayerPrompt: snapshot.layerPrompts.black,
-    whiteLayerPrompt: snapshot.layerPrompts.white,
+    surfaceLayerPrompt: snapshot.overallPrompt,
+    blackLayerPrompt: '',
+    whiteLayerPrompt: '',
     memoryProtectionEnabled: true,
     memoryProtectionLimitMb: 1024,
     godotExportScaleEnabled: false,
@@ -145,6 +144,7 @@ export async function createPixelworkStatePackage(snapshot: FrameRoninEditorSnap
     hiddenPreviewTiles: Object.fromEntries(snapshot.tiles.map((tile) => [tile.key, tile.hidden])),
     drawShapes: snapshot.shapes,
     workbench: {
+      overallLayerPrompt: snapshot.overallPrompt,
       layerVisibility: { ...snapshot.displayVisibility, ...snapshot.regionVisibility },
       layerLocks: { ...snapshot.imageLocks, ...snapshot.regionLocks },
       regionVisibility: snapshot.regionVisibility,
@@ -227,12 +227,11 @@ async function loadPixelworkManifest(manifest: Record<string, unknown>, zip: JSZ
     pan: readPoint(manifest.pan),
     zoom: clampNumber(manifest.zoom, 1, 0.05, 8),
     activeMapLayer: readDisplayLayer(manifest.activeMapLayer),
-    layerPrompts: {
-      ...DEFAULT_LAYER_PROMPTS,
-      surface: typeof manifest.surfaceLayerPrompt === 'string' ? manifest.surfaceLayerPrompt : DEFAULT_LAYER_PROMPTS.surface,
-      black: typeof manifest.blackLayerPrompt === 'string' ? manifest.blackLayerPrompt : DEFAULT_LAYER_PROMPTS.black,
-      white: typeof manifest.whiteLayerPrompt === 'string' ? manifest.whiteLayerPrompt : DEFAULT_LAYER_PROMPTS.white,
-    },
+    overallPrompt: typeof workbench.overallLayerPrompt === 'string' && workbench.overallLayerPrompt.trim()
+      ? workbench.overallLayerPrompt
+      : typeof manifest.surfaceLayerPrompt === 'string' && manifest.surfaceLayerPrompt.trim()
+        ? manifest.surfaceLayerPrompt
+        : DEFAULT_OVERALL_PROMPT,
     hidePreviewBorders: manifest.hidePreviewBorders === true,
     hidePreviewCards: manifest.hidePreviewCards === true,
     displayVisibility: mergeBooleanMap(DEFAULT_DISPLAY_VISIBILITY, visibility),
@@ -334,7 +333,7 @@ async function loadSceneMakerManifest(manifest: Record<string, unknown>, zip: JS
     pan: readPoint(manifest.pan),
     zoom: clampNumber(manifest.zoom, 1, 0.05, 8),
     activeMapLayer,
-    layerPrompts: { ...DEFAULT_LAYER_PROMPTS },
+    overallPrompt: DEFAULT_OVERALL_PROMPT,
     hidePreviewBorders: manifest.hidePreviewBorders === true,
     hidePreviewCards: manifest.hideCards === true,
     displayVisibility: {

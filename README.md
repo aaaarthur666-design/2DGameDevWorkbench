@@ -6,7 +6,7 @@
 
 ## 核心目标
 
-- **一个统一控制台**：提供序列帧与地图拼接入口，并监控共享任务与产物。
+- **一个统一控制台**：提供序列帧、地图拼接和独立交互物编辑入口，并监控共享任务与产物。
 - **外部主 Agent**：主 Agent 运行在打开本项目的 WorkBuddy、Codex 等客户端中，不由网页伪装或替代。
 - **两种协作界面**：外部 Agent 负责编排和执行；网页工作区负责监控、审查与精细人工操作。
 - **真实任务控制台**：首页只读取共享任务、状态和产物，不提供聊天或通用 JSON 任务入口。
@@ -20,8 +20,11 @@
 | ------------- | -------------------------------------------------- | -------------------------------------------- |
 | 2D 序列帧生成 | 从角色与动作描述组织动画帧、检查、修补并导出精灵表 | 已整合 NativeFramesGeneration 本地完整工作台 |
 | 地图拼接      | 编排地图切片、检查边界并导出完整关卡画布           | 浏览器编辑器已完整并入主应用                 |
+| 交互物编辑器  | 配置查看、切换、拾取、序列物件及外观、碰撞、文本、动画与音效 | 独立编辑页，网页 / CLI / MCP 共用本地 Godot 导出器 |
 
-地图拼接的本地编辑、补全与导出逻辑位于本仓库；Agent 通过本地适配器执行确定性拼接，外部图片生成只作为 `generate-layer` 的可选步骤。
+地图拼接的本地编辑、补全与导出逻辑位于本仓库；Agent 通过本地适配器执行确定性拼接，整体层扩图可选用 Nano Banana 2（`gemini-3.1-flash-image`）或 GPT Image 2（`gpt-image-2`）。
+
+交互物编辑器从 copyWorms 的交互逻辑整理为通用 Workbench Interaction Kit，独立于序列帧和地图生成。点击导出直接获得 Godot 4.6 原生资源 ZIP；不要求安装或运行 Godot，也没有导出前验证流程。完整用法见 [交互物编辑器](docs/interactable-editor.md)。
 
 ## 架构概览
 
@@ -74,7 +77,9 @@ app/                         开始页、工具路由与连接器网关
 components/workbench/        公共导航、首页与 AI 预览组件
 components/map-stitcher/      地图拼接编辑器与隔离样式
 components/sprite-generator/  序列帧管线连接与嵌入工作区
+components/interactable-editor/ 独立交互物编辑与预览
 features/map-stitcher/        地图类型、图片处理与导出逻辑
+features/interactable-editor/  交互物契约、模拟器与 Godot 运行时模板
 Tools/SpritePipeline/          本地生成、检查、修补与导出管线
 lib/workbench/                Manifest 驱动的前端模块映射
 lib/workbench/runtime.mjs    MCP 与 CLI 共享运行时
@@ -101,13 +106,14 @@ npm install
 npm run dev
 ```
 
-`npm run dev` 会同时启动 Vinext 页面和仅监听 `127.0.0.1:8790` 的 Workbench Runtime Bridge；网页通过该桥读取与 MCP/CLI 相同的 `work/tasks` 和 `outputs`。只调试页面时可分别运行 `npm run workbench:http` 与 `npm run dev:web`。
+`npm run dev` 会同时启动 Vinext 页面、仅监听 `127.0.0.1:8790` 的 Workbench Runtime Bridge 和本地 SpritePipeline；网页通过该桥读取与 MCP/CLI 相同的 `work/tasks` 和 `outputs`。已有健康的 SpritePipeline 会被复用。只调试页面时可分别运行 `npm run workbench:http` 与 `npm run dev:web`。
 
-首次使用序列帧工作区时，安装并在另一个终端启动本地管线：
+只使用交互物编辑器可运行 `npm run dev:interactable`，启动页面与本地导出服务，不启动 SpritePipeline。更新后，已运行的 Node Runtime Bridge 需要重启才能加载新适配器。
+
+首次使用序列帧工作区时只需安装一次 Python 依赖：
 
 ```powershell
 npm run sprite-pipeline:setup
-npm run sprite-pipeline
 ```
 
 页面入口：
@@ -115,6 +121,7 @@ npm run sprite-pipeline
 - `/`：统一任务控制与监控台
 - `/tools/sprite-generator`：完整序列帧生成、检查、修补与导出工作区
 - `/tools/map-stitcher`：完整地图拼接编辑器
+- `/tools/interactable-editor`：独立交互物编辑器，含草稿、素材导入、交互预览与直接导出
 
 生产构建与代码检查：
 
@@ -151,24 +158,25 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 - `SPRITE_PIPELINE_API_URL`（默认 `http://127.0.0.1:7860`）
 - `SPRITE_PIPELINE_API_TOKEN`
-- `MAP_STITCHER_API_URL`
-- `MAP_STITCHER_API_TOKEN`
+- `MAP_STITCHER_IMAGE_PROVIDER`（可选：`nano-banana` 或 `gpt-image-2`）
+- `GEMINI_API_KEY`
+- `OPENAI_API_KEY`
 
-`sprite-pipeline` 适配器把 Manifest 的 camelCase 输入转换成 Python `/v1/jobs` 协议；`map-stitcher` 适配器在本地执行 `compose`，仅在 `generate-layer` 时读取外部扩图地址。令牌不会进入浏览器或任务记录。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
+`sprite-pipeline` 适配器把 Manifest 的 camelCase 输入转换成 Python `/v1/jobs` 协议；`map-stitcher` 适配器在本地执行 `compose`，仅在 `generate-layer` 时调用所选官方图片 API。也可以在地图设置窗口输入密钥：它只保存在当前 Runtime Bridge 进程内存中，服务端不会把密钥回传给页面，也不会写入任务记录或日志。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
 
 地图编辑器提供读取、视图调整、图片导入、图层生成、区域批量创建和导出六类页面工具。它们直接复用可见编辑器状态，是浏览器宿主的补充通道，不替代仓库级 STDIO MCP Server。首页仅同步显示外部 Agent 与工具工作区产生的任务、输入状态和产物。
 
 ## 接入原则
 
 1. 工具算法与公共工作台外壳分离，能力入口统一来自 Manifest。
-2. API 密钥只通过环境变量提供，不写入仓库、浏览器存储或任务记录。
+2. API 密钥只通过本地运行时内存或环境变量提供，不写入仓库、浏览器存储或任务记录。
 3. 外部 API 不可用时，界面必须给出明确错误和恢复路径。
 4. 新工具应通过注册表加入，不修改工作台核心导航逻辑。
 5. Agent 与网页端产生的任务使用相同结构，并把结果保存在项目内可定位的位置。
 
 ## 当前状态
 
-统一监控台、公共导航、两项本地适配器、FrameRonin 模式地图编辑器和 SpritePipeline 工作台已经整合。地图 `compose` 无需外部服务；`generate-layer` 未配置时会明确停在 `awaiting_configuration`。序列帧适配器默认连接本机工作台的真实 REST API，不再发送通用连接器 envelope。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)，第三方来源与许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+统一监控台、公共导航、两项本地适配器、FrameRonin 模式地图编辑器和 SpritePipeline 工作台已经整合。地图 `compose` 无需外部服务；`generate-layer` 直接适配 Google Generate Content 与 OpenAI Images Edits 协议，缺少所选模型密钥时会明确停在 `awaiting_configuration`。序列帧适配器默认连接本机工作台的真实 REST API，不再发送通用连接器 envelope。序列帧本地启动与部署边界见 [`docs/sprite-generator.md`](docs/sprite-generator.md)，第三方来源与许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 ## License
 

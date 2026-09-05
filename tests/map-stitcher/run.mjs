@@ -28,6 +28,15 @@ try {
     assert.deepEqual(types.REGION_LAYERS, ['occlusion', 'collision', 'adjust', 'top']);
   });
 
+  test('only the requested overall-layer API prompt remains', () => {
+    assert.match(types.DEFAULT_OVERALL_PROMPT, /^You are a professional background artist specializing in large-scale 2D maps\./);
+    assert.match(types.DEFAULT_OVERALL_PROMPT, /pure flat orthographic plan view/);
+    assert.match(types.DEFAULT_OVERALL_PROMPT, /ground plane is exactly parallel to the image plane, with no camera tilt or viewing angle/);
+    assert.match(types.DEFAULT_OVERALL_PROMPT, /must not use an angled overhead, isometric, axonometric, oblique, three-quarter, or 45-degree view/);
+    assert.match(types.DEFAULT_OVERALL_PROMPT, /Exclude people, text, and smoke, and transition naturally between different terrain types\.$/);
+    assert.equal(types.DEFAULT_LAYER_PROMPTS, undefined);
+  });
+
   test('online-compatible rectangles store two points but render four corners', () => {
     const points = regions.rectanglePoints({ x: 80, y: 60 }, { x: 20, y: 10 });
     assert.equal(points.length, 2);
@@ -96,7 +105,7 @@ try {
     const scene = engine.buildGodotScene(manifest, ['overall', 'top']);
     assert.match(scene, /CollisionPolygon2D/);
     assert.match(scene, /z_index = 100/);
-    assert.match(engine.buildUnityRegionRuntime(), /ToUnity/);
+    assert.equal(engine.buildUnityRegionRuntime, undefined);
     const separatedScene = engine.buildGodotScene(manifest, ['overall', 'surface', 'object']);
     assert.match(separatedScene, /name="Overall"[\s\S]*visible = false/);
   });

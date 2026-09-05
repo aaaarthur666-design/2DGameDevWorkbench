@@ -59,7 +59,7 @@ import {
 import {
   DEFAULT_DISPLAY_VISIBILITY,
   DEFAULT_IMAGE_LOCKS,
-  DEFAULT_LAYER_PROMPTS,
+  DEFAULT_OVERALL_PROMPT,
   DEFAULT_REGION_LOCKS,
   DEFAULT_REGION_VISIBILITY,
   MAP_DISPLAY_LAYERS,
@@ -70,7 +70,6 @@ import {
   isRegionAuthoringMapLayer,
   regionShapeId,
   type FrameRoninTile,
-  type LayerPromptMap,
   type MapDisplayLayer,
   type MapImageLayer,
   type RegionLayer,
@@ -101,7 +100,7 @@ import {
   renderFrameRoninTile,
   renderStitchedMap,
 } from '@/features/map-stitcher/layer-engine';
-import { exportEnginePackage } from '@/features/map-stitcher/engine-export';
+import { exportGodotPackage } from '@/features/map-stitcher/engine-export';
 import { exportFrameRoninPsd } from '@/features/map-stitcher/psd-export';
 import {
   downloadPixelworkState,
@@ -113,8 +112,21 @@ import { normalizeRegionShape } from '@/features/map-stitcher/region-engine';
 const BASE_TILE_WIDTH = 360;
 const MAX_REGION_HISTORY = 80;
 
-type GeneratorMode = 'local' | 'external';
 type FineSession = { tileKey: string; layer: MapImageLayer };
+
+type MapGenerationProviderSetting = {
+  id: string;
+  name: string;
+  host: string;
+  model: string;
+  configured: boolean;
+};
+
+type MapGenerationSettings = {
+  active: boolean;
+  provider: string | null;
+  providers: MapGenerationProviderSetting[];
+};
 
 type BrowserMapTool = {
   name: string;
@@ -171,6 +183,33 @@ function stringInput(value: unknown, label: string) {
 
 function sliderNumber(value: number | readonly number[], fallback: number) {
   return Array.isArray(value) ? (value[0] ?? fallback) : Number(value);
+}
+
+function readMapGenerationSettings(value: unknown): MapGenerationSettings {
+  const record = recordInput(value, 'API 设置响应');
+  const providers = Array.isArray(record.providers)
+    ? record.providers.flatMap((raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+        const provider = raw as Record<string, unknown>;
+        if (
+          typeof provider.id !== 'string' ||
+          typeof provider.name !== 'string' ||
+          typeof provider.host !== 'string' ||
+          typeof provider.model !== 'string'
+        ) return [];
+        return [{
+          id: provider.id,
+          name: provider.name,
+          host: provider.host,
+          model: provider.model,
+          configured: provider.configured === true,
+        }];
+      })
+    : [];
+  const provider = typeof record.provider === 'string' && providers.some((item) => item.id === record.provider)
+    ? record.provider
+    : providers[0]?.id ?? null;
+  return { active: record.active === true, provider, providers };
 }
 
 function directionClass(tile: FrameRoninTile) {
@@ -242,8 +281,14 @@ export function FrameRoninMapEditor() {
   const [fineSession, setFineSession] = useState<FineSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [generatorMode, setGeneratorMode] = useState<GeneratorMode>('local');
-  const [layerPrompts, setLayerPrompts] = useState<LayerPromptMap>({ ...DEFAULT_LAYER_PROMPTS });
+  const [overallPrompt, setOverallPrompt] = useState(DEFAULT_OVERALL_PROMPT);
+  const [apiSettings, setApiSettings] = useState<MapGenerationSettings>({ active: false, provider: null, providers: [] });
+  const [draftApiActive, setDraftApiActive] = useState(false);
+  const [draftApiProvider, setDraftApiProvider] = useState('');
+  const [apiSettingsLoading, setApiSettingsLoading] = useState(true);
+  const [apiSettingsSaving, setApiSettingsSaving] = useState(false);
+  const [apiSettingsError, setApiSettingsError] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [processingKeys, setProcessingKeys] = useState<string[]>([]);
   const [processedLayerUrls, setProcessedLayerUrls] = useState<Record<string, string>>({});
   const [regionHint, setRegionHint] = useState('选择区域类型与绘制工具后，在已选卡片上绘制。');
@@ -253,6 +298,7 @@ export function FrameRoninMapEditor() {
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const layerInputRef = useRef<HTMLInputElement>(null);
   const stateInputRef = useRef<HTMLInputElement>(null);
+  const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const tilesRef = useRef(tiles);
   const shapesRef = useRef(shapes);
   const undoShapesRef = useRef<RegionShape[][]>([]);
@@ -260,7 +306,7 @@ export function FrameRoninMapEditor() {
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const agentActionsRef = useRef<Partial<MapAgentActions>>({});
   const imageLocksRef = useRef(imageLocks);
-  const generatorModeRef = useRef(generatorMode);
+  const apiSettingsRef = useRef(apiSettings);
 
   const sourceTile = useMemo(() => tiles.find((tile) => tile.key === CENTER_KEY) ?? null, [tiles]);
   const sourceAsset = sourceTile?.images.overall;
@@ -270,12 +316,99 @@ export function FrameRoninMapEditor() {
   const imageCount = useMemo(() => tiles.reduce((count, tile) => count + MAP_IMAGE_LAYERS.filter((layer) => tile.images[layer]).length, 0), [tiles]);
   const memoryMb = useMemo(() => tiles.reduce((bytes, tile) => bytes + MAP_IMAGE_LAYERS.reduce((sum, layer) => sum + (tile.images[layer]?.size ?? 0), 0), 0) / 1024 / 1024, [tiles]);
   const selectedRegionCount = useMemo(() => shapes.filter((shape) => shape.tileKey === selectedKey && shape.layer === activeRegionLayer).length, [activeRegionLayer, selectedKey, shapes]);
+  const selectedApiProvider = useMemo(
+    () => apiSettings.providers.find((provider) => provider.id === draftApiProvider) ?? null,
+    [apiSettings.providers, draftApiProvider],
+  );
 
   useEffect(() => { tilesRef.current = tiles; }, [tiles]);
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { imageLocksRef.current = imageLocks; }, [imageLocks]);
-  useEffect(() => { generatorModeRef.current = generatorMode; }, [generatorMode]);
+  useEffect(() => { apiSettingsRef.current = apiSettings; }, [apiSettings]);
   useEffect(() => () => revokeFrameRoninTiles(tilesRef.current), []);
+
+  const applyApiSettings = useCallback((next: MapGenerationSettings) => {
+    setApiSettings(next);
+    apiSettingsRef.current = next;
+    setDraftApiActive(next.active);
+    setDraftApiProvider(next.provider ?? next.providers[0]?.id ?? '');
+    setApiSettingsError('');
+  }, []);
+
+  const refreshApiSettings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/workbench/map-stitcher/settings', { cache: 'no-store' });
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : `HTTP ${response.status}`);
+      applyApiSettings(readMapGenerationSettings(payload));
+    } catch (error) {
+      setApiSettingsError(error instanceof Error ? error.message : '无法读取 API 设置');
+    } finally {
+      setApiSettingsLoading(false);
+    }
+  }, [applyApiSettings]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void refreshApiSettings(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshApiSettings]);
+
+  const changeSettingsOpen = useCallback((open: boolean) => {
+    if (!open) {
+      const current = apiSettingsRef.current;
+      setDraftApiActive(current.active);
+      setDraftApiProvider(current.provider ?? current.providers[0]?.id ?? '');
+      setApiSettingsError('');
+      setShowApiKey(false);
+      if (apiKeyInputRef.current) apiKeyInputRef.current.value = '';
+    }
+    setSettingsOpen(open);
+  }, []);
+
+  const saveApiSettings = useCallback(async () => {
+    if (!draftApiProvider) return notify('API 设置未就绪', '请等待模型列表加载完成。', 'warning');
+    if (draftApiActive && !overallPrompt.trim()) return notify('整体层提示词不能为空', undefined, 'warning');
+    const apiKey = apiKeyInputRef.current?.value.trim() ?? '';
+    const providerName = apiSettingsRef.current.providers.find((provider) => provider.id === draftApiProvider)?.name ?? '图片 API';
+    setApiSettingsSaving(true);
+    setApiSettingsError('');
+    try {
+      const response = await fetch('/api/workbench/map-stitcher/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider: draftApiProvider,
+          active: draftApiActive,
+          ...(apiKey ? { apiKey } : {}),
+        }),
+      });
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : `HTTP ${response.status}`);
+      applyApiSettings(readMapGenerationSettings(payload));
+      if (apiKeyInputRef.current) apiKeyInputRef.current.value = '';
+      setShowApiKey(false);
+      changeSettingsOpen(false);
+      notify(
+        draftApiActive
+          ? `${providerName} 已保存并激活`
+          : apiKey
+            ? `${providerName} API Key 已保存`
+            : '已切换到本地生成',
+        draftApiActive
+          ? '之后的整体层生成将使用该 API。'
+          : apiKey
+            ? '需要使用时，请开启“激活 API”并再次保存。'
+            : undefined,
+        'success',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '无法保存 API 设置';
+      setApiSettingsError(message);
+      notify('API 设置保存失败', message, 'error');
+    } finally {
+      setApiSettingsSaving(false);
+    }
+  }, [applyApiSettings, changeSettingsOpen, draftApiActive, draftApiProvider, overallPrompt]);
 
   const replaceTiles = useCallback((next: FrameRoninTile[]) => {
     const previous = tilesRef.current;
@@ -416,8 +549,11 @@ export function FrameRoninMapEditor() {
       return;
     }
 
+    const useExternalApi = layer === 'overall' && apiSettings.active;
+    if (useExternalApi && !apiSettings.provider) throw new Error('已激活图片 API，但尚未选择模型');
+
     let blob: Blob;
-    if (generatorMode === 'local') {
+    if (!useExternalApi) {
       if (layer === 'overall') {
         blob = await generateLocalLayerFill(tilesRef.current, tile, layer, sourceAsset.width, sourceAsset.height);
       } else {
@@ -437,19 +573,19 @@ export function FrameRoninMapEditor() {
         blob = await canvasToBlob(canvas);
       }
     } else {
-      const template = layer === 'overall'
-        ? await createGenerationTemplate(tilesRef.current, tile, 'overall', sourceAsset.width, sourceAsset.height)
-        : await assetCanvas(tile.images.overall);
+      if (!overallPrompt.trim()) throw new Error('整体层生成提示词不能为空');
+      const template = await createGenerationTemplate(tilesRef.current, tile, 'overall', sourceAsset.width, sourceAsset.height);
       const response = await fetch('/api/workbench/map-stitcher/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           operation: 'generate-layer',
+          provider: apiSettings.provider,
           image: await canvasDataUrl(template),
-          prompt: layer === 'overall' ? DEFAULT_LAYER_PROMPTS.surface : layerPrompts[layer],
+          prompt: overallPrompt,
           tile: { key: tile.key, x: tile.x, y: tile.y, w: tile.w, h: tile.h },
           layer,
-          mask_mode: layer === 'black' ? 'black' : 'white',
+          mask_mode: 'white',
         }),
       });
       const payload = await response.json().catch(() => ({})) as { image?: string; error?: string };
@@ -457,7 +593,7 @@ export function FrameRoninMapEditor() {
       blob = payload.image.startsWith('data:') ? dataUrlToBlob(payload.image) : await urlToBlob(payload.image);
     }
     replaceTileAsset(tile.key, layer, await blobToAsset(blob, `${tile.key.replace(',', '_')}_${layer}.png`));
-  }, [generatorMode, layerPrompts, replaceTileAsset, sourceAsset]);
+  }, [apiSettings.active, apiSettings.provider, overallPrompt, replaceTileAsset, sourceAsset]);
 
   const generateLayerForTileRef = useRef(generateLayerForTile);
   useEffect(() => { generateLayerForTileRef.current = generateLayerForTile; }, [generateLayerForTile]);
@@ -677,14 +813,14 @@ export function FrameRoninMapEditor() {
     pan,
     zoom,
     activeMapLayer,
-    layerPrompts,
+    overallPrompt,
     hidePreviewBorders,
     hidePreviewCards: hideCards,
     displayVisibility,
     regionVisibility,
     imageLocks,
     regionLocks,
-  }), [activeMapLayer, displayVisibility, expandSplit, hideCards, hidePreviewBorders, horizontalOverlap, imageLocks, layerPrompts, pan, regionLocks, regionVisibility, selectedKey, verticalOverlap, zoom]);
+  }), [activeMapLayer, displayVisibility, expandSplit, hideCards, hidePreviewBorders, horizontalOverlap, imageLocks, overallPrompt, pan, regionLocks, regionVisibility, selectedKey, verticalOverlap, zoom]);
 
   const saveState = useCallback(async () => {
     try {
@@ -711,7 +847,7 @@ export function FrameRoninMapEditor() {
       setExpandSplit(loaded.expandSplit);
       setPan(loaded.pan);
       setZoom(loaded.zoom);
-      setLayerPrompts(loaded.layerPrompts);
+      setOverallPrompt(loaded.overallPrompt);
       setHideCards(loaded.hidePreviewCards);
       setHidePreviewBorders(loaded.hidePreviewBorders);
       setDisplayVisibility(loaded.displayVisibility);
@@ -736,11 +872,11 @@ export function FrameRoninMapEditor() {
     }
   }, [activeMapLayer, sourceAsset]);
 
-  const exportEngine = useCallback(async (target: 'godot' | 'unity') => {
+  const exportGodot = useCallback(async () => {
     if (!sourceAsset) return;
     try {
-      const result = await exportEnginePackage(target, tilesRef.current, shapesRef.current, sourceAsset.width, sourceAsset.height, sourceAsset.name);
-      notify(`${target === 'godot' ? 'Godot' : 'Unity'} 包已导出`, `${result.layers.length} 个图层 · ${result.manifest.regions.length} 个区域`, 'success');
+      const result = await exportGodotPackage(tilesRef.current, shapesRef.current, sourceAsset.width, sourceAsset.height, sourceAsset.name);
+      notify('Godot 包已导出', `${result.layers.length} 个图层 · ${result.manifest.regions.length} 个区域`, 'success');
     } catch (error) {
       notify('引擎包导出失败', error instanceof Error ? error.message : '未知错误', 'error');
     }
@@ -797,7 +933,9 @@ export function FrameRoninMapEditor() {
       return {
         tileKey,
         layer,
-        generatorMode: generatorModeRef.current,
+        generatorMode: layer === 'overall' && apiSettingsRef.current.active
+          ? apiSettingsRef.current.provider
+          : 'local',
         generated: Boolean(tilesRef.current.find((candidate) => candidate.key === tileKey)?.images[layer]),
       };
     } finally {
@@ -861,8 +999,8 @@ export function FrameRoninMapEditor() {
       const result = await exportFrameRoninPsd(tilesRef.current, shapesRef.current, sourceAsset.width, sourceAsset.height, sourceAsset.name);
       return { format, fileName: result.fileName, layerCount: result.layers.length };
     }
-    if (format === 'godot' || format === 'unity') {
-      const result = await exportEnginePackage(format, tilesRef.current, shapesRef.current, sourceAsset.width, sourceAsset.height, sourceAsset.name);
+    if (format === 'godot') {
+      const result = await exportGodotPackage(tilesRef.current, shapesRef.current, sourceAsset.width, sourceAsset.height, sourceAsset.name);
       return { format, layerCount: result.layers.length, regionCount: result.manifest.regions.length };
     }
     if (format === 'png' || format === 'top-png') {
@@ -876,7 +1014,7 @@ export function FrameRoninMapEditor() {
       downloadBlob(await canvasToBlob(rendered.canvas), fileName);
       return { format, layer: requestedLayer, fileName, width: rendered.width, height: rendered.height };
     }
-    throw new Error('format 必须是 png、top-png、state、psd、godot 或 unity。');
+    throw new Error('format 必须是 png、top-png、state、psd 或 godot。');
   }, [activeMapLayer, snapshot, sourceAsset]);
 
   useEffect(() => {
@@ -892,7 +1030,9 @@ export function FrameRoninMapEditor() {
         selectedKey,
         activeMapLayer,
         activeRegionLayer,
-        generatorMode,
+        generatorMode: apiSettingsRef.current.active
+          ? apiSettingsRef.current.provider
+          : 'local',
         zoom,
         pan,
       }),
@@ -924,7 +1064,7 @@ export function FrameRoninMapEditor() {
       createRegions: createRegionsForAgent,
       exportArtifact: exportForAgent,
     };
-  }, [activeMapLayer, activeRegionLayer, createRegionsForAgent, exportForAgent, fitView, generateLayerForAgent, generatorMode, importImagesForAgent, pan, selectMapLayer, selectedKey, zoom]);
+  }, [activeMapLayer, activeRegionLayer, createRegionsForAgent, exportForAgent, fitView, generateLayerForAgent, importImagesForAgent, pan, selectMapLayer, selectedKey, zoom]);
 
   useEffect(() => {
     const context = (document as AgentAwareDocument).modelContext;
@@ -1041,11 +1181,11 @@ export function FrameRoninMapEditor() {
       {
         name: 'map_stitcher_export',
         title: '导出地图产物',
-        description: '完成 PNG、顶层 PNG、Pixelwork 状态、PSD、Godot 或 Unity 导出，并触发与页面按钮相同的下载。',
+        description: '完成 PNG、顶层 PNG、Pixelwork 状态、PSD 或 Godot 导出，并触发与页面按钮相同的下载。',
         inputSchema: {
           type: 'object',
           properties: {
-            format: { type: 'string', enum: ['png', 'top-png', 'state', 'psd', 'godot', 'unity'] },
+            format: { type: 'string', enum: ['png', 'top-png', 'state', 'psd', 'godot'] },
             layer: { type: 'string', enum: MAP_DISPLAY_LAYERS },
           },
           required: ['format'],
@@ -1254,8 +1394,7 @@ export function FrameRoninMapEditor() {
             <Button variant="outline" className="panel-button" onClick={() => setSettingsOpen(true)}><Settings /> 生成与显示设置</Button>
             <Button variant="outline" className="panel-button" onClick={() => stateInputRef.current?.click()}><Upload /> 加载状态</Button>
             <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void exportPsd()}><Download /> 分层 PSD</Button>
-            <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void exportEngine('godot')}><Download /> Godot 包</Button>
-            <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void exportEngine('unity')}><Download /> Unity 包</Button>
+            <Button variant="outline" className="panel-button" disabled={!tiles.length} onClick={() => void exportGodot()}><Download /> Godot 包</Button>
           </aside>
 
           <input ref={sourceInputRef} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp,.jfif" multiple onChange={(event) => { void importSourceFiles(fileList(event.target.files)); event.target.value = ''; }} />
@@ -1264,16 +1403,46 @@ export function FrameRoninMapEditor() {
         </form>
       </main>
 
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+      <Dialog open={settingsOpen} onOpenChange={changeSettingsOpen}>
         <DialogContent className="map-stitcher-settings-dialog frame-ronin-settings" overlayClassName="map-stitcher-dialog-overlay">
-          <DialogHeader><DialogTitle>FrameRonin 图层生成设置</DialogTitle><DialogDescription>浏览器只提交图片和提示词；API 地址与令牌仍由工作台服务端管理。</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>地图生成与显示设置</DialogTitle>
+            <DialogDescription>外部 API 只生成整体层；地表、黑白底和物件层继续在本地派生。</DialogDescription>
+          </DialogHeader>
           <div className="frame-ronin-settings-grid">
-            <label><span>生成方式</span><select value={generatorMode} onChange={(event) => setGeneratorMode(event.target.value as GeneratorMode)}><option value="local">本地确定性补全</option><option value="external">工作台外部图片 API</option></select></label>
-            {(['surface', 'black', 'white'] as const).map((layer) => <label key={layer}><span>{LAYER_LABELS[layer]}提示词</span><textarea rows={3} value={layerPrompts[layer]} onChange={(event) => setLayerPrompts((current) => ({ ...current, [layer]: event.target.value }))} /></label>)}
-            <div className="switch-row"><span>隐藏预览边框</span><Switch checked={hidePreviewBorders} onCheckedChange={setHidePreviewBorders} /></div>
-            <div className="switch-row"><span>隐藏卡片标签</span><Switch checked={hideCards} onCheckedChange={setHideCards} /></div>
+            <section className="frame-ronin-settings-section">
+              <div className="settings-section-heading"><div><strong>API 生成</strong><small>与 FrameRonin 的 API Key、模式、Host、Model 和激活状态对应</small></div><span className={draftApiActive ? 'status-active' : ''}>{draftApiActive ? 'API 模式' : '本地模式'}</span></div>
+              <div className="switch-row"><span><strong>激活 API</strong><small>关闭时使用本地确定性补全，不会发送图片。</small></span><Switch aria-label="激活图片 API" checked={draftApiActive} disabled={apiSettingsLoading} onCheckedChange={setDraftApiActive} /></div>
+              <label><span>API 模式</span><select aria-label="图片 API 模式" disabled={apiSettingsLoading || !apiSettings.providers.length} value={draftApiProvider} onChange={(event) => { setDraftApiProvider(event.target.value); if (apiKeyInputRef.current) apiKeyInputRef.current.value = ''; }}>
+                {!apiSettings.providers.length && <option value="">正在读取模型…</option>}
+                {apiSettings.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+              </select></label>
+              <label><span>Host</span><output>{selectedApiProvider?.host ?? '—'}</output></label>
+              <label><span>Model</span><output>{selectedApiProvider?.model ?? '—'}</output></label>
+              <label className="api-key-setting"><span>API Key</span><div className="api-key-input"><input ref={apiKeyInputRef} type={showApiKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} placeholder={selectedApiProvider?.configured ? '已配置；留空保持不变' : '输入所选服务的 API Key'} /><button type="button" aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'} onClick={() => setShowApiKey((current) => !current)}>{showApiKey ? <EyeOff /> : <Eye />}</button></div></label>
+              <div className={`api-configuration-status ${selectedApiProvider?.configured ? 'configured' : ''}`}>
+                {apiSettingsLoading
+                  ? '正在读取本地运行时设置…'
+                  : apiSettingsError
+                    ? apiSettingsError
+                    : selectedApiProvider?.configured
+                      ? `${selectedApiProvider.name} 密钥已配置。密钥不会回传到页面或写入任务记录。`
+                      : '尚未配置所选服务的密钥。输入密钥、开启“激活 API”，然后点击下方保存并激活。'}
+              </div>
+            </section>
+
+            <section className="frame-ronin-settings-section">
+              <div className="settings-section-heading"><div><strong>整体层生成提示词</strong><small>这是唯一会发送给图片 API 的提示词</small></div></div>
+              <label className="overall-prompt-setting"><span>提示词</span><textarea rows={8} value={overallPrompt} onChange={(event) => setOverallPrompt(event.target.value)} /></label>
+            </section>
+
+            <section className="frame-ronin-settings-section">
+              <div className="settings-section-heading"><div><strong>显示设置</strong><small>仅影响编辑器预览</small></div></div>
+              <div className="switch-row"><span>隐藏预览边框</span><Switch aria-label="隐藏预览边框" checked={hidePreviewBorders} onCheckedChange={setHidePreviewBorders} /></div>
+              <div className="switch-row"><span>隐藏卡片标签</span><Switch aria-label="隐藏卡片标签" checked={hideCards} onCheckedChange={setHideCards} /></div>
+            </section>
           </div>
-          <DialogFooter><Button onClick={() => setSettingsOpen(false)}>完成</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => changeSettingsOpen(false)}>关闭</Button><Button disabled={apiSettingsLoading || apiSettingsSaving || !draftApiProvider} onClick={() => void saveApiSettings()}>{apiSettingsSaving ? <><LoaderCircle className="animate-spin" /> 保存中</> : draftApiActive ? '保存并激活 API' : '保存 API 设置'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1284,23 +1453,11 @@ export function FrameRoninMapEditor() {
             <li><span>1</span><div><strong>图片图层</strong><p>overall、surface、object、black、white 分开保存；mask 由 overall 与 object 自动派生。</p></div></li>
             <li><span>2</span><div><strong>矢量区域</strong><p>遮挡、碰撞、调整、顶层支持矩形、多边形、自由绘制。坐标保存为卡片本地像素。</p></div></li>
             <li><span>3</span><div><strong>像素精修</strong><p>只在单独入口修改当前图片层，不再伪装成“区域绘制”。</p></div></li>
-            <li><span>4</span><div><strong>状态与导出</strong><p>保存线上兼容的 Pixelwork v2 ZIP；Godot 与 Unity 包同时包含区域清单。</p></div></li>
+            <li><span>4</span><div><strong>状态与导出</strong><p>保存线上兼容的 Pixelwork v2 ZIP；Godot 包包含区域清单。</p></div></li>
           </ol>
           <DialogFooter><Button onClick={() => setHelpOpen(false)}>知道了</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </Toaster>
   );
-}
-
-async function assetCanvas(asset: FrameRoninTile['images']['overall']) {
-  if (!asset) throw new Error('当前卡片缺少整体层');
-  const canvas = document.createElement('canvas');
-  canvas.width = asset.width;
-  canvas.height = asset.height;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('浏览器无法创建生成画布');
-  context.imageSmoothingEnabled = false;
-  context.drawImage(await loadImage(asset.url), 0, 0);
-  return canvas;
 }

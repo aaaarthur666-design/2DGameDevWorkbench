@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "vinext dev",
+    "dev:interactable": "node scripts/dev.mjs --without-sprite-pipeline",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "sprite-pipeline:setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-sprite-pipeline.ps1",
@@ -17,9 +18,16 @@
     "workbench:mcp": "node scripts/workbench-mcp.mjs",
     "workbench:http": "node scripts/workbench-http.mjs",
     "test:mcp": "node scripts/test-workbench-mcp.mjs",
+    "test:interactable": "node tests/interactable-editor/run.mjs",
+    "test:interactable-http": "node tests/interactable-editor/http.mjs",
+    "test:interactable-copyworms": "node tests/interactable-editor/copyworms.mjs",
+    "test:interactable-web": "vinext build && node tests/interactable-editor/http.mjs --web",
+    "schema:interactable": "node scripts/sync-interactable-schema.mjs",
+    "typecheck": "tsc --noEmit --incremental false",
     "test:adapters": "node tests/workbench-adapters/run.mjs",
     "test:http": "node tests/workbench-http/run.mjs",
     "test:map-stitcher": "node tests/map-stitcher/run.mjs",
+    "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },
@@ -64,7 +72,8 @@
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "wrangler": "4.92.0",
+    "zod-to-json-schema": "3.25.2"
   },
   "type": "module"
 }

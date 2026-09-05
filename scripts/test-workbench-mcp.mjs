@@ -5,6 +5,9 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
+import { createProject } from '../features/interactable-editor/contract.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '..');
@@ -25,6 +28,12 @@ const transport = new StdioClientTransport({
   args: ['scripts/workbench-mcp.mjs'],
   cwd: repositoryRoot,
   stderr: 'pipe',
+  env: {
+    ...Object.fromEntries(Object.entries(process.env).filter((entry) => entry[1] !== undefined)),
+    GEMINI_API_KEY: '',
+    OPENAI_API_KEY: '',
+    MAP_STITCHER_IMAGE_PROVIDER: '',
+  },
 });
 
 try {
@@ -83,6 +92,7 @@ try {
       capabilityId: 'map-stitcher',
       input: {
         operation: 'generate-layer',
+        provider: 'nano-banana',
         image: 'data:image/png;base64,iVBORw0KGgo=',
         prompt: 'MCP connector-state self-test',
         tile: { key: '0,0', x: 0, y: 0, w: 1, h: 1 },
@@ -96,7 +106,7 @@ try {
     awaitingConfiguration.structuredContent?.status !==
       'awaiting_configuration' ||
     awaitingConfiguration.structuredContent?.requiredEnvironment !==
-      'MAP_STITCHER_API_URL'
+      'GEMINI_API_KEY'
   ) {
     throw new Error('Unconfigured connector state was not preserved.');
   }
@@ -112,6 +122,16 @@ try {
     throw new Error('Invalid task input was accepted.');
   }
 
+  const interactionDescription = await client.callTool({name:'workbench_describe_capability',arguments:{capabilityId:'interactable-editor'}});
+  assert(!interactionDescription.isError);
+  const interaction = await client.callTool({name:'workbench_run_task',arguments:{capabilityId:'interactable-editor',input:{operation:'export-godot',targetProfile:'copyworms',project:createProject()}}});
+  assert(!interaction.isError, JSON.stringify(interaction));
+  assert.equal(interaction.structuredContent?.status,'completed');
+  assert(interaction.structuredContent.outputs.some((output) => output.endsWith('/interactables-copyworms.zip')));
+  const interactionTask = await client.callTool({name:'workbench_get_task',arguments:{taskId:interaction.structuredContent.taskId}});
+  assert.equal(interactionTask.structuredContent?.task?.status, 'completed');
+  for(const output of interaction.structuredContent.outputs) await access(path.join(repositoryRoot,output));
+
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -124,6 +144,7 @@ try {
         preparedTask: prepared.structuredContent.taskId,
         connectorFallback: awaitingConfiguration.structuredContent.status,
         invalidInputRejected: true,
+        interactionExport: {taskId:interaction.structuredContent.taskId,status:interaction.structuredContent.status,outputs:interaction.structuredContent.outputs},
       },
       null,
       2,

@@ -14,12 +14,13 @@
 npm run sprite-pipeline:setup
 ```
 
-随后分别启动序列帧管线和主站：
+随后只需启动主站。启动器会自动启动本地序列帧管线；如果 7860 上已经有健康的 SpritePipeline，则直接复用：
 
 ```powershell
-npm run sprite-pipeline
 npm run dev
 ```
+
+只需独立调试 Python 管线时才运行 `npm run sprite-pipeline`。主站托管的管线会随主站退出；已在启动前运行的外部管线不会被主站关闭。7860 被其他程序占用时，启动器会明确报出端口冲突，不会误连。
 
 管线默认监听 `http://127.0.0.1:7860`。如需连接另一个可信地址，在本地 `.env` 中设置：
 

@@ -15,7 +15,7 @@
 | `region-engine.ts` | 矩形、多边形、自由路径的验证、命中测试、坐标迁移 |
 | `layer-engine.ts` | 黑白底抠图、派生 Mask、遮挡扣除、Top 裁图、拼接渲染 |
 | `state-package.ts` | Pixelwork v2 ZIP 读写、SceneMaker v5 迁移 |
-| `engine-export.ts` | Godot / Unity 图片、区域清单和运行时辅助代码 |
+| `engine-export.ts` | Godot 图片、区域清单和运行时辅助代码 |
 | `psd-export.ts` | FrameRonin 图层语义的分层 PSD |
 | `region-drawing-overlay.tsx` | SVG 区域绘制交互；不修改底层图片 |
 | `frame-ronin-map-editor.tsx` | 页面状态、工具栏、图层与区域操作的薄编排层 |
@@ -73,7 +73,6 @@
 - Top PNG：只保留 top 区域裁出的画面。
 - PSD：保存 overall、surface、object、mask、top、black、white 中实际存在的层；默认只显示 overall，避免重复合成。
 - Godot：PNG、`map_scene.tscn`、`regions.json`、区域读取脚本和项目配置。
-- Unity：PNG、`regions.json`、强类型 JSON 解析与坐标转换脚本。
 
 外部图像生成仍只经过 `/api/workbench/map-stitcher/generate` 服务端代理，并以网页同款 `image/prompt/tile/layer/mask_mode` 直接请求服务。连接器地址和令牌不进入客户端状态、日志或导出文件。
 
@@ -97,7 +96,6 @@ npm run build
 
 ## 有意保留的边界
 
-- 本地生成是确定性回退：可完成扩展、参考层和整个数据流验证，但语义分层质量需要配置外部图片连接器。
+- 本地生成是确定性回退：可完成扩展、参考层和整个数据流验证；整体层语义扩图可激活 Nano Banana 2 或 GPT Image 2，其他图层仍由本地流程派生。
 - `adjust` 会完整导出为区域元数据，但其游戏内行为由具体项目决定。
-- Unity 包提供可直接编译的区域解析代码，不擅自修改用户现有场景或碰撞组件。
 - 旧编辑器暂不删除；在用户现有状态文件完成迁移验收前保留回退路径。

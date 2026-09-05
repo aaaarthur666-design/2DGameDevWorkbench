@@ -1,6 +1,6 @@
 ---
 name: 2d-game-workbench
-description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, validate, or hand off sprite-animation frames or stitched tile maps.
+description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off sprite-animation frames, stitched tile maps, or independent Godot interactable objects.
 ---
 
 # 2D Game Workbench
@@ -44,4 +44,9 @@ You are the main Agent running in an external client. Use the repository capabil
 
 - Use `sprite-generator` for real SpritePipeline `create`, `create-and-generate`, `generate-existing`, `get`, and `export` operations. Use preset IDs declared by the pipeline; do not infer IDs from free text.
 - Use `map-stitcher` `compose` for deterministic local tile placement, seam checks, Pixelwork state, regions, and engine packages. Use `generate-layer` only for the optional external image-generation step.
-- When a request spans both, prepare and run separate tasks, then summarize their outputs together.
+- Use `interactable-editor` `export-godot` for inspect, toggle, pickup, and sequence objects. The independent editor is `/tools/interactable-editor`; its contract and examples are in `docs/interactable-editor.md` and `examples/requests/interactable-export.json`.
+- Interactable export is local and requires no credentials, SpritePipeline, or Godot installation. An authorized export can run directly; do not insert mandatory preview, engine validation, or a validation-report step.
+- Supply `project` and optionally `selectedDefinitionIds`. Assets can be workspace paths or supported image/audio data URLs. The adapter returns a Godot ZIP, a portable source JSON, and metadata under that task's `outputs/` directory. Re-import the ZIP or source JSON to continue editing.
+- Choose `targetProfile: "copyworms"` when copyWorms compatibility is requested; omit it (or use `generic`) for the standalone kit. This adds actor/input/lock integration and optional `object.copyworms.objectId` event forwarding, without editing the game project or requiring engine validation. The exported INSTALL.md names the compatible runtime scene and reference commit; original quest progression remains controlled by the game's FSM.
+- A completed interactable task means files were exported; it does not mean the user's target game was tested. Engine regression tests belong to development, outside the export flow.
+- When a request spans capabilities, run separate tasks as authorized, then summarize their outputs together.

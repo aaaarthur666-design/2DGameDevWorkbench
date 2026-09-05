@@ -5,6 +5,7 @@ import { realpath, stat } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
+import { storeInteractableAsset, readInteractableAsset } from '../lib/workbench/interactable-assets.mjs';
 
 import {
   findCapability,
@@ -14,6 +15,10 @@ import {
   runConnector,
   summarizeTask,
 } from '../lib/workbench/runtime.mjs';
+import {
+  getPublicMapGenerationSettings,
+  updateMapGenerationSettings,
+} from '../lib/workbench/map-generation-settings.mjs';
 
 const host = process.env.WORKBENCH_RUNTIME_HOST || '127.0.0.1';
 const port = readPort(process.env.WORKBENCH_RUNTIME_PORT, 8790);
@@ -26,6 +31,24 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { ok: true, version: 1, service: '2d-game-workbench-runtime' });
       return;
     }
+    if (request.method === 'GET' && url.pathname === '/v1/interactable-assets') {
+      try {
+        const asset = await readInteractableAsset(url.searchParams.get('path'), repositoryRoot);
+        response.writeHead(200, {'content-type':asset.mime,'content-length':asset.bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});
+        response.end(asset.bytes);
+      } catch (error) {
+        sendJson(response, 400, {error:error instanceof Error ? error.message : String(error)});
+      }
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/interactable-assets') {
+      try {
+        sendJson(response, 200, await storeInteractableAsset(request, repositoryRoot));
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/v1/tasks') {
       const manifest = await loadManifest();
       const limit = Number(url.searchParams.get('limit') ?? 30);
@@ -36,6 +59,25 @@ const server = http.createServer(async (request, response) => {
           refresh,
         }),
       });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/map-stitcher/settings') {
+      const manifest = await loadManifest();
+      const capability = findCapability(manifest, 'map-stitcher');
+      sendJson(response, 200, getPublicMapGenerationSettings(capability.connector));
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/map-stitcher/settings') {
+      const body = await readJsonBody(request);
+      const manifest = await loadManifest();
+      const capability = findCapability(manifest, 'map-stitcher');
+      try {
+        sendJson(response, 200, updateMapGenerationSettings(capability.connector, body));
+      } catch (error) {
+        sendJson(response, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/v1/tasks') {
