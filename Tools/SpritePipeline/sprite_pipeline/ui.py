@@ -2227,11 +2227,41 @@ def build_ui(
                 attach_provider_id,
             ],
         )
+        def load_workbench_entry(current: str | None, request: gr.Request) -> tuple[Any, ...]:
+            """Restore an explicitly linked job without generating or changing its state."""
+            requested = request.query_params.get("workbench_job", "") if request else ""
+            choices = saved_asset_choices()
+            if requested and requested in {value for _label, value in choices}:
+                return (
+                    gr.update(selected="assets"),
+                    gr.update(choices=choices, value=requested),
+                    *open_saved_asset(requested),
+                )
+            catalog = reload_saved_asset_catalog(current)
+            message = (
+                _notice("warn", "找不到所选任务", "请在此服务的已保存资产目录中选择任务；没有创建或重新提交生成。")
+                if requested else catalog[1]
+            )
+            return gr.update(), catalog[0], message, *[gr.update() for _ in [*asset_outputs, *task_outputs]]
+
         demo.load(
-            reload_saved_asset_catalog,
+            load_workbench_entry,
             inputs=task_job,
-            outputs=[task_job, asset_catalog_status],
+            outputs=[workflow_tabs, task_job, asset_catalog_status, *asset_outputs, *task_outputs],
             queue=False,
+        )
+        task_job.change(
+            fn=None,
+            inputs=task_job,
+            js="""(job) => {
+                const origin = new URLSearchParams(window.location.search).get('workbench_origin');
+                if (origin && /^https?:\\/\\//.test(origin) && window.parent !== window) {
+                    window.parent.postMessage({type: 'workbench:sprite-job', jobId: String(job || '')}, origin);
+                }
+                return [];
+            }""",
+            queue=False,
+            api_visibility="private",
         )
         demo.load(
             fn=None,

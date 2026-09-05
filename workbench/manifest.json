@@ -5,6 +5,10 @@
     "taskDirectory": "work/tasks",
     "outputDirectory": "outputs"
   },
+  "productionLines": [
+    { "id": "player", "name": "玩家", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/tools/sprite-generator", "summary": ["角色图片", "动作序列帧", "导出"] },
+    { "id": "scene", "name": "场景", "eyebrow": "SCENE / INTERACTION", "description": "搭建地图，制作可以互动的物件。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作"] }
+  ],
   "agentAssets": {
     "role": "external-client",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",
@@ -43,6 +47,10 @@
       "workflow": "workbench/workflows/sprite-production.json",
       "ui": {
         "icon": "frames",
+        "productionLine": "player",
+        "entryTitle": "制作玩家",
+        "starterHint": "准备角色图片，在序列帧工具中创建一个动作；可以先从待机动作开始。",
+        "stages": ["准备素材", "生成动作", "检查并导出"],
         "accent": "violet",
         "status": "ready",
         "route": "/tools/sprite-generator",
@@ -147,6 +155,10 @@
       "workflow": "workbench/workflows/map-production.json",
       "ui": {
         "icon": "map",
+        "productionLine": "scene",
+        "entryTitle": "搭建地图",
+        "starterHint": "准备一张或多张地图图片，在地图工具中选择新建 / 导入。",
+        "stages": ["地图拼接", "检查并导出"],
         "accent": "cyan",
         "status": "ready",
         "route": "/tools/map-stitcher",
@@ -277,6 +289,10 @@
       "workflow": "workbench/workflows/interactable-production.json",
       "ui": {
         "icon": "interactable",
+        "productionLine": "scene",
+        "entryTitle": "制作交互物",
+        "starterHint": "准备物件外观素材，在交互物工具中新建查看、切换、拾取或序列物件。",
+        "stages": ["配置物件", "预览并导出"],
         "accent": "cyan",
         "status": "ready",
         "route": "/tools/interactable-editor",

@@ -13,6 +13,10 @@ export type WorkbenchModule = {
   capabilities: readonly string[];
   status: 'ready' | 'beta' | 'planned';
   surface: 'editor' | 'preview';
+  productionLine: string;
+  entryTitle: string;
+  starterHint: string;
+  stages: readonly string[];
 };
 
 /**
@@ -25,8 +29,17 @@ export const workbenchModules: readonly WorkbenchModule[] =
     name: capability.name,
     shortName: capability.shortName,
     description: capability.description,
+    productionLine: capability.ui.productionLine,
+    entryTitle: capability.ui.entryTitle,
+    starterHint: capability.ui.starterHint,
+    stages: capability.ui.stages,
     href: capability.ui.route,
-    icon: capability.ui.icon === 'interactable' ? 'interactable' : capability.ui.icon === 'map' ? 'map' : 'frames',
+    icon:
+      capability.ui.icon === 'interactable'
+        ? 'interactable'
+        : capability.ui.icon === 'map'
+          ? 'map'
+          : 'frames',
     accent: capability.ui.accent === 'cyan' ? 'cyan' : 'violet',
     capabilities: capability.ui.capabilities,
     status:
@@ -37,3 +50,5 @@ export const workbenchModules: readonly WorkbenchModule[] =
           : 'ready',
     surface: capability.ui.surface === 'editor' ? 'editor' : 'preview',
   }));
+
+export const productionLines = manifest.productionLines;

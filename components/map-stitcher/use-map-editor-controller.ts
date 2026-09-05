@@ -82,6 +82,7 @@ import {
 } from '@/features/map-stitcher/generation-queue';
 import { useLiveState } from './use-live-state';
 import { useMapApiSettings } from './panels/map-api-settings';
+import { saveBeforeReplacement } from '@/lib/workbench/editor-session';
 
 const initialQueue: QueueSnapshot = {
   jobs: [],
@@ -98,6 +99,7 @@ export type MapExportFormat =
   | 'psd'
   | 'godot';
 export function useMapEditorController() {
+  const [workspaceId, setWorkspaceId] = useState('');
   const [history] = useState(() => new MapHistory());
   const historyView = useSyncExternalStore(
     history.subscribe,
@@ -469,6 +471,7 @@ export function useMapEditorController() {
   };
   const importImages = async (files: File[]) => {
     if (!files.length) return;
+    await saveBeforeReplacement('map-stitcher');
     invalidate();
     const token = epoch.current;
     setBusy(true);
@@ -493,6 +496,7 @@ export function useMapEditorController() {
       for (let index = 1; index < assets.length; index++)
         next[index] = { ...next[index], images: { overall: assets[index] } };
       resetDocument({ tiles: next, shapes: [] });
+      setWorkspaceId(`map:${crypto.randomUUID()}`);
       setSelection({ kind: 'tile', tileKey: CENTER_KEY });
       setActiveMapLayer('overall');
       setImageLocks({ ...DEFAULT_IMAGE_LOCKS });
@@ -525,6 +529,7 @@ export function useMapEditorController() {
       files.find((item) => /\.json$/i.test(item.name));
     if (!file)
       throw new Error('请选择状态 ZIP / JSON 或完整 Godot 资源文件夹。');
+    await saveBeforeReplacement('map-stitcher');
     invalidate();
     const token = epoch.current;
     setBusy(true);
@@ -536,6 +541,7 @@ export function useMapEditorController() {
         throw new Error('导入已取消。');
       }
       resetDocument(loaded);
+      setWorkspaceId(`map:${crypto.randomUUID()}`);
       setSelection({
         kind: 'tile',
         tileKey: loaded.tiles.some((tile) => tile.key === loaded.selectedKey)
@@ -846,6 +852,20 @@ export function useMapEditorController() {
     regionVisibility,
     editorPreferences: preferences,
   });
+  const restoreWorkspaceSnapshot = (loaded: FrameRoninEditorSnapshot, id: string) => {
+    invalidate();
+    resetDocument(loaded);
+    setWorkspaceId(id);
+    setSelection(loaded.selectedKey ? { kind: 'tile', tileKey: loaded.selectedKey } : { kind: 'none' });
+    setActiveMapLayer(loaded.activeMapLayer);
+    setPan(loaded.pan); setZoom(loaded.zoom); setPrompt(loaded.overallPrompt);
+    setHorizontalOverlap(loaded.horizontalOverlapPercent); setVerticalOverlap(loaded.verticalOverlapPercent);
+    setExpandSplit(loaded.expandSplit); setHideCards(loaded.hidePreviewCards); setHideBorders(loaded.hidePreviewBorders);
+    setImageLocks(loaded.imageLocks); setRegionLocks(loaded.regionLocks); setRegionVisibility(loaded.regionVisibility);
+    setPreferences(readEditorPreferences(loaded.editorPreferences));
+    setExportPreview(false);
+    setHint('已恢复本机地图草稿，原始图片、图层和区域都已载入。');
+  };
   const generateLayer = async (
     tileKey: string,
     layer: MapImageLayer,
@@ -1067,7 +1087,7 @@ export function useMapEditorController() {
     setPanel('queue');
     setPanelOpen(true);
   };
-  const exportArtifact = async (
+  const createExportArtifact = async (
     format: MapExportFormat,
     layer: MapDisplayLayer = mapLayerRef.current,
   ) => {
@@ -1108,6 +1128,11 @@ export function useMapEditorController() {
       setBusy(false);
     }
   };
+  const exportArtifact = async (format: MapExportFormat, layer?: MapDisplayLayer) => {
+    const result = await createExportArtifact(format, layer);
+    window.dispatchEvent(new CustomEvent('workbench:map-export', { detail: { id: workspaceId, format } }));
+    return result;
+  };
   useEffect(() => {
     // Strict Mode and Fast Refresh re-run effects without discarding the document.
     // Dispose only if the editor stays unmounted through the next task.
@@ -1122,6 +1147,9 @@ export function useMapEditorController() {
     };
   }, [queue]);
   return {
+    workspaceId,
+    getWorkspaceSnapshot: snapshot,
+    restoreWorkspaceSnapshot,
     document,
     tiles,
     shapes,

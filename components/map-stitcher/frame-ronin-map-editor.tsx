@@ -36,6 +36,7 @@ import {
   type MapExportFormat,
 } from './use-map-editor-controller';
 import { useMapAgentTools } from './use-map-agent-tools';
+import { useMapWorkspace } from './use-map-workspace';
 import { MapCanvas } from './canvas/map-canvas';
 import { MapInspector } from './panels/map-inspector';
 import { MapApiSettingsDialog } from './panels/map-api-settings';
@@ -44,6 +45,7 @@ import './frame-ronin-editor.css';
 
 export function FrameRoninMapEditor() {
   const c = useMapEditorController();
+  const workspace = useMapWorkspace(c);
   useMapAgentTools(c);
   const sourceInput = useRef<HTMLInputElement>(null),
     layerInput = useRef<HTMLInputElement>(null),
@@ -68,6 +70,8 @@ export function FrameRoninMapEditor() {
   return (
     <Toaster>
       <main className="map-workspace" data-map-editor>
+        {workspace.loading && <output className="wb-loading-veil">正在恢复地图草稿…</output>}
+        {workspace.error && <div className="wb-map-draft-error" role="alert">{workspace.error}</div>}
         <header className="map-project-bar">
           <div className="map-project-title">
             <Layers3 size={21} />

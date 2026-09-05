@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ExternalLink,
   LoaderCircle,
@@ -13,6 +13,8 @@ import {
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchModule } from '@/lib/workbench/modules';
+import { useWorkbench } from '@/components/workbench/workbench-provider';
+import { publishEditorSession, removeEditorSession } from '@/lib/workbench/editor-session';
 
 type PipelineStatus = 'checking' | 'ready' | 'offline';
 
@@ -41,6 +43,30 @@ export function SpritePipelineWorkspace({
   const [status, setStatus] = useState<PipelineStatus>('checking');
   const [pipelineVersion, setPipelineVersion] = useState<string | null>(null);
   const pipelineUrl = normalizedPipelineUrl();
+  const iframe = useRef<HTMLIFrameElement>(null);
+  const { spriteItems } = useWorkbench();
+  const [entryJob, setEntryJob] = useState('');
+  const [activeJob, setActiveJob] = useState('');
+  const [parentOrigin, setParentOrigin] = useState('');
+  const embedded = new URL(pipelineUrl);
+  if (entryJob) embedded.searchParams.set('workbench_job', entryJob);
+  if (parentOrigin) embedded.searchParams.set('workbench_origin', parentOrigin);
+  const embeddedUrl = embedded.toString();
+  useEffect(() => {
+    const job = new URLSearchParams(location.search).get('job') || '';
+    // oxlint-disable-next-line react/react-compiler -- Hydrate the browser-only deep link after server rendering.
+    setEntryJob(job); setActiveJob(job); setParentOrigin(location.origin);
+    const receive = (event: MessageEvent) => {
+      if (event.origin !== new URL(pipelineUrl).origin || event.source !== iframe.current?.contentWindow) return;
+      if (event.data?.type === 'workbench:sprite-job' && typeof event.data.jobId === 'string' && event.data.jobId.length <= 200) setActiveJob(event.data.jobId);
+    };
+    window.addEventListener('message', receive);
+    return () => { window.removeEventListener('message', receive); removeEditorSession('sprite-generator'); };
+  }, [pipelineUrl]);
+  const activeItem = spriteItems.find(item => item.id === `sprite:${activeJob}`);
+  useEffect(() => {
+    publishEditorSession({ capabilityId: 'sprite-generator', items: activeItem ? [activeItem] : [], dirty: false, busy: false, save: async () => {} });
+  }, [activeItem]);
 
   const checkConnection = useCallback(async () => {
     const controller = new AbortController();
@@ -123,7 +149,7 @@ export function SpritePipelineWorkspace({
             重试
           </Button>
           <a
-            href={pipelineUrl}
+            href={embeddedUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-7 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.025] px-2.5 text-[0.8rem] font-medium text-white/56 transition hover:bg-white/6 hover:text-white/88 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
@@ -136,8 +162,9 @@ export function SpritePipelineWorkspace({
 
       {status === 'ready' ? (
         <iframe
-          key={pipelineUrl}
-          src={pipelineUrl}
+          ref={iframe}
+          key={embeddedUrl}
+          src={embeddedUrl}
           title="NativeFramesGeneration 序列帧生成工作区"
           className="min-h-0 w-full flex-1 border-0 bg-[#11101a]"
           onLoad={() => setStatus('ready')}

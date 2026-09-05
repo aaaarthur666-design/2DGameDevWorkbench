@@ -1,13 +1,11 @@
 import type { ReactNode } from 'react';
 
-import { WorkbenchNavigation } from '@/components/workbench/workbench-navigation';
-import { workbenchModules } from '@/lib/workbench/modules';
+import { WorkbenchProvider } from '@/components/workbench/workbench-provider';
+import { WorkbenchChrome } from '@/components/workbench/workbench-chrome';
+import '@/components/workbench/workbench.css';
 
 export default function WorkbenchLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="workbench-app-shell min-h-svh">
-      <WorkbenchNavigation modules={workbenchModules} />
-      <div className="workbench-route-shell">{children}</div>
-    </div>
+    <WorkbenchProvider><WorkbenchChrome>{children}</WorkbenchChrome></WorkbenchProvider>
   );
 }

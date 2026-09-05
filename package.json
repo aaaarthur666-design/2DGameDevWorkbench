@@ -27,6 +27,7 @@
     "test:adapters": "node tests/workbench-adapters/run.mjs",
     "test:http": "node tests/workbench-http/run.mjs",
     "test:map-stitcher": "node tests/map-stitcher/run.mjs",
+    "test:workbench-shell": "node tests/workbench-shell/run.mjs",
     "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
