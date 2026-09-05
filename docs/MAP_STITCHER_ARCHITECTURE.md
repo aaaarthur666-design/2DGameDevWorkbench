@@ -1,101 +1,58 @@
-# 地图拼接工具架构（FrameRonin / Pixelwork v2 模式）
+# 地图拼接架构
 
-## 实施结论
-
-当前主入口 `/tools/map-stitcher` 已采用模块化重建，不再把图片画笔伪装成“区域绘制”。旧实现保留在 `/tools/map-stitcher-legacy`，用于回退和迁移核对。
-
-公开 FrameRonin 仓库中的地图组件是较早的单层实现；线上 V4.3 的高级图层与区域逻辑只存在于压缩后的浏览器构建中，且没有 source map。因此本项目采用可测试的 clean-room 行为重建：对齐线上可观察的数据结构、快捷键和导出语义，但不复制压缩实现。
+当前主入口 `app/(workbench)/tools/map-stitcher/page.tsx` 组合模块化的 FrameRonin 编辑器。旧版路由保留为迁移回退；Unity 不在能力范围内。
 
 ## 模块边界
 
 | 模块 | 职责 |
 | --- | --- |
-| `frame-ronin-types.ts` | 图片层、显示层、区域层、Pixelwork v2 状态契约 |
-| `frame-ronin-geometry.ts` | 4 / 8 / 12 方位扩展、地图边界、卡片像素尺寸 |
-| `region-engine.ts` | 矩形、多边形、自由路径的验证、命中测试、坐标迁移 |
-| `layer-engine.ts` | 黑白底抠图、派生 Mask、遮挡扣除、Top 裁图、拼接渲染 |
-| `state-package.ts` | Pixelwork v2 ZIP 读写、SceneMaker v5 迁移 |
-| `engine-export.ts` | Godot 图片、区域清单和运行时辅助代码 |
-| `psd-export.ts` | FrameRonin 图层语义的分层 PSD |
-| `region-drawing-overlay.tsx` | SVG 区域绘制交互；不修改底层图片 |
-| `frame-ronin-map-editor.tsx` | 页面状态、工具栏、图层与区域操作的薄编排层 |
-| `lib/workbench/adapters/map-stitcher.mjs` | Agent 的本地 compose、接缝检查、状态包和引擎包输出；外部扩图协议翻译 |
-| `scripts/workbench-http.mjs` | 仅监听回环地址，让 Worker 网页读取 Node runtime 的共享任务和产物 |
+| `frame-ronin-map-editor.tsx` | 项目栏、单选图片视图、弹窗与模块组合 |
+| `use-map-editor-controller.ts` | 文档动作、选择、锁定、版本检查、历史、资产生命周期、生成与导出 |
+| `canvas/map-canvas.tsx` | 导航与绘制手势路由、快捷键作用域、图片和交互层、派生预览 |
+| `region-drawing-overlay.tsx` | 选中卡片的坐标输入、草稿、命中与 SVG 标注 |
+| `panels/map-inspector.tsx` | 地图块、区域、生成队列三个属性页签 |
+| `panels/map-api-settings.tsx` | 服务端配置读取与密钥设置表单 |
+| `use-map-agent-tools.ts` | 页面 WebMCP；调用控制器动作 |
+| `editor-state.ts` | 文档、会话和偏好类型；历史外部存储；图片提交凭据 |
+| `editor-selectors.ts` | 区域范围、资源就绪、缓存身份、内存估算和快捷键目标过滤 |
+| `generation-queue.ts` | 并发调度、内存 / 锁暂停、取消、重试 |
+| `region-engine.ts` | 规范几何、合法性、命中、SVG 与世界坐标 |
+| `layer-engine.ts` | 真实黑白参考提取、Mask、扣除、羽化、拼接和本地补全 |
+| `map-production.ts` | 分层就绪判定、实际导出合成、全部 PNG、透明物件参考派生 |
+| `state-package.ts`、`godot-import.ts` | Pixelwork 源状态、SceneMaker 迁移与 Godot 恢复 |
+| `engine-export.ts`、`psd-export.ts` | Godot 与 PSD 资源 |
+| `lib/workbench/adapters/map-stitcher.mjs` | 仓库 Agent 的本地 compose 与外部整体扩图协议转换 |
 
-## 图片图层
+## 状态和动作
 
-可编辑图片层为：
+文档只有卡片与区域；视图、编辑会话、选择、历史和派生缓存分别管理。文档快照不可变，`MapHistory` 通过 `useSyncExternalStore` 通知 React，避免可变对象被编译器错误缓存。事件 / 异步提交用即时更新的引用读取最新锁和目标，不依赖旧渲染闭包。
 
-- `overall`：导入或扩展得到的完整画面。
-- `surface`：地表。
-- `object`：透明物件层，可由黑白底参考恢复。
-- `black` / `white`：物件提取的黑白底参考。
+图片写入凭据记录项目 epoch、卡片、图片类型、原 URL 和锁版本。替换目标图片、切换项目、撤销 / 重做或切换目标锁后，旧异步结果会被拒绝。对成对参考图先校验全部写入目标，再一次性提交。区域动作按目标类别检查锁，并使用同一范围选择器进行列表、计数、清空和删除。
 
-`mask` 是只读显示层，由 `overall alpha × object alpha` 派生。遮挡区域会用 `destination-out` 同时扣除 `object` 和 `mask`，所以预览与引擎导出共用同一合成规则。
+历史最多 80 步，保留原图片引用供撤销和重做使用。根据当前文档与两侧历史共同计算资产引用；只有完全不可达时才释放 Blob URL。失败导入释放中间素材，不替换当前文档。派生预览 URL 由对应效果负责取消与释放。
 
-像素精修是单独工具，只修改当前图片层。它与 SVG 区域标注没有共享写入路径。
+## 画布与几何
 
-## 矢量区域
+底图层按文档顺序绘制，选中装饰与命中区域位于独立交互层；选择不提升底图。显示视图是六选一，区域效果与辅助显隐分离。物件与 Mask 的缓存身份包含图片 URL、视图、卡片尺寸和该卡片所有遮挡扣除区域。
 
-四类区域均支持矩形、多边形和自由绘制：
+画布捕获阶段先决定是否平移。仅主指针左键进入选中卡片的区域编辑器；父卡片不再收到已消费的区域手势。自由套索使用指针捕获；取消、失焦与编辑上下文变化都使草稿失效。
 
-- `occlusion`：从 object / mask 扣除。
-- `collision`：导出为引擎碰撞多边形。
-- `adjust`：作为运行时可调区域写入 `regions.json`。
-- `top`：从 overall 裁出独立顶层图，Godot 中使用更高 `z_index`。
+矩形兼容两个对角点及旧导出的四角点。多边形与自由套索共用闭合路径；检查有限坐标、面积、顶点数和自交。顶层裁剪将各区域先做遮罩并集，避免不同绕序的重叠多边形互相抵消。
 
-区域点使用“卡片本地像素坐标”。矩形按照线上状态格式只保存起点和终点两个点；渲染、命中测试和引擎导出时才展开为四角。多边形按 `C` 或 `Enter` 闭合，自由绘制使用指针轨迹。`Ctrl+Z` 撤销最近一次区域变更。
+区域默认归属于创建时的图片视图。`mapLayer` 不限制遮挡扣除、碰撞和顶层的实际效果；跨视图参考可以从区域列表定位。
 
-## 状态兼容
+## 生产与持久化
 
-保存格式是 `pixelwork-map-stitch-state` v2 ZIP，内部清单为 `map_stitch_state.json`。关键兼容点：
+整体生成通过已有服务端代理或本地镜像补全。前端不新增连接器不支持的语义分层参数。地表副本标为草稿；物件来自上传或真实黑白参考；透明物件可反向派生黑白参考。只有完整且非草稿的素材才启用分层合成。
 
-- `tiles` 是以卡片 key 为键的几何对象。
-- `tileUploads` 保存非中心卡片的 overall 图片。
-- `tileLayerUploads` 使用“图层 -> 卡片 -> 图片引用”的结构，并为兼容线上状态缓存派生 mask。
-- `drawShapes` 使用线上字段：`id`、`tileKey`、`mapLayer`、`layer`、`mode`、`points`。
+队列限制并发为 1–4，自动扩展总数为 1–64。内存保护在调度前检查图片 / 历史与临时画布估算；暂停、取消和失败重试有独立状态。取消的 AbortSignal 和文档凭据共同阻止旧结果提交。
 
-加载器同时接受 Pixelwork v1/v2 和本项目旧 SceneMaker v5：
+保存继续使用 Pixelwork v2。新增 `workbench.editorPreferences`、`tileImageOrigins` 和 `surfaceDrafts` 扩展；保留每个区域的卡片本地坐标与所属视图。Godot 包嵌入 `source_state.zip` 用于完整恢复，旧包按实际信息降级为合成卡片。完整编辑源不包含撤销栈。
 
-| SceneMaker v5 | 新模型 |
-| --- | --- |
-| `ground` | `surface`，并参与 overall 合成 |
-| `object` | `object`，并参与 overall 合成 |
-| `foreground` | 烘焙进 overall；不伪造无法推断的 top 区域 |
-| `black` / `white` | 同名层 |
-| 归一化碰撞矩形 | 像素坐标 `collision` 矩形区域 |
+PNG 导出预览与 Godot 默认可见图层共享就绪判定。图片拼接、Alpha 扣除、顶层裁剪和碰撞导出共用坐标与几何。隐藏卡片被明确排除，辅助标注的显隐不影响输出。
 
-迁移若遇到 foreground 会给出明确警告。
+## Workbench 接入
 
-## 导出
+模块能力只登记在 `workbench/manifest.json`。仓库 MCP、CLI 与 Web 通过共享 Runtime / adapter 保持相同连接器契约；页面七个 WebMCP 工具是对当前浏览器文档的操作入口，共用控制器，不另建编辑模型。服务端密钥不进入客户端、任务记录、日志或编辑状态。
 
-- 当前层 PNG：使用与预览相同的羽化和遮挡逻辑。
-- Top PNG：只保留 top 区域裁出的画面。
-- PSD：保存 overall、surface、object、mask、top、black、white 中实际存在的层；默认只显示 overall，避免重复合成。
-- Godot：PNG、`map_scene.tscn`、`regions.json`、区域读取脚本和项目配置。
-
-外部图像生成仍只经过 `/api/workbench/map-stitcher/generate` 服务端代理，并以网页同款 `image/prompt/tile/layer/mask_mode` 直接请求服务。连接器地址和令牌不进入客户端状态、日志或导出文件。
-
-Agent 的 `compose` 操作不依赖浏览器或外部 URL。它通过 Manifest 选择本地适配器，产物落到任务专属的 `outputs/<task-id>/`。地图页面另有六个 WebMCP 工具，分别完成摘要、视图、导入、生成、区域创建和导出；这些工具调用与可见按钮相同的状态函数。
-
-## 验证
-
-核心回归命令：
-
-```text
-npm run test:map-stitcher
-npm run test:adapters
-npm run test:http
-npm run workbench -- doctor --json
-npm run test:mcp
-npm run lint
-npm run build
-```
-
-单元测试覆盖线上矩形状态格式、区域命中与坐标迁移、扩展几何、黑白底抠图、Pixelwork 清单解析和引擎世界坐标。浏览器冒烟测试覆盖图片导入、矩形碰撞绘制、撤销、图层流水线、派生 Mask、状态保存、PSD 与 Godot 导出。
-
-## 有意保留的边界
-
-- 本地生成是确定性回退：可完成扩展、参考层和整个数据流验证；整体层语义扩图可激活 Nano Banana 2 或 GPT Image 2，其他图层仍由本地流程派生。
-- `adjust` 会完整导出为区域元数据，但其游戏内行为由具体项目决定。
-- 旧编辑器暂不删除；在用户现有状态文件完成迁移验收前保留回退路径。
+测试和使用方式见 [用户文档](map-stitcher.md) 与 [修复验收](MAP_STITCHER_REPAIR_VERIFICATION.md)。

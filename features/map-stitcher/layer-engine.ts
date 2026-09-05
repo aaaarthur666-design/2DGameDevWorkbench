@@ -7,7 +7,11 @@ import type {
   MapImageLayer,
   RegionShape,
 } from './frame-ronin-types';
-import { mapShapeToWorldPixels, shapePolygonPoints, shapesForTile } from './region-engine';
+import {
+  mapShapeToWorldPixels,
+  shapePolygonPoints,
+  shapesForTile,
+} from './region-engine';
 
 export interface RenderedMap {
   canvas: HTMLCanvasElement;
@@ -35,10 +39,18 @@ export function extractMattePixel(
   ];
 }
 
-export async function deriveObjectFromMattes(black: ImageAsset, white: ImageAsset) {
+export async function deriveObjectFromMattes(
+  black: ImageAsset,
+  white: ImageAsset,
+) {
+  if (black.width !== white.width || black.height !== white.height)
+    throw new Error('黑白参考图尺寸必须一致。');
   const width = Math.max(1, Math.min(black.width, white.width));
   const height = Math.max(1, Math.min(black.height, white.height));
-  const [blackImage, whiteImage] = await Promise.all([loadImage(black.url), loadImage(white.url)]);
+  const [blackImage, whiteImage] = await Promise.all([
+    loadImage(black.url),
+    loadImage(white.url),
+  ]);
   const blackCanvas = createCanvas(width, height);
   const whiteCanvas = createCanvas(width, height);
   const blackContext = context2d(blackCanvas, true);
@@ -48,26 +60,49 @@ export async function deriveObjectFromMattes(black: ImageAsset, white: ImageAsse
   const blackData = blackContext.getImageData(0, 0, width, height);
   const whiteData = whiteContext.getImageData(0, 0, width, height);
   const output = blackContext.createImageData(width, height);
+  let difference = 0;
 
   for (let offset = 0; offset < output.data.length; offset += 4) {
+    difference +=
+      Math.abs(blackData.data[offset] - whiteData.data[offset]) +
+      Math.abs(blackData.data[offset + 1] - whiteData.data[offset + 1]) +
+      Math.abs(blackData.data[offset + 2] - whiteData.data[offset + 2]);
     const pixel = extractMattePixel(
-      [blackData.data[offset], blackData.data[offset + 1], blackData.data[offset + 2]],
-      [whiteData.data[offset], whiteData.data[offset + 1], whiteData.data[offset + 2]],
+      [
+        blackData.data[offset],
+        blackData.data[offset + 1],
+        blackData.data[offset + 2],
+      ],
+      [
+        whiteData.data[offset],
+        whiteData.data[offset + 1],
+        whiteData.data[offset + 2],
+      ],
     );
     output.data[offset] = pixel[0];
     output.data[offset + 1] = pixel[1];
     output.data[offset + 2] = pixel[2];
     output.data[offset + 3] = pixel[3];
   }
+  if (!difference)
+    throw new Error(
+      '黑白参考图完全相同，无法恢复透明物件。请上传同一物件在真实黑底和白底上的参考图。',
+    );
   blackContext.clearRect(0, 0, width, height);
   blackContext.putImageData(output, 0, 0);
   return canvasToBlob(blackCanvas);
 }
 
-export async function deriveMaskCanvas(overall: ImageAsset, object: ImageAsset) {
+export async function deriveMaskCanvas(
+  overall: ImageAsset,
+  object: ImageAsset,
+) {
   const width = Math.max(1, Math.min(overall.width, object.width));
   const height = Math.max(1, Math.min(overall.height, object.height));
-  const [overallImage, objectImage] = await Promise.all([loadImage(overall.url), loadImage(object.url)]);
+  const [overallImage, objectImage] = await Promise.all([
+    loadImage(overall.url),
+    loadImage(object.url),
+  ]);
   const canvas = createCanvas(width, height);
   const context = context2d(canvas, true);
   context.drawImage(overallImage, 0, 0, width, height);
@@ -77,7 +112,9 @@ export async function deriveMaskCanvas(overall: ImageAsset, object: ImageAsset) 
   const objectData = context.getImageData(0, 0, width, height);
   const output = context.createImageData(width, height);
   for (let offset = 0; offset < output.data.length; offset += 4) {
-    const alpha = Math.round(overallData.data[offset + 3] * objectData.data[offset + 3] / 255);
+    const alpha = Math.round(
+      (overallData.data[offset + 3] * objectData.data[offset + 3]) / 255,
+    );
     output.data[offset] = 255;
     output.data[offset + 1] = 255;
     output.data[offset + 2] = 255;
@@ -103,7 +140,14 @@ export async function renderFrameRoninTile(
   if (layer === 'mask') {
     const overall = tile.images.overall;
     const object = tile.images.object;
-    if (overall && object) context.drawImage(await deriveMaskCanvas(overall, object), 0, 0, width, height);
+    if (overall && object)
+      context.drawImage(
+        await deriveMaskCanvas(overall, object),
+        0,
+        0,
+        width,
+        height,
+      );
   } else {
     const asset = tile.images[layer];
     if (asset) {
@@ -113,7 +157,9 @@ export async function renderFrameRoninTile(
   }
 
   if ((layer === 'object' || layer === 'mask') && canvasHasPixels(canvas)) {
-    const occlusionShapes = shapesForTile(shapes, tile.key, { layers: ['occlusion'] });
+    const occlusionShapes = shapesForTile(shapes, tile.key, {
+      layers: ['occlusion'],
+    });
     if (occlusionShapes.length) {
       context.save();
       context.globalCompositeOperation = 'destination-out';
@@ -157,12 +203,21 @@ export async function generateLocalLayerFill(
   sourceWidth: number,
   sourceHeight: number,
 ) {
-  const canvas = await createGenerationTemplate(tiles, target, layer, sourceWidth, sourceHeight);
+  const canvas = await createGenerationTemplate(
+    tiles,
+    target,
+    layer,
+    sourceWidth,
+    sourceHeight,
+  );
   const context = context2d(canvas);
   const nearest = tiles
-    .filter((tile) => tile.key !== target.key && tile.images[layer])
+    .filter(
+      (tile) => tile.key !== target.key && !tile.hidden && tile.images[layer],
+    )
     .sort((a, b) => tileDistance(a, target) - tileDistance(b, target))[0];
-  if (!nearest?.images[layer]) throw new Error('当前图层没有可用于本地补全的相邻图片');
+  if (!nearest?.images[layer])
+    throw new Error('当前图层没有可用于本地补全的相邻图片');
   const image = await loadImage(nearest.images[layer].url);
   context.save();
   context.globalCompositeOperation = 'destination-over';
@@ -188,29 +243,55 @@ export async function renderStitchedMap(
   const originY = Math.floor(bounds.minY * sourceHeight);
   const width = Math.max(1, Math.ceil(bounds.maxX * sourceWidth) - originX);
   const height = Math.max(1, Math.ceil(bounds.maxY * sourceHeight) - originY);
+  if (width > 30000 || height > 30000 || width * height > 64_000_000)
+    throw new Error(
+      '合成画布超过 6400 万像素或 30000 像素边长，请减少输出范围。',
+    );
   const canvas = createCanvas(width, height);
   const context = context2d(canvas);
 
   if (layer === 'top') {
-    const overall = await renderStitchedMap(tiles, 'overall', shapes, sourceWidth, sourceHeight);
+    const overall = await renderStitchedMap(
+      tiles,
+      'overall',
+      shapes,
+      sourceWidth,
+      sourceHeight,
+    );
     context.drawImage(overall.canvas, 0, 0);
-    context.save();
-    context.globalCompositeOperation = 'destination-in';
-    context.beginPath();
-    for (const shape of shapes.filter((candidate) => candidate.layer === 'top')) {
+    const mask = createCanvas(width, height);
+    const maskContext = context2d(mask);
+    for (const shape of shapes.filter(
+      (candidate) => candidate.layer === 'top',
+    )) {
       const tile = tiles.find((candidate) => candidate.key === shape.tileKey);
-      if (!tile) continue;
-      appendWorldRegionPath(context, mapShapeToWorldPixels(shape, tile, sourceWidth, sourceHeight), originX, originY);
+      if (!tile || tile.hidden) continue;
+      maskContext.beginPath();
+      appendWorldRegionPath(
+        maskContext,
+        mapShapeToWorldPixels(shape, tile, sourceWidth, sourceHeight),
+        originX,
+        originY,
+      );
+      maskContext.fillStyle = '#fff';
+      maskContext.fill();
     }
-    context.fillStyle = '#fff';
-    context.fill();
-    context.restore();
+    context.globalCompositeOperation = 'destination-in';
+    context.drawImage(mask, 0, 0);
+    context.globalCompositeOperation = 'source-over';
+    overall.canvas.width = overall.canvas.height = mask.width = mask.height = 1;
     return { canvas, bounds, originX, originY, width, height };
   }
 
   for (const tile of tiles) {
     if (tile.hidden) continue;
-    const tileCanvas = await renderFrameRoninTile(tile, layer, shapes, sourceWidth, sourceHeight);
+    const tileCanvas = await renderFrameRoninTile(
+      tile,
+      layer,
+      shapes,
+      sourceWidth,
+      sourceHeight,
+    );
     if (!canvasHasPixels(tileCanvas)) continue;
     context.save();
     applyFeather(context, tileCanvas, tile);
@@ -226,7 +307,10 @@ export async function renderStitchedMap(
   return { canvas, bounds, originX, originY, width, height };
 }
 
-export function fillRegionPath(context: CanvasRenderingContext2D, shape: RegionShape) {
+export function fillRegionPath(
+  context: CanvasRenderingContext2D,
+  shape: RegionShape,
+) {
   const points = shapePolygonPoints(shape);
   if (!points.length) return;
   context.beginPath();
@@ -253,11 +337,16 @@ function appendWorldRegionPath(
 ) {
   if (!points.length) return;
   context.moveTo(points[0].x - originX, points[0].y - originY);
-  for (const point of points.slice(1)) context.lineTo(point.x - originX, point.y - originY);
+  for (const point of points.slice(1))
+    context.lineTo(point.x - originX, point.y - originY);
   context.closePath();
 }
 
-function applyFeather(context: CanvasRenderingContext2D, tileCanvas: HTMLCanvasElement, tile: FrameRoninTile) {
+function applyFeather(
+  context: CanvasRenderingContext2D,
+  tileCanvas: HTMLCanvasElement,
+  tile: FrameRoninTile,
+) {
   const { top, right, bottom, left } = tile.feather;
   if (![top, right, bottom, left].some(Boolean)) return;
   const mask = createCanvas(tileCanvas.width, tileCanvas.height);
@@ -290,7 +379,10 @@ function canvasHasPixels(canvas: HTMLCanvasElement) {
 }
 
 function tileDistance(a: FrameRoninTile, b: FrameRoninTile) {
-  return Math.hypot(a.x + a.w / 2 - b.x - b.w / 2, a.y + a.h / 2 - b.y - b.h / 2);
+  return Math.hypot(
+    a.x + a.w / 2 - b.x - b.w / 2,
+    a.y + a.h / 2 - b.y - b.h / 2,
+  );
 }
 
 function createCanvas(width: number, height: number) {
@@ -301,7 +393,9 @@ function createCanvas(width: number, height: number) {
 }
 
 function context2d(canvas: HTMLCanvasElement, readFrequently = false) {
-  const context = canvas.getContext('2d', { willReadFrequently: readFrequently });
+  const context = canvas.getContext('2d', {
+    willReadFrequently: readFrequently,
+  });
   if (!context) throw new Error('浏览器无法创建 2D 画布');
   context.imageSmoothingEnabled = false;
   return context;

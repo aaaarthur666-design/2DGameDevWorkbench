@@ -151,7 +151,7 @@
         "status": "ready",
         "route": "/tools/map-stitcher",
         "surface": "editor",
-        "capabilities": ["切片编排", "六层显示", "四类区域绘制", "Pixelwork v2 状态", "Godot 导出"]
+        "capabilities": ["六种图片视图", "四类区域绘制", "受控生成队列", "全部 PNG / PSD", "Pixelwork 状态与 Godot 恢复"]
       },
       "connector": {
         "type": "local-adapter",
@@ -207,7 +207,7 @@
           "image": {
             "type": "string",
             "minLength": 1,
-            "description": "generate-layer 使用的 data:image URL。"
+            "description": "generate-layer 的 data:image 扩图模板。仅 Alpha 为 0 的像素可填充，其余像素由服务端原样保留；输出保持模板尺寸和比例。"
           },
           "tile": {
             "type": "object",
@@ -216,11 +216,12 @@
           "layer": {
             "type": "string",
             "enum": ["overall"],
-            "description": "外部图片 API 仅生成整体层；其他图片层由本地流程派生。"
+            "description": "外部图片 API 仅生成整体层；独立地表需上传，物件可由真实黑白参考在本地提取。"
           },
           "mask_mode": {
             "type": "string",
-            "enum": ["black", "white"]
+            "enum": ["black", "white"],
+            "description": "旧客户端兼容字段；可编辑范围由 image 的透明通道确定，不按黑白颜色判断。"
           },
           "columns": {
             "type": "integer",

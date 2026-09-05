@@ -164,7 +164,7 @@ npm run workbench -- run sprite-generator --input examples/requests/sprite-gener
 
 `sprite-pipeline` 适配器把 Manifest 的 camelCase 输入转换成 Python `/v1/jobs` 协议；`map-stitcher` 适配器在本地执行 `compose`，仅在 `generate-layer` 时调用所选官方图片 API。也可以在地图设置窗口输入密钥：它只保存在当前 Runtime Bridge 进程内存中，服务端不会把密钥回传给页面，也不会写入任务记录或日志。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
 
-地图编辑器提供读取、视图调整、图片导入、图层生成、区域批量创建和导出六类页面工具。它们直接复用可见编辑器状态，是浏览器宿主的补充通道，不替代仓库级 STDIO MCP Server。首页仅同步显示外部 Agent 与工具工作区产生的任务、输入状态和产物。
+地图编辑器提供读取、视图调整、图片导入、图层生成、区域批量创建、导出和生成队列七类页面工具。它们复用可见编辑器的动作、锁定和版本检查，是浏览器宿主的补充通道，不替代仓库级 STDIO MCP Server。地图使用单选图片视图和独立区域标注，支持撤销重做、全部 PNG 与包含完整编辑源的 Godot 包；详见 [地图编辑器](docs/map-stitcher.md)。首页同步显示外部 Agent 与工具工作区产生的任务、输入状态和产物。
 
 ## 接入原则
 

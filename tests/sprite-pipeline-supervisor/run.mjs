@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
   createSpritePipelineLaunch,
@@ -9,8 +10,6 @@ import {
   resolveSpritePipelineTarget,
 } from '../../lib/workbench/sprite-pipeline-supervisor.mjs';
 
-const testDirectory = path.dirname(fileURLToPath(import.meta.url));
-const repositoryRoot = path.resolve(testDirectory, '..', '..');
 let healthMode = 'valid';
 const server = http.createServer((request, response) => {
   response.setHeader('content-type', 'application/json');
@@ -65,19 +64,51 @@ const splitTarget = resolveSpritePipelineTarget({
 });
 assert.equal(splitTarget.mode, 'external');
 
-const launch = createSpritePipelineLaunch(repositoryRoot, defaultTarget, {});
-assert.equal(path.basename(launch.command).toLowerCase(), 'python.exe');
-assert.deepEqual(launch.args.slice(1), [
-  'serve-ui',
-  '--host',
-  '127.0.0.1',
-  '--port',
-  '7860',
-]);
-assert.equal(
-  launch.env.SPRITE_PIPELINE_DATA_DIR,
-  path.join(repositoryRoot, 'work', 'sprite-pipeline'),
+// Command construction only needs file existence, not a real Python installation.
+// Keep these fixtures independent of the developer's ignored .venv and the CI OS.
+const temporaryRoot = path.resolve(os.tmpdir());
+const repositoryRoot = await fs.mkdtemp(
+  path.join(temporaryRoot, 'sprite-supervisor-'),
 );
+try {
+  const pipelineRoot = path.join(repositoryRoot, 'Tools', 'SpritePipeline');
+  const pythonName = process.platform === 'win32' ? 'python.exe' : 'python';
+  const pythonDirectory = path.join(
+    pipelineRoot,
+    '.venv',
+    process.platform === 'win32' ? 'Scripts' : 'bin',
+  );
+  assert.throws(
+    () => createSpritePipelineLaunch(repositoryRoot, defaultTarget, {}),
+    /Python 环境不存在/,
+  );
+  await fs.mkdir(pythonDirectory, { recursive: true });
+  await fs.writeFile(path.join(pythonDirectory, pythonName), '');
+  assert.throws(
+    () => createSpritePipelineLaunch(repositoryRoot, defaultTarget, {}),
+    /CLI 不存在/,
+  );
+  await fs.writeFile(path.join(pipelineRoot, 'cli.py'), '');
+  const launch = createSpritePipelineLaunch(repositoryRoot, defaultTarget, {});
+  assert.equal(launch.command, path.join(pythonDirectory, pythonName));
+  assert.equal(launch.args[0], path.join(pipelineRoot, 'cli.py'));
+  assert.deepEqual(launch.args.slice(1), [
+    'serve-ui',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '7860',
+  ]);
+  assert.equal(
+    launch.env.SPRITE_PIPELINE_DATA_DIR,
+    path.join(repositoryRoot, 'work', 'sprite-pipeline'),
+  );
+} finally {
+  // Only remove the exact temporary directory created above.
+  assert.equal(path.dirname(path.resolve(repositoryRoot)), temporaryRoot);
+  assert(path.basename(repositoryRoot).startsWith('sprite-supervisor-'));
+  await fs.rm(repositoryRoot, { recursive: true, force: true });
+}
 
 console.log(
   JSON.stringify(

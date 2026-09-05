@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import { preserveMapTemplatePixels } from '../../lib/workbench/adapters/map-generation-image.mjs';
 
 import {
   findCapability,
@@ -175,11 +176,31 @@ try {
   assert.equal(state.version, 2);
   assert.equal(state.format, 'pixelwork-map-stitch-state');
   assert.equal(state.drawShapes.length, 1);
+  const godotZip = await JSZip.loadAsync(await readFile(outputPath(composeResult.task.outputs, 'godot-package.zip')));
+  const godotSource = await JSZip.loadAsync(await godotZip.file('source_state.zip').async('nodebuffer'));
+  assert.deepEqual(JSON.parse(await godotSource.file('map_stitch_state.json').async('string')), state);
+
+  const templatePixels = Buffer.from([
+    0, 0, 0, 255, 255, 255, 255, 255,
+    50, 60, 70, 128, 0, 0, 0, 0,
+  ]);
+  const generationTemplate = await sharp(templatePixels, {raw: {width: 2, height: 2, channels: 4}}).png().toBuffer();
+  const expectedGenerated = Buffer.from([
+    0, 0, 0, 255, 255, 255, 255, 255,
+    50, 60, 70, 128, 10, 20, 30, 255,
+  ]);
+  const larger = await sharp(generatedTile).resize(4, 4).png().toBuffer();
+  const restored = await preserveMapTemplatePixels(generationTemplate, larger);
+  assert.deepEqual(await sharp(restored).ensureAlpha().raw().toBuffer(), expectedGenerated);
+  await assert.rejects(
+    preserveMapTemplatePixels(generationTemplate, await sharp(generatedTile).resize(4, 2).png().toBuffer()),
+    /宽高比/,
+  );
 
   const generationResult = await runConnector(manifest, map, {
     operation: 'generate-layer',
     provider: 'nano-banana',
-    image: dataUrl(blue),
+    image: dataUrl(generationTemplate),
     prompt: 'extend the test tile',
     tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
     layer: 'overall',
@@ -188,6 +209,7 @@ try {
   assert.equal(generationResult.task.status, 'completed');
   assert.equal(generationResult.task.adapter.model, 'gemini-3.1-flash-image');
   assert(generationResult.task.outputs.some((output) => output.endsWith('generated-layer.png')));
+  assert.deepEqual(await sharp(outputPath(generationResult.task.outputs, 'generated-layer.png')).ensureAlpha().raw().toBuffer(), expectedGenerated);
   const generationMetadata = JSON.parse(
     await readFile(outputPath(generationResult.task.outputs, 'result.json'), 'utf8'),
   );
@@ -203,13 +225,14 @@ try {
   const openAIResult = await runConnector(manifest, map, {
     operation: 'generate-layer',
     provider: 'gpt-image-2',
-    image: dataUrl(blue),
+    image: dataUrl(generationTemplate),
     prompt: 'complete the transparent test tile',
     tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
     layer: 'overall',
     mask_mode: 'white',
   });
   assert.equal(openAIResult.task.status, 'completed');
+  assert.deepEqual(await sharp(outputPath(openAIResult.task.outputs, 'generated-layer.png')).ensureAlpha().raw().toBuffer(), expectedGenerated);
   assert.equal((await readFile(path.resolve(repositoryRoot, openAIResult.taskPath), 'utf8')).includes('test-openai-key'), false);
   const openAIRequest = requests.find((item) => item.url === '/openai');
   assert.equal(openAIRequest.headers.authorization, 'Bearer test-openai-key');

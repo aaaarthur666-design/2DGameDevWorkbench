@@ -34,7 +34,7 @@ Set `SPRITE_PIPELINE_API_URL` only when the API is not available at the default 
 - `pixelwork-state.zip`
 - optional `godot-package.zip`
 
-File paths are resolved inside the repository, and every artifact stays inside `outputs/<task-id>/`. The Pixelwork ZIP can be reopened by the FrameRonin mode editor.
+File paths are resolved inside the repository, and every artifact stays inside `outputs/<task-id>/`. The Pixelwork ZIP can be reopened by the FrameRonin mode editor. New `godot-package.zip` files embed the same editable state as `source_state.zip`, so the map page can also reopen the Godot package without losing its source layout. Older packages without that source can only recover the image and metadata they actually contain.
 
 ## Map adapter: external layer generation
 
@@ -57,6 +57,8 @@ The provider definitions live in `workbench/manifest.json`:
 - `gpt-image-2` maps to OpenAI's `gpt-image-2` Images Edits endpoint. The adapter sends a multipart `image[]` plus `model` and `prompt`, then decodes `data[0].b64_json`.
 
 Every accepted result is normalized to `outputs/<task-id>/generated-layer.png`. Browser, MCP, and CLI runs share the same task ledger. Keys come from the Runtime Bridge's process-memory settings or `GEMINI_API_KEY` / `OPENAI_API_KEY`; they are never added to task input, adapter metadata, result files, or logs. If the selected key is absent, only `generate-layer` becomes `awaiting_configuration`; local compose and local derived-layer generation remain available.
+
+The input PNG's alpha channel defines the editable area: only pixels with alpha zero may be replaced. After either provider returns, the adapter normalizes the output to template dimensions and restores every non-transparent template RGBA pixel, including partially transparent edges. Substantially different aspect ratios are rejected instead of stretched. `mask_mode` remains a legacy compatibility field, not a black/white color mask and not a provider mask parameter. Provider generation itself still receives the source image and prompt; overlap preservation is enforced locally before the artifact is written.
 
 ## Interactable adapter: direct Godot export
 
