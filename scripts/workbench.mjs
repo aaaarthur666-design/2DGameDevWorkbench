@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import {
+  agentRequest,
   findCapability,
   loadManifest,
   prepareTask,
@@ -77,6 +78,7 @@ Commands:
   list [--json]
   describe <capability-id> [--json]
   doctor [--json]
+  agent <guidance|environment|start|frontend|presets|tasks|result|artifact> [--input <json-file>] [--json]
   prepare <capability-id> --input <json-file> [--json]
   run <capability-id> --input <json-file> [--json]
   status <task-id> [--json]
@@ -91,6 +93,18 @@ async function main() {
 
   if (!command || command === 'help') {
     process.stdout.write(usage());
+    return;
+  }
+
+  if (command === 'agent') {
+    print(
+      await agentRequest(
+        manifest,
+        target,
+        flags.has('input') ? await loadInput(flags) : {},
+      ),
+      jsonMode,
+    );
     return;
   }
 
@@ -115,7 +129,9 @@ async function main() {
           connector: published.connector.type,
           adapter: published.connector.adapter,
           configured: published.connector.configured,
-          ...(published.connector.urlEnv ? { urlEnv: published.connector.urlEnv } : {}),
+          ...(published.connector.urlEnv
+            ? { urlEnv: published.connector.urlEnv }
+            : {}),
           ...(published.connector.providers
             ? {
                 providers: published.connector.providers.map((provider) => ({
@@ -123,8 +139,10 @@ async function main() {
                   model: provider.model,
                   configured: provider.configured,
                 })),
-                externalGenerationConfigured: published.connector.externalGenerationConfigured,
-                activeGenerationProvider: published.connector.activeGenerationProvider,
+                externalGenerationConfigured:
+                  published.connector.externalGenerationConfigured,
+                activeGenerationProvider:
+                  published.connector.activeGenerationProvider,
               }
             : {}),
         };

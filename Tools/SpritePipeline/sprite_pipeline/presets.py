@@ -115,6 +115,10 @@ class PresetRepository:
                             "path": str(preset_path),
                             "source": source,
                             "valid": True,
+                            "width": preset.cell_width,
+                            "height": preset.cell_height,
+                            "facing": preset.facing,
+                            "description": preset.identity_description,
                         }
                     )
                 except Exception as exc:
@@ -136,7 +140,9 @@ class PresetRepository:
         for path in sorted(base.glob("*.json")):
             try:
                 preset = ActionPreset.model_validate(read_json(path))
-                rows.append({"id": preset.action_id, "name": preset.display_name or preset.action_id, "path": str(path)})
+                rows.append({"id": preset.action_id, "name": preset.display_name or preset.action_id, "path": str(path),
+                             "frameCount": preset.frame_count, "fps": preset.fps, "loop": preset.loop,
+                             "description": preset.action_description})
             except Exception:
                 rows.append({"id": path.stem, "name": "INVALID", "path": str(path)})
         return rows

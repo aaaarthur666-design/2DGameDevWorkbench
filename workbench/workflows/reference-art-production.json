@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "reference-art-production",
+  "capabilityId": "reference-art",
+  "name": "角色原图制作",
+  "steps": [
+    {
+      "id": "describe",
+      "name": "描述角色外观与朝向",
+      "kind": "expert"
+    },
+    {
+      "id": "generate",
+      "name": "PixelLab 生成透明原图",
+      "kind": "connector"
+    },
+    {
+      "id": "verify",
+      "name": "检查实际图片与参考规格",
+      "kind": "validation"
+    },
+    {
+      "id": "handoff",
+      "name": "移送为序列帧角色参考",
+      "kind": "handoff"
+    }
+  ]
+}

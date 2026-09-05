@@ -111,6 +111,7 @@ npm run workbench -- doctor --json
 | 清单或连接器契约 | `npm run workbench -- doctor --json`、`npm run test:adapters`、`npm run test:http` |
 | MCP、CLI 或共享运行时 | 上述检查，加 `npm run test:mcp` |
 | 工作台壳层、路由、任务聚合 | `npm run test:workbench-shell`、`npm run lint`、`npm run typecheck`、`npm run build` |
+| 原图生成与移送 | `npm run test:reference-art`、SpritePipeline Python 测试，以及清单 / Runtime / 壳层对应检查 |
 | 地图拼接 | `npm run test:map-stitcher`，再按 UI 影响运行前端检查 |
 | 交互物编辑器或 schema | schema 改动先运行 `npm run schema:interactable` 并检查 manifest diff；再运行 `npm run test:interactable`、`npm run test:interactable-http`；兼容配置另跑 `npm run test:interactable-copyworms` |
 | SpritePipeline 总控 | `npm run test:dev-supervisor` |
@@ -141,3 +142,7 @@ CI 会运行 doctor、MCP、适配器、HTTP、交互物、地图、Sprite 总�
 - `THIRD_PARTY_NOTICES.md` 反映新增依赖、复制代码或兼容性来源；
 - 没有提交 `.env`、`work/`、`outputs/`、测试生成包或上游缓存；
 - 提交信息能区分实现、文档和上游同步。
+
+Agent 接口或序列帧自动化变更后，运行 `npm run test:agent-acceptance`，使用隔离真实服务与 fixture 完成 MCP 全流程。详见 [验收说明](agent-phase1-acceptance.md)。
+
+WorkBuddy 前端启动或就绪探测修改后，运行 `npm run test:frontend` 与 `npm run test:mcp`；内部浏览器的人工验收见 [Agent 客户端接入](agent-clients.md#workbuddy-首次对话自动打开)。

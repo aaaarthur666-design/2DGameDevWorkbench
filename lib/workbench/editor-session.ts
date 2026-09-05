@@ -43,6 +43,7 @@ export async function saveBeforeNavigation() {
   const current = [...sessions.values()];
   current.forEach((session) => session.beforeLeave?.());
   for (const session of current) {
+    if (!session.dirty) continue;
     await session.save();
     for (
       let attempt = 0;
@@ -58,5 +59,5 @@ export async function saveBeforeNavigation() {
 export async function saveBeforeReplacement(capabilityId: string) {
   const session = sessions.get(capabilityId);
   session?.beforeLeave?.();
-  await session?.save();
+  if (session?.dirty) await session.save();
 }

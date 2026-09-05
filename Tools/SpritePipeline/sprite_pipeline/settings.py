@@ -120,7 +120,19 @@ class HarnessSettings:
         try:
             from .credential_store import CredentialStore
 
-            saved_key = CredentialStore(config_dir).get("pixellab_api_key")
+            store = CredentialStore(config_dir)
+            # Workbench startup opts into importing the earlier standalone
+            # installation's protected key. An existing file, including an
+            # explicitly cleared key, always wins. Portable/test roots opt out.
+            if (not portable_mode
+                    and os.environ.get("SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS") == "1"
+                    and not store.path.exists()):
+                previous_dir = _default_data_root() / "config"
+                if previous_dir.resolve() != config_dir.resolve():
+                    previous_key = CredentialStore(previous_dir).get("pixellab_api_key")
+                    if previous_key:
+                        store.set("pixellab_api_key", previous_key)
+            saved_key = store.get("pixellab_api_key")
         except Exception:
             # A damaged credential file must not make offline workflows fail to
             # start. The storage report exposes the problem in the UI.

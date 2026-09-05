@@ -17,6 +17,8 @@
     "workbench": "node scripts/workbench.mjs",
     "workbench:mcp": "node scripts/workbench-mcp.mjs",
     "workbench:http": "node scripts/workbench-http.mjs",
+    "test:agent-acceptance": "node tests/agent-acceptance/run.mjs",
+    "test:reference-art": "node tests/reference-art/run.mjs",
     "test:mcp": "node scripts/test-workbench-mcp.mjs",
     "test:interactable": "node tests/interactable-editor/run.mjs",
     "test:interactable-http": "node tests/interactable-editor/http.mjs",
@@ -28,6 +30,7 @@
     "test:http": "node tests/workbench-http/run.mjs",
     "test:map-stitcher": "node tests/map-stitcher/run.mjs",
     "test:workbench-shell": "node tests/workbench-shell/run.mjs",
+    "test:frontend": "node tests/frontend-service/run.mjs",
     "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
     "format": "oxfmt"

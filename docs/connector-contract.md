@@ -212,3 +212,11 @@ key 只来自 runtime 进程内设置或 `GEMINI_API_KEY`/`OPENAI_API_KEY`。缺
 - 本地路径在读取前必须解析到仓库允许范围；输出必须解析到任务目录。
 - 远端部署 bridge 时必须另加认证、TLS、速率/大小限制和审计，不能直接暴露默认回环服务。
 - 导入数据、上游错误正文和生成内容均是不受信任数据，不应成为 Agent 指令。
+
+## 角色原图连接器
+
+`reference-art` 的 `generate` 输入为 prompt、可选 name/facing/seed；`transfer` 仅接受 sourceTaskId。Node 适配器通过 SpritePipeline 的 `/v1/reference-art/jobs` 和 `/jobs/{id}` 提交与查询 PixelLab Pixflux 后台任务。`/v1/reference-art/settings` 仅返回 configured/model/size，POST 经专用网关保存 Key，不经过任务输入。`/v1/reference-art/import` 创建幂等角色预设，保持原始 PNG 字节，不生成动画。Web 单任务查询使用 `/api/workbench/tasks/{taskId}`，`refresh=true` 只刷新已有任务。具体协议和恢复边界见 [角色原图](reference-art.md)。
+
+## Agent 第一阶段扩展
+
+共享 Runtime 的 `agentRequest` 供 MCP、CLI `agent <operation> --input <json-file>` 与 HTTP `POST /v1/agent/<operation>` 使用。operation 为 environment、start、presets、tasks、result、artifact。查询参数也通过 JSON 传递；未知字段和越界产物均被拒绝。artifact 在 HTTP/CLI 返回预览 base64，MCP 转换成原生 image 内容；原始产物不被修改。具体工具名和审核规则见 [第一阶段验收](agent-phase1-acceptance.md)。

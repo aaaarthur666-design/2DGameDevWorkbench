@@ -21,6 +21,13 @@ try {
   const sessions = await server.ssrLoadModule(
     '/lib/workbench/editor-session.ts',
   );
+  const { isUntouchedStarterProject, isLegacyEmptyWorkItem } =
+    await server.ssrLoadModule(
+      '/features/interactable-editor/draft-activity.ts',
+    );
+  const { createProject } = await server.ssrLoadModule(
+    '/features/interactable-editor/contract.mjs',
+  );
   const at = '2026-09-05T10:00:00.000Z';
   const later = '2026-09-05T10:01:00.000Z';
   const task = (overrides = {}) => ({
@@ -32,15 +39,79 @@ try {
     ...overrides,
   });
 
+  test('untouched legacy starters are hidden while edits, explicit saves and exports stay visible', () => {
+    const draft = createProject();
+    const item = {
+      id: 'legacy',
+      capabilityId: 'interactable-editor',
+      state: 'saved',
+    };
+    assert.equal(isUntouchedStarterProject(draft), true);
+    assert.equal(isUntouchedStarterProject(createProject()), true);
+    assert.equal(isLegacyEmptyWorkItem(item, draft), true);
+    assert.equal(
+      isLegacyEmptyWorkItem({ ...item, userInitiated: true }, draft),
+      false,
+    );
+    assert.equal(
+      isLegacyEmptyWorkItem({ ...item, outputs: ['object.zip'] }, draft),
+      false,
+    );
+    assert.equal(
+      isLegacyEmptyWorkItem({ ...item, taskIds: ['export-1'] }, draft),
+      false,
+    );
+    assert.equal(
+      isLegacyEmptyWorkItem({ ...item, state: 'completed' }, draft),
+      false,
+    );
+    assert.equal(isLegacyEmptyWorkItem(item, undefined), false);
+    assert.equal(
+      isLegacyEmptyWorkItem(item, { ...draft, name: '我的项目' }),
+      false,
+    );
+    const edited = structuredClone(draft);
+    edited.objects[0].displayName = '箱子';
+    assert.equal(isLegacyEmptyWorkItem(item, edited), false);
+    const behavior = structuredClone(draft);
+    behavior.objects[0].behavior.repeat = !behavior.objects[0].behavior.repeat;
+    assert.equal(isLegacyEmptyWorkItem(item, behavior), false);
+    assert.equal(
+      isLegacyEmptyWorkItem(item, {
+        ...draft,
+        assets: [{ id: 'uploaded-art' }],
+      }),
+      false,
+    );
+  });
+  test('entering and leaving a clean editor never invokes a draft save', async () => {
+    let saves = 0;
+    let guards = 0;
+    sessions.publishEditorSession({
+      capabilityId: 'untouched-editor',
+      items: [],
+      dirty: false,
+      busy: false,
+      save: async () => {
+        saves++;
+      },
+      beforeLeave: () => {
+        guards++;
+      },
+    });
+    await sessions.saveBeforeNavigation();
+    await sessions.saveBeforeNavigation();
+    await sessions.saveBeforeReplacement('untouched-editor');
+    assert.equal(saves, 0);
+    assert.equal(guards, 3);
+  });
+
   test('manifest production lines route every tool to a valid workflow', () => {
     assert.deepEqual(
       lines.map((line) => line.id),
       ['player', 'scene'],
     );
-    assert.equal(
-      lines.find((line) => line.id === 'player').href,
-      modules.find((m) => m.id === 'sprite-generator').href,
-    );
+    assert.equal(lines.find((line) => line.id === 'player').href, '/player');
     assert.equal(lines.find((line) => line.id === 'scene').href, '/scene');
     for (const capability of modules) {
       assert.ok(lines.some((line) => line.id === capability.productionLine));

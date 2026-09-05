@@ -24,11 +24,13 @@ jobs:
       - run: npm ci
       - run: npm run workbench -- doctor --json
       - run: npm run test:mcp
+      - run: npm run test:reference-art
       - run: npm run test:adapters
       - run: npm run test:http
       - run: npm run test:interactable
       - run: npm run test:interactable-http
       - run: npm run test:map-stitcher
+      - run: npm run test:frontend
       - run: npm run test:dev-supervisor
       - run: npm run lint
       - run: npm run typecheck
@@ -50,3 +52,13 @@ jobs:
       - run: python -m pip install --disable-pip-version-check -r requirements.lock
       - run: python -m pip check
       - run: python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+        working-directory: .
+      - run: npm run test:agent-acceptance
+        working-directory: .
+        env:
+          WORKBENCH_TEST_PYTHON: python

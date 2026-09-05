@@ -46,9 +46,22 @@ export default defineConfig(async () => {
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      strictPort: true,
+      watch: {
+        // Runtime image directories are atomically renamed by SpritePipeline.
+        // They are data, not frontend source; avoid holding Windows watch handles.
+        ignored: [
+          '**/work/**',
+          '**/outputs/**',
+          '**/.venv/**',
+          '**/.pytest_cache/**',
+        ],
+        ...(isCodexSeatbeltSandbox
+          ? { useFsEvents: false, usePolling: true }
+          : {}),
+      },
+    },
     plugins: [
       vinext(),
       sites(),

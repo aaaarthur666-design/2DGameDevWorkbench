@@ -29,6 +29,7 @@ from .errors import (
 from .jsonio import atomic_write_json, read_json, relative_posix, sha256_file
 from .credential_store import CredentialStore
 from .migration import LegacyLayoutMigrator
+from .user_library_import import import_user_library
 from .models import (
     ActionPreset,
     Anchor,
@@ -72,6 +73,7 @@ class SpritePipelineService:
             timeout_seconds=300.0,
         ):
             self.migration_report = LegacyLayoutMigrator(self.settings).run()
+            self.user_library_import_report = import_user_library(self.settings)
         # Migration may have moved a legacy plaintext key into protected
         # storage, so resolve settings once more before creating providers.
         self.settings = HarnessSettings.load(root)
@@ -2721,8 +2723,7 @@ class SpritePipelineService:
             "review_status": frame.review_status.value,
             "candidate_status": candidate.status.value,
             "can_edit": (
-                frame.review_status == ReviewStatus.repair_requested
-                and candidate.status not in {
+                candidate.status not in {
                     CandidateStatus.approved,
                     CandidateStatus.rejected,
                     CandidateStatus.failed,
@@ -2785,16 +2786,6 @@ class SpritePipelineService:
                         "received_sha256": base_sha256,
                     },
                 )
-            if frame.review_status != ReviewStatus.repair_requested:
-                raise ConflictError(
-                    "frame must be explicitly marked repair_requested before pixel editing",
-                    details={
-                        "reason": "frame_not_marked_for_repair",
-                        "frame_index": frame_index,
-                        "review_status": frame.review_status.value,
-                    },
-                )
-
             active_source = self.store.resolve_job_path(job_id, frame.active_path)
             if sha256_file(active_source) != frame.sha256:
                 raise ConflictError(

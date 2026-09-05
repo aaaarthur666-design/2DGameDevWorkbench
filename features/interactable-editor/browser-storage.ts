@@ -1,5 +1,8 @@
 import { readSourcePackage } from './source-package.mjs';
-import { readWorkspaceDraft, saveWorkspaceDraft } from '@/lib/workbench/browser-store';
+import {
+  readWorkspaceDraft,
+  saveWorkspaceDraft,
+} from '@/lib/workbench/browser-store';
 import { interactableItemId, type WorkItem } from '@/lib/workbench/work-items';
 import { workbenchModules } from '@/lib/workbench/modules';
 import {
@@ -23,24 +26,48 @@ async function database(): Promise<IDBDatabase> {
     r.onerror = () => reject(r.error);
   });
 }
-export function interactableWorkItems(project: InteractableProject, completedIds: readonly string[] = []): WorkItem[] {
-  const href = workbenchModules.find(m => m.id === 'interactable-editor')!.href;
+export function interactableWorkItems(
+  project: InteractableProject,
+  completedIds: readonly string[] = [],
+): WorkItem[] {
+  const href = workbenchModules.find(
+    (m) => m.id === 'interactable-editor',
+  )!.href;
   const now = new Date().toISOString();
-  return project.objects.map(object => ({
-    id: interactableItemId(project.projectId, object.definitionId), capabilityId: 'interactable-editor',
+  return project.objects.map((object) => ({
+    id: interactableItemId(project.projectId, object.definitionId),
+    capabilityId: 'interactable-editor',
+    userInitiated: true,
     title: object.displayName || project.name || '交互物',
-    detail: completedIds.includes(object.definitionId) ? '交互物已导出' : `${project.name} · 本机草稿`,
+    detail: completedIds.includes(object.definitionId)
+      ? '交互物已导出'
+      : `${project.name} · 本机草稿`,
     state: completedIds.includes(object.definitionId) ? 'completed' : 'saved',
-    updatedAt: now, savedAt: now, draftKey: `interactable-project:${project.projectId}`, scopeId: project.projectId,
+    updatedAt: now,
+    savedAt: now,
+    draftKey: `interactable-project:${project.projectId}`,
+    scopeId: project.projectId,
     href: `${href}?project=${encodeURIComponent(project.projectId)}&object=${encodeURIComponent(object.definitionId)}`,
     stage: completedIds.includes(object.definitionId) ? 1 : 0,
   }));
 }
-export async function saveDraft(project: InteractableProject, completedIds: readonly string[] = []) {
-  await saveWorkspaceDraft(`interactable-project:${project.projectId}`, project, interactableWorkItems(project, completedIds), 'interactable-current');
+export async function saveDraft(
+  project: InteractableProject,
+  completedIds: readonly string[] = [],
+) {
+  await saveWorkspaceDraft(
+    `interactable-project:${project.projectId}`,
+    project,
+    interactableWorkItems(project, completedIds),
+    'interactable-current',
+  );
 }
-export async function loadDraft(projectId?: string): Promise<InteractableProject | null> {
-  const key = projectId ? `interactable-project:${projectId}` : await readWorkspaceDraft<string>('interactable-current');
+export async function loadDraft(
+  projectId?: string,
+): Promise<InteractableProject | null> {
+  const key = projectId
+    ? `interactable-project:${projectId}`
+    : await readWorkspaceDraft<string>('interactable-current');
   if (key) {
     const saved = await readWorkspaceDraft<InteractableProject>(key);
     if (saved) return projectSchema.parse(saved);
@@ -54,7 +81,8 @@ export async function loadDraft(projectId?: string): Promise<InteractableProject
         try {
           // A draft may contain unfinished references while the user edits feedback.
           const saved = r.result ? projectSchema.parse(r.result) : null;
-          if (projectId && saved?.projectId !== projectId) throw new Error('找不到此交互物的本机草稿，请导入对应源文件。');
+          if (projectId && saved?.projectId !== projectId)
+            throw new Error('找不到此交互物的本机草稿，请导入对应源文件。');
           resolve(saved);
         } catch (e) {
           reject(e);

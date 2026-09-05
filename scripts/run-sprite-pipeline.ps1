@@ -20,6 +20,12 @@ if (-not (Test-Path -LiteralPath $pipelineCli -PathType Leaf)) {
 }
 
 $env:SPRITE_PIPELINE_INSTALL_ROOT = $pipelineRoot
+if ($null -eq $env:SPRITE_PIPELINE_IMPORT_USER_ASSETS) {
+    $env:SPRITE_PIPELINE_IMPORT_USER_ASSETS = "1"
+}
+if ($null -eq $env:SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS) {
+    $env:SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS = "1"
+}
 if ([string]::IsNullOrWhiteSpace($env:SPRITE_PIPELINE_DATA_DIR)) {
     $env:SPRITE_PIPELINE_DATA_DIR = Join-Path $repositoryRoot 'work\sprite-pipeline'
 }

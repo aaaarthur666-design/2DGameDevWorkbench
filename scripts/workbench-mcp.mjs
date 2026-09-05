@@ -5,6 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as z from 'zod/v4';
 
 import {
+  agentRequest,
   findCapability,
   loadManifest,
   prepareTask,
@@ -17,11 +18,11 @@ import {
 const server = new McpServer(
   {
     name: '2d-game-workbench',
-    version: '0.2.0',
+    version: '0.5.0',
   },
   {
     instructions:
-      'This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned.',
+      'WorkBuddy session startup: on the first user message after connecting this server, unless the user opts out of opening the UI, call workbench_get_environment. If frontend.ready is false, call workbench_start_frontend once when services are offline, then poll get_environment at bounded intervals (up to 60 seconds); stop on blocked/conflict/unreachable and report the reason. When ready, discover the host-native present_files tool (possibly connector-proxy namespaced), inspect its schema, and call it with frontend.hostAction.arguments to open frontend.url in the WorkBuddy internal preview. Reuse an existing workbench preview and do not reopen it on each message, reconnect, or if the user closes it in this conversation. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
   },
 );
 
@@ -37,6 +38,18 @@ function failure(error) {
   return {
     isError: true,
     content: [{ type: 'text', text: message }],
+    structuredContent: {
+      error: {
+        message,
+        ...(message.match(/^Task ([a-z0-9_-]+) failed:/i)
+          ? {
+              taskId: message.match(/^Task ([a-z0-9_-]+) failed:/i)[1],
+              recovery:
+                'Read this task and its existing remoteJobId before taking further action; do not blindly regenerate.',
+            }
+          : {}),
+      },
+    },
   };
 }
 
@@ -55,7 +68,7 @@ registerTool(
   {
     title: 'List 2D workbench capabilities',
     description:
-      'List the production capabilities and local adapters registered in this project, including optional external-service configuration.',
+      'List the production capabilities and local adapters registered in this project, including optional external-service configuration and the conversation guide for turning vague requests into executable tasks.',
     inputSchema: {},
     annotations: {
       readOnlyHint: true,
@@ -66,7 +79,10 @@ registerTool(
   },
   async () => {
     const manifest = await loadManifest();
-    return { capabilities: manifest.capabilities.map(publicCapability) };
+    return {
+      capabilities: manifest.capabilities.map(publicCapability),
+      conversationGuidance: await agentRequest(manifest, 'guidance'),
+    };
   },
 );
 
@@ -162,10 +178,99 @@ registerTool(
     const refreshed = await refreshTask(manifest, taskId);
     return {
       task: refreshed.task,
-      ...(refreshed.refreshError ? { refreshError: refreshed.refreshError } : {}),
+      ...(refreshed.refreshError
+        ? { refreshError: refreshed.refreshError }
+        : {}),
     };
   },
 );
+
+const discoveryTools = [
+  [
+    'workbench_start_frontend',
+    'frontend',
+    'Start or reuse the local frontend and runtime bridge without generation, installing dependencies, or opening a browser. Query get_environment until frontend.ready, then let WorkBuddy call the host-native present_files using frontend.hostAction.arguments. Stop if blocked.',
+    {},
+  ],
+  [
+    'workbench_get_environment',
+    'environment',
+    'Check installed runtime, live service compatibility and saved PixelLab key status; no generation or balance request.',
+    {},
+  ],
+  [
+    'workbench_start_services',
+    'start',
+    'Start only the configured local SpritePipeline if offline; reuse existing services. Never installs dependencies or generates assets. Poll get_environment until ready.',
+    {},
+  ],
+  [
+    'workbench_list_presets',
+    'presets',
+    'Discover actual character and action IDs. Search by ID or display name; never invent preset IDs.',
+    { query: z.string().max(2000).optional() },
+  ],
+  [
+    'workbench_list_tasks',
+    'tasks',
+    'Find recent workbench tasks and native SpritePipeline jobs, including work created in the web page. Native jobs use job_id, not workbench taskId.',
+    {
+      query: z.string().max(2000).optional(),
+      capabilityId: z.string().optional(),
+      status: z.string().optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    },
+  ],
+  [
+    'workbench_get_result',
+    'result',
+    'Read structured task results, characterId, candidate QA, suggested actions and verified artifact paths. Does not refresh or generate.',
+    { taskId: z.string().min(1) },
+  ],
+  [
+    'workbench_read_artifact',
+    'artifact',
+    'Read only a registered task artifact. Returns PNG image content for visual inspection. GIF preview is its first frame: inspect orderedFrames to assess motion before approval.',
+    { taskId: z.string().min(1), artifactPath: z.string().min(1) },
+  ],
+];
+for (const [name, operation, description, inputSchema] of discoveryTools) {
+  server.registerTool(
+    name,
+    {
+      description,
+      inputSchema,
+      annotations: {
+        readOnlyHint: !['start', 'frontend'].includes(operation),
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: ['environment', 'presets', 'tasks'].includes(operation),
+      },
+    },
+    async (input) => {
+      try {
+        const value = await agentRequest(
+          await loadManifest(),
+          operation,
+          input,
+        );
+        if (value.imageBase64) {
+          const { imageBase64, ...metadata } = value;
+          const result = success(metadata);
+          result.content.push({
+            type: 'image',
+            data: imageBase64,
+            mimeType: 'image/png',
+          });
+          return result;
+        }
+        return success(value);
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+}
 
 server.registerResource(
   'workbench-manifest',

@@ -485,18 +485,26 @@
   flex-shrink: 0;
 }
 .wb-context-title {
-  min-width: 160px;
-  max-width: 380px;
+  min-width: 0;
+  flex: 1;
 }
-.wb-context-title > strong {
-  display: block;
+.wb-current-work {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 5px;
+  font-size: 14px;
+}
+.wb-current-work > strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
-  margin-top: 3px;
-  font-size: 14px;
+  max-width: min(100%, 32rem);
   font-weight: 500;
+}
+.wb-current-work .wb-state {
+  font-size: 13px;
 }
 .wb-context-actions {
   display: flex;
@@ -506,37 +514,6 @@
 }
 .wb-context-actions > .wb-muted {
   font-size: 12px;
-}
-.wb-stages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 12px;
-  color: var(--wb-muted);
-}
-.wb-stages li {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.wb-stages li > span {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  background: #191e2a;
-  font-family: Consolas, monospace;
-}
-.wb-stages li[aria-current='step'] {
-  color: var(--wb-accent);
-}
-.wb-stages li[aria-current='step'] > span {
-  color: #111522;
-  background: var(--wb-accent);
 }
 .wb-status {
   display: flex;
@@ -974,16 +951,12 @@
   .wb-status-items > .wb-muted {
     font-size: 12px;
   }
-  .wb-stages {
-    order: 3;
-    flex-basis: 100%;
-  }
   .wb-tool-context {
     padding: 8px 16px;
   }
   .wb-context-title {
     min-width: 130px;
-    max-width: 55%;
+    max-width: 100%;
   }
   .wb-task-layout {
     grid-template-columns: 1fr;
@@ -1055,12 +1028,8 @@
     font-size: 12px;
     padding: 4px 6px;
   }
-  .wb-context-title > strong {
-    font-size: 12px;
-  }
-  .wb-stages {
-    gap: 9px;
-    font-size: 12px;
+  .wb-context-title {
+    flex-basis: 100%;
   }
   .wb-alert {
     padding: 8px 14px;

@@ -104,6 +104,9 @@ def create_api(
     )
     app.state.sprite_pipeline_service = service
     app.state.sprite_pipeline_recovery = recovery_worker
+    from .reference_art import create_reference_router
+
+    app.include_router(create_reference_router(service))
     static_dir = Path(__file__).resolve().parent / "static"
 
     class _NoStoreStaticFiles(StaticFiles):
@@ -122,7 +125,7 @@ def create_api(
         name="pixel-editor-assets",
     )
 
-    @app.get("/pixel-editor", include_in_schema=False)
+    @app.get("/pixel-editor", include_in_schema=False, response_model=None)
     def pixel_editor_page() -> FileResponse:
         return FileResponse(
             static_dir / "pixel_editor.html",
@@ -181,6 +184,7 @@ def create_api(
             "schema_version": 1,
             "ok": True,
             "version": "0.1.0",
+            "workbench_api_version": 1,
             "pixellab_configured": bool(service.settings.pixellab_api_key),
             "data_root": str(service.settings.data_root),
             "recovery_worker": recovery_worker.snapshot(),
@@ -261,7 +265,7 @@ def create_api(
     def get_job(job_id: str) -> dict[str, Any]:
         return {"schema_version": 1, "ok": True, "data": {"job": _job(service.get_job(job_id))}}
 
-    @app.get("/v1/jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/image")
+    @app.get("/v1/jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/image", response_model=None)
     def frame_image(job_id: str, candidate_index: int, frame_index: int) -> FileResponse:
         job = service.get_job(job_id)
         candidate = next(
@@ -293,7 +297,7 @@ def create_api(
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.get("/v1/jobs/{job_id}/exports/{artifact_name}")
+    @app.get("/v1/jobs/{job_id}/exports/{artifact_name}", response_model=None)
     def export_artifact(job_id: str, artifact_name: str) -> FileResponse:
         job = service.get_job(job_id)
         if job.export is None:

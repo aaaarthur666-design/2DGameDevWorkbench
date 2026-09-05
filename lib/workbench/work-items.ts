@@ -16,6 +16,7 @@ export type WorkItem = {
   savedAt?: string;
   href: string;
   draftKey?: string;
+  userInitiated?: boolean;
   scopeId?: string;
   stage?: number;
   taskIds?: string[];
@@ -103,8 +104,10 @@ export function taskWorkItems(
     if (!capabilityModule) continue;
     const input = task.input || {};
     const jobId =
-      task.adapter?.remoteJobId ||
-      (typeof input.jobId === 'string' ? input.jobId : undefined);
+      task.capabilityId === 'sprite-generator'
+        ? task.adapter?.remoteJobId ||
+          (typeof input.jobId === 'string' ? input.jobId : undefined)
+        : undefined;
     const project = input.project as
       | {
           projectId?: string;
@@ -116,27 +119,40 @@ export function taskWorkItems(
       ? project.objects.filter((o) => o && typeof o.definitionId === 'string')
       : [];
     const targets =
-      task.capabilityId === 'interactable-editor' &&
-      project?.projectId &&
-      definitions.length
-        ? // Agent exports can exist without a browser draft. A matching local draft
-          // supplies its editable URL when mergeWorkItems combines these records.
-          definitions.map((o) => ({
-            id: interactableItemId(project.projectId!, o.definitionId),
-            title: o.displayName || project.name || '交互物',
-            href: `/advanced?task=${encodeURIComponent(task.id)}`,
-          }))
-        : [
+      task.capabilityId === 'reference-art'
+        ? [
             {
-              id: jobId ? `sprite:${jobId}` : `task:${task.id}`,
-              title: jobId
-                ? `角色动画 · ${jobId}`
-                : `${capabilityModule.entryTitle} · ${typeof input.operation === 'string' ? input.operation : '制作'}`,
-              href: jobId
-                ? `${capabilityModule.href}?job=${encodeURIComponent(jobId)}`
-                : `/advanced?task=${encodeURIComponent(task.id)}`,
+              id: `task:${task.id}`,
+              title:
+                typeof input.name === 'string'
+                  ? input.name
+                  : input.operation === 'transfer'
+                    ? '原图已移送序列帧'
+                    : '角色原图',
+              href: `${capabilityModule.href}?task=${encodeURIComponent(typeof input.sourceTaskId === 'string' ? input.sourceTaskId : task.id)}`,
             },
-          ];
+          ]
+        : task.capabilityId === 'interactable-editor' &&
+            project?.projectId &&
+            definitions.length
+          ? // Agent exports can exist without a browser draft. A matching local draft
+            // supplies its editable URL when mergeWorkItems combines these records.
+            definitions.map((o) => ({
+              id: interactableItemId(project.projectId!, o.definitionId),
+              title: o.displayName || project.name || '交互物',
+              href: `/advanced?task=${encodeURIComponent(task.id)}`,
+            }))
+          : [
+              {
+                id: jobId ? `sprite:${jobId}` : `task:${task.id}`,
+                title: jobId
+                  ? `角色动画 · ${jobId}`
+                  : `${capabilityModule.entryTitle} · ${typeof input.operation === 'string' ? input.operation : '制作'}`,
+                href: jobId
+                  ? `${capabilityModule.href}?job=${encodeURIComponent(jobId)}`
+                  : `/advanced?task=${encodeURIComponent(task.id)}`,
+              },
+            ];
     const state: WorkItemState =
       task.status === 'completed'
         ? 'completed'

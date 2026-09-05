@@ -9,7 +9,9 @@
 | 页面 | 功能 |
 | --- | --- |
 | `/` | 两个大入口：序列帧、场景；全局制作状态栏；初次引导 |
-| `/tools/sprite-generator` | 序列帧入口直达原有工作区；选角色与动作 → 生成序列帧 → 检查与导出 |
+| `/player` | 选择原图生成或序列帧制作 |
+| `/tools/reference-art` | 输入描述 → 生成像素原图 → 移送为序列帧参考图 |
+| `/tools/sprite-generator` | 选角色与动作 → 生成序列帧 → 检查与导出 |
 | `/scene` | 提供地图与交互物两个平行入口，用户可以任意选择先后 |
 | `/tools/map-stitcher` | 原有地图编辑器，外层增加草稿恢复和流程位置 |
 | `/tools/map-stitcher-legacy` | 旧地图页面的兼容入口，仅用于回归或迁移，不作为默认制作路线 |
@@ -87,3 +89,7 @@ Web 的同源 API 通过 `WORKBENCH_RUNTIME_URL` 访问默认位于 `127.0.0.1:8
 外壳回归：`npm run test:workbench-shell`，覆盖 Manifest 路线、状态真实性、执行尝试去重、本机恢复链接优先、保存失败及繁忙操作的离开保护。既有地图、交互物与 MCP 检查保持原命令。
 
 完整测试矩阵见 [开发与验证指南](development.md#验证矩阵)，整体分层见 [系统架构](architecture.md)。
+
+## 原图与序列帧路线
+
+开始页的序列帧路线先进入 `/player`，可选择原图生成或直接制作动作。`/tools/reference-art` 提供描述、朝向、PixelLab Key 设置、真实任务进度与 PNG 预览。Key 与序列帧共用，生成操作进入 runtime ledger；`?task=` 可恢复原图记录。移送成功后进入序列帧的 `?character=` 链接并预选角色，尚未创建动画任务。未提交的原图提示词只保留在当前页面；生成后的提示词、名称和朝向随任务保存。

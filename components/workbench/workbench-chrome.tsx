@@ -126,7 +126,7 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
         <section
           className="wb-tool-context"
           data-accent={capabilityModule.accent}
-          aria-label="当前制作流程"
+          aria-label="当前作品与制作记录"
         >
           <div className="wb-context-title">
             <div className="wb-breadcrumb">
@@ -136,25 +136,21 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
               <ChevronRight size={12} />
               <span>{capabilityModule.entryTitle}</span>
             </div>
-            <strong>{active?.title || capabilityModule.name}</strong>
+            {active && (
+              <div className="wb-current-work">
+                <span className="wb-muted">当前任务</span>
+                <strong title={active.title}>{active.title}</strong>
+                <span className="wb-state" data-state={active.state}>
+                  <i />
+                  {active.detail}
+                </span>
+              </div>
+            )}
           </div>
-          <ol className="wb-stages">
-            {capabilityModule.stages.map((stage, index) => (
-              <li
-                key={stage}
-                aria-current={
-                  (active?.stage || 0) === index ? 'step' : undefined
-                }
-              >
-                <span>{index + 1}</span>
-                {stage}
-              </li>
-            ))}
-          </ol>
           <div className="wb-context-actions">
             {session &&
               (capabilityModule.id === 'sprite-generator' ? (
-                <span className="wb-muted">序列帧作业由本地服务保存</span>
+                <span className="wb-muted">任务与素材自动保存在本机</span>
               ) : (
                 <>
                   <span className="wb-muted">
@@ -178,6 +174,14 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
                   </button>
                 </>
               ))}
+            <button
+              className="wb-button"
+              onClick={() => wb.setQueueOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <Layers3 size={15} />
+              制作记录
+            </button>
             {capabilityModule.productionLine === 'scene' && (
               <a className="wb-button wb-ghost" href="/scene">
                 场景流程

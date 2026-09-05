@@ -1,6 +1,6 @@
 import manifest from '@/workbench/manifest.json';
 
-export type WorkbenchModuleIcon = 'frames' | 'map' | 'interactable';
+export type WorkbenchModuleIcon = 'frames' | 'map' | 'interactable' | 'reference';
 
 export type WorkbenchModule = {
   id: string;
@@ -35,7 +35,9 @@ export const workbenchModules: readonly WorkbenchModule[] =
     stages: capability.ui.stages,
     href: capability.ui.route,
     icon:
-      capability.ui.icon === 'interactable'
+      capability.ui.icon === 'reference'
+        ? 'reference'
+        : capability.ui.icon === 'interactable'
         ? 'interactable'
         : capability.ui.icon === 'map'
           ? 'map'

@@ -3,14 +3,16 @@
   "workspace": {
     "name": "2D Game Dev Workbench",
     "taskDirectory": "work/tasks",
-    "outputDirectory": "outputs"
+    "outputDirectory": "outputs",
+    "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }
   },
   "productionLines": [
-    { "id": "player", "name": "序列帧", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/tools/sprite-generator", "summary": ["角色图片", "动作序列帧", "导出"] },
+    { "id": "player", "name": "序列帧", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/player", "summary": ["角色原图", "动作序列帧", "导出"] },
     { "id": "scene", "name": "场景", "eyebrow": "SCENE / INTERACTION", "description": "搭建地图，制作可以互动的物件。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作"] }
   ],
   "agentAssets": {
     "role": "external-client",
+    "conversationGuide": "workbench/conversation-guide.md",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",
     "expert": "workbench/experts/2d-production-expert.md",
     "clientConfigs": [".mcp.json", ".codex/config.toml"],
@@ -23,7 +25,14 @@
         "workbench_describe_capability",
         "workbench_prepare_task",
         "workbench_run_task",
-        "workbench_get_task"
+        "workbench_get_task",
+        "workbench_get_environment",
+        "workbench_start_services",
+        "workbench_start_frontend",
+        "workbench_list_presets",
+        "workbench_list_tasks",
+        "workbench_get_result",
+        "workbench_read_artifact"
       ]
     },
     "browserTools": [
@@ -39,6 +48,93 @@
   },
   "capabilities": [
     {
+      "id": "reference-art",
+      "name": "角色原图生成",
+      "shortName": "原图",
+      "description": "使用 PixelLab 生成透明背景像素角色原图，并移送为序列帧参考。",
+      "category": "production",
+      "workflow": "workbench/workflows/reference-art-production.json",
+      "ui": {
+        "icon": "reference",
+        "productionLine": "player",
+        "entryTitle": "制作角色原图",
+        "starterHint": "描述角色外观，生成透明像素原图后直接用于制作动作。",
+        "stages": [
+          "描述角色",
+          "生成并选择",
+          "制作序列帧"
+        ],
+        "accent": "violet",
+        "status": "ready",
+        "route": "/tools/reference-art",
+        "surface": "editor",
+        "capabilities": [
+          "PixelLab 像素生图",
+          "共享 API Key",
+          "128×128 透明原图",
+          "直接移送序列帧"
+        ]
+      },
+      "connector": {
+        "type": "local-adapter",
+        "adapter": "reference-art",
+        "urlEnv": "SPRITE_PIPELINE_API_URL",
+        "defaultUrl": "http://127.0.0.1:7860",
+        "tokenEnv": "SPRITE_PIPELINE_API_TOKEN"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "transfer"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "generate 必填，角色外观描述；不会自动翻译或额外调用提示词服务。"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "facing": {
+            "type": "string",
+            "enum": [
+              "right",
+              "left"
+            ],
+            "default": "right"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "transfer 必填，已完成的原图生成任务 ID。移送不生成动画。"
+          }
+        }
+      },
+      "outputs": [
+        "referenceImage",
+        "characterPreset",
+        "metadata"
+      ]
+    },
+    {
       "id": "sprite-generator",
       "name": "2D 序列帧生成",
       "shortName": "序列帧",
@@ -50,12 +146,21 @@
         "productionLine": "player",
         "entryTitle": "制作玩家",
         "starterHint": "准备角色图片，在序列帧工具中创建一个动作；可以先从待机动作开始。",
-        "stages": ["准备素材", "生成动作", "检查并导出"],
+        "stages": [
+          "准备素材",
+          "生成动作",
+          "检查并导出"
+        ],
         "accent": "violet",
         "status": "ready",
         "route": "/tools/sprite-generator",
         "surface": "editor",
-        "capabilities": ["角色动作生成", "播放检查", "逐帧修补", "精灵表导出"]
+        "capabilities": [
+          "角色动作生成",
+          "播放检查",
+          "逐帧修补",
+          "精灵表导出"
+        ]
       },
       "connector": {
         "type": "local-adapter",
@@ -66,12 +171,27 @@
       },
       "inputSchema": {
         "type": "object",
-        "required": ["operation"],
+        "required": [
+          "operation"
+        ],
         "additionalProperties": false,
         "properties": {
           "operation": {
             "type": "string",
-            "enum": ["create", "create-and-generate", "generate-existing", "get", "export"],
+            "enum": [
+              "create",
+              "create-and-generate",
+              "generate-existing",
+              "get",
+              "export",
+              "check",
+              "review-frame",
+              "approve",
+              "reject",
+              "recover",
+              "attach-provider-job",
+              "safety"
+            ],
             "description": "与 SpritePipeline REST API 对应的作业操作。"
           },
           "characterId": {
@@ -91,7 +211,11 @@
           },
           "provider": {
             "type": "string",
-            "enum": ["pixellab", "fixture", "import"]
+            "enum": [
+              "pixellab",
+              "fixture",
+              "import"
+            ]
           },
           "candidateCount": {
             "type": "integer",
@@ -141,10 +265,57 @@
           },
           "overwrite": {
             "type": "boolean"
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "审核者标识，默认 agent。"
+          },
+          "reviewNote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "approve 必需，记录实际查看图像后的判断依据；reject/review-frame 可用。"
+          },
+          "acknowledgeWarnings": {
+            "type": "boolean",
+            "description": "只有已检查具体警告并决定接受时才设为 true。"
+          },
+          "frameIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          },
+          "reviewStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "repair_requested"
+            ]
+          },
+          "issueType": {
+            "type": "string",
+            "description": "repair_requested 必需。",
+          "enum": ["identity_drift", "clothing_error", "weapon_error", "limb_error", "pose_error", "alpha_background_error", "scale_baseline_error", "other"]
+          },
+          "providerJobId": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 200,
+            "description": "仅 attach-provider-job；必须来自已存在的上游任务，不可猜测。"
           }
         }
       },
-      "outputs": ["jobRecord", "orderedFrames", "spriteSheet", "preview", "metadata"]
+      "outputs": [
+        "jobRecord",
+        "orderedFrames",
+        "spriteSheet",
+        "preview",
+        "metadata"
+      ]
     },
     {
       "id": "map-stitcher",

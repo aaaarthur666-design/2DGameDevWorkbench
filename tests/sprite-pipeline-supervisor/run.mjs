@@ -99,6 +99,7 @@ try {
     '--port',
     '7860',
   ]);
+  assert.equal(launch.env.SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS, '1');
   assert.equal(
     launch.env.SPRITE_PIPELINE_DATA_DIR,
     path.join(repositoryRoot, 'work', 'sprite-pipeline'),

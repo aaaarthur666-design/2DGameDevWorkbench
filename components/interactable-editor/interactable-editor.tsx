@@ -1,6 +1,13 @@
 /* oxlint-disable next/no-img-element -- User-uploaded local data URLs must retain their original bytes. */
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type SetStateAction,
+} from 'react';
 import { Box, Plus, Copy, Download, Upload, Save, Trash2 } from 'lucide-react';
 import {
   createProject,
@@ -26,7 +33,13 @@ import {
   exportProject,
   interactableWorkItems,
 } from '@/features/interactable-editor/browser-storage';
-import { publishEditorSession, removeEditorSession, markEditorSaved } from '@/lib/workbench/editor-session';
+import {
+  publishEditorSession,
+  removeEditorSession,
+  markEditorSaved,
+} from '@/lib/workbench/editor-session';
+import { listWorkItems } from '@/lib/workbench/browser-store';
+import { isUntouchedStarterProject } from '@/features/interactable-editor/draft-activity';
 import { Field, Numeric, Check, BehaviorPanel } from './property-panels';
 import { VisualPanel } from './visual-panel';
 import { Preview, assetUrl } from './preview';
@@ -39,13 +52,24 @@ const triggerLabels = {
   external_request: '外部调用',
 };
 async function flushPendingDrafts(pass: () => Promise<boolean>) {
-  while (await pass()) { /* Drain edits made while a previous save was committing. */ }
+  while (await pass()) {
+    /* Drain edits made while a previous save was committing. */
+  }
 }
 export function InteractableEditor() {
-  const [project, setProject] = useState<InteractableProject>(createProject),
+  const [project, setProjectState] =
+      useState<InteractableProject>(createProject),
     [selected, setSelected] = useState(''),
     [exportIds, setExportIds] = useState<string[]>([]),
     [tab, setTab] = useState('visual');
+  const [started, setStarted] = useState(false);
+  const setProject = useCallback(
+    (value: SetStateAction<InteractableProject>) => {
+      setStarted(true);
+      setProjectState(value);
+    },
+    [],
+  );
   const [message, setMessage] = useState(''),
     [error, setError] = useState(false),
     [busy, setBusy] = useState(false),
@@ -63,45 +87,85 @@ export function InteractableEditor() {
   const current =
     project.objects.find((o) => o.definitionId === selected) ??
     project.objects[0];
-  const latest = useRef({ project, ready, draftWritable, busy });
-  useLayoutEffect(() => { latest.current = { project, ready, draftWritable, busy }; });
+  const latest = useRef({ project, ready, draftWritable, busy, started });
+  useLayoutEffect(() => {
+    latest.current = { project, ready, draftWritable, busy, started };
+  });
   const savedProject = useRef<InteractableProject | null>(null);
   const unreadableFallback = useRef<InteractableProject | null>(null);
   const savedAt = useRef('');
   const completedIds = useRef<string[]>([]);
   const writeChain = useRef(Promise.resolve());
-  const persist = useCallback(() => flushPendingDrafts(async () => {
-    const value = latest.current;
-    if (!value.ready) throw new Error('交互物草稿还在读取，请稍候。');
-    if (!value.draftWritable) {
-      if (value.project === unreadableFallback.current) return false;
-      throw new Error('原草稿暂时无法读取。请先保存当前源文件或导入项目，再离开页面。');
+  const persist = useCallback((explicit = false) => {
+    if (explicit) {
+      if (!latest.current.started) savedProject.current = null;
+      latest.current = { ...latest.current, started: true };
+      setStarted(true);
     }
-    if (savedProject.current === value.project) return false;
-    const writing = writeChain.current.catch(() => undefined).then(() => saveDraft(value.project, completedIds.current));
-    writeChain.current = writing;
-    try {
-      await writing;
-      savedProject.current = value.project;
-      savedAt.current = new Date().toISOString();
-      if (latest.current.project !== value.project) return true;
-      markEditorSaved('interactable-editor');
-      setDraftStatus('草稿已保存');
-      return false;
-    } catch {
-      setDraftStatus('草稿保存失败，请下载源文件');
-      throw new Error('交互物草稿保存失败，请保留页面并下载源文件。');
-    }
-  }), []);
+    return flushPendingDrafts(async () => {
+      const value = latest.current;
+      if (!value.ready) throw new Error('交互物草稿还在读取，请稍候。');
+      if (!value.started) return false;
+      if (!value.draftWritable) {
+        if (value.project === unreadableFallback.current) return false;
+        throw new Error(
+          '原草稿暂时无法读取。请先保存当前源文件或导入项目，再离开页面。',
+        );
+      }
+      if (savedProject.current === value.project) return false;
+      const writing = writeChain.current
+        .catch(() => undefined)
+        .then(() => saveDraft(value.project, completedIds.current));
+      writeChain.current = writing;
+      try {
+        await writing;
+        savedProject.current = value.project;
+        savedAt.current = new Date().toISOString();
+        if (latest.current.project !== value.project) return true;
+        markEditorSaved('interactable-editor');
+        setDraftStatus('草稿已保存');
+        return false;
+      } catch {
+        setDraftStatus('草稿保存失败，请下载源文件');
+        throw new Error('交互物草稿保存失败，请保留页面并下载源文件。');
+      }
+    });
+  }, []);
   useEffect(() => {
     let alive = true;
     const params = new URLSearchParams(location.search);
     loadDraft(params.get('project') || undefined)
-      .then((p) => {
-        if (alive && p) {
-          setProject(p);
+      .then(async (p) => {
+        if (!p) {
+          if (alive) setDraftStatus('开始编辑后自动保存');
+          return;
+        }
+        const items = await listWorkItems();
+        if (alive) {
+          const existing = items.find((item) => item.scopeId === p.projectId);
+          // Migrate a real legacy draft once; merely restoring a registered draft is clean.
+          savedProject.current = existing ? p : null;
+          completedIds.current = p.objects
+            .filter((object) =>
+              items.some(
+                (item) =>
+                  item.scopeId === p.projectId &&
+                  item.state === 'completed' &&
+                  item.id.endsWith(`:${object.definitionId}`),
+              ),
+            )
+            .map((object) => object.definitionId);
+          savedAt.current = existing?.savedAt || '';
+          setStarted(Boolean(existing) || !isUntouchedStarterProject(p));
+          setDraftStatus(
+            existing || !isUntouchedStarterProject(p)
+              ? '草稿已恢复'
+              : '开始编辑后自动保存',
+          );
+          setProjectState(p);
           const objectId = params.get('object');
-          if (objectId && p.objects.some(o => o.definitionId === objectId)) setSelected(objectId);
+          if (objectId && p.objects.some((o) => o.definitionId === objectId))
+            setSelected(objectId);
         }
       })
       .catch((e) => {
@@ -122,7 +186,13 @@ export function InteractableEditor() {
     };
   }, []);
   useEffect(() => {
-    if (!ready || !draftWritable) return;
+    if (
+      !ready ||
+      !draftWritable ||
+      !started ||
+      savedProject.current === project
+    )
+      return;
     completedIds.current = [];
     // oxlint-disable-next-line react/react-compiler -- Synchronize the visible status with an IndexedDB save cycle.
     setDraftStatus('正在保存草稿…');
@@ -130,21 +200,57 @@ export function InteractableEditor() {
       void persist().catch(() => undefined);
     }, 700);
     return () => clearTimeout(timer);
-  }, [project, ready, draftWritable, persist]);
+  }, [project, ready, draftWritable, started, persist]);
   useEffect(() => {
     if (!ready) return;
-    const dirty = draftWritable ? savedProject.current !== project : unreadableFallback.current !== project;
+    const dirty =
+      started &&
+      (draftWritable
+        ? savedProject.current !== project
+        : unreadableFallback.current !== project);
     const failed = !draftWritable || draftStatus.includes('失败');
-    const items = interactableWorkItems(project, completedIds.current).map(item => ({
-      ...item, savedAt: savedAt.current || undefined,
-      state: failed ? 'attention' as const : dirty ? 'editing' as const : item.state,
-      detail: failed ? '草稿保存需要处理，请先下载源文件' : dirty ? '正在保存交互物修改' : item.detail,
+    const items = (
+      started ? interactableWorkItems(project, completedIds.current) : []
+    ).map((item) => ({
+      ...item,
+      savedAt: savedAt.current || undefined,
+      state: failed
+        ? ('attention' as const)
+        : dirty
+          ? ('editing' as const)
+          : item.state,
+      detail: failed
+        ? '草稿保存需要处理，请先下载源文件'
+        : dirty
+          ? '正在保存交互物修改'
+          : item.detail,
     }));
-    items.sort((a, b) => Number(b.id.endsWith(`:${current?.definitionId}`)) - Number(a.id.endsWith(`:${current?.definitionId}`)));
-    publishEditorSession({ capabilityId: 'interactable-editor', items, dirty, busy, save: persist,
-      beforeLeave: () => { if (latest.current.busy) throw new Error('交互物正在导入或导出，请完成后再切换页面。'); },
+    items.sort(
+      (a, b) =>
+        Number(b.id.endsWith(`:${current?.definitionId}`)) -
+        Number(a.id.endsWith(`:${current?.definitionId}`)),
+    );
+    publishEditorSession({
+      capabilityId: 'interactable-editor',
+      items,
+      dirty,
+      busy,
+      save: persist,
+      beforeLeave: () => {
+        if (latest.current.busy)
+          throw new Error('交互物正在导入或导出，请完成后再切换页面。');
+      },
     });
-  }, [project, current?.definitionId, ready, draftWritable, draftStatus, busy, persist]);
+  }, [
+    project,
+    current?.definitionId,
+    ready,
+    draftWritable,
+    draftStatus,
+    busy,
+    started,
+    persist,
+  ]);
   useEffect(() => () => removeEditorSession('interactable-editor'), []);
   const edit = (fn: (o: Interactable) => void) =>
     setProject((p) => {
@@ -231,9 +337,11 @@ export function InteractableEditor() {
       );
       setResult(task);
       if (latest.current.project === project) {
-        completedIds.current = exportIds.length ? exportIds : [current.definitionId];
+        completedIds.current = exportIds.length
+          ? exportIds
+          : [current.definitionId];
         savedProject.current = null;
-        await persist();
+        await persist(true);
       }
       setMessage('已导出，点击下方文件下载。');
       const output = task.outputs.find((p) => p.endsWith('.zip'));
@@ -247,7 +355,9 @@ export function InteractableEditor() {
   const used = new Set(referencedAssets(project).map((a) => a.id));
   return (
     <main className="ie-workspace">
-      {!ready && <output className="wb-loading-veil">正在恢复交互物草稿…</output>}
+      {!ready && (
+        <output className="wb-loading-veil">正在恢复交互物草稿…</output>
+      )}
       <header className="ie-toolbar">
         <Box color="#55dfb4" />
         <strong>交互物编辑器</strong>
@@ -266,7 +376,12 @@ export function InteractableEditor() {
           <Upload size={16} />
           导入项目
         </button>
-        <button onClick={() => downloadJson(project)}>
+        <button
+          onClick={() => {
+            downloadJson(project);
+            void persist(true).catch(() => undefined);
+          }}
+        >
           <Save size={16} />
           保存源文件
         </button>

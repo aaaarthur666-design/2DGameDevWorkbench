@@ -2,9 +2,19 @@
 
 > 状态：当前维护。机器契约以 `workbench/manifest.json` 中的 `sprite-generator` 为准。
 
-项目把 `NativeFramesGeneration` 的完整本地工作台保存在 `Tools/SpritePipeline/`，并通过 `/tools/sprite-generator` 接入统一导航。上游来源为 `https://github.com/flxBurnOut/NativeFramesGeneration.git`，当前同步基线为提交 `b5cd0a4`（功能版本 `c2c505c`、MIT 许可 `322a6ae`、测试依赖修复 `b5cd0a4`）。
+项目把 `NativeFramesGeneration` 的完整本地工作台保存在 `Tools/SpritePipeline/`，并通过 `/tools/sprite-generator` 接入统一导航。上游来源为 `https://github.com/flxBurnOut/NativeFramesGeneration.git`，当前同步基线为提交 `e4df6f2de215f01db2e28ce1e175894186bb44f8`（2026-09-05，逐帧修补流程与操作界面更新），并保留工作台任务跳转、当前任务同步及帧图 / 导出产物下载接口。
 
 当前集成包含原始资产与恢复记录校验、QA 算法版本门禁、修补前后问题差异、五状态逐帧时间线、问题帧导航，以及多标签页草稿的三方像素冲突合并。外部替换要求选择帧时捕获的 SHA-256，避免覆盖更晚版本。
+
+## 原图参考入口
+
+`/tools/reference-art` 可用 PixelLab 生成 128×128 透明角色图，并与本工具共用一次保存的 Key。点击“用于制作序列帧”后，创建可复用角色并在生成页预选参考图、名称和外观提示词；不会创建或提交动画任务。详见 [角色原图](reference-art.md)。
+
+## PixelLab Key 的保存与恢复
+
+Key 保存于当前数据目录的 `config/credentials.json`，Windows 使用当前用户的 DPAPI 加密；关闭页面或重启服务后自动读取，输入框留空不代表 Key 丢失。工作台默认数据目录为 `work/sprite-pipeline`。
+
+工作台启动入口会在该凭据文件尚不存在时，从早期独立版的系统用户数据目录导入已有 PixelLab Key（Windows 默认 `%LOCALAPPDATA%/SpritePipeline/config`）。导入后保存到工作台目录；已有配置和主动清除留下的记录不会被覆盖，便携模式不会导入。原图与序列帧继续共用同一服务的配置。
 
 ## 两种使用面
 
@@ -43,7 +53,9 @@ SPRITE_PIPELINE_API_TOKEN=optional-bearer-token
 
 ## 功能边界
 
-嵌入界面保留上游的六阶段流程：指引与示例、生成动画、播放检查、逐帧修补、导出、API 与项目设置。生成服务使用 PixelLab Animate with Text V3；像素级手工修补、已有 Sheet 导入与离线诊断不依赖收费生成。
+嵌入界面采用上游的七页布局：开始、1 · 生成、2 · 播放检查、3 · 逐帧修补、4 · 导出，以及独立的资产库、设置。生成服务使用 PixelLab Animate with Text V3；像素级手工修补、已有 Sheet 导入与离线诊断不依赖收费生成。
+
+手工像素修补可直接编辑未锁定、未导出的候选帧，无需先逐帧标记待修补；保存仍校验原版本 SHA-256、使该帧旧审核失效并重新执行 QA。外部整帧替换仍须先标记待修补。修补页支持采用当前帧并继续、处理完后返回整段播放确认；洋葱皮默认关闭，橡皮擦模式暂时隐藏洋葱皮以显示真实透明区域。内置地面攻击预设明确限定为一次纵向劈砍。
 
 通过根目录 npm 命令启动时，Python 管线只监听回环地址，任务和角色包写入 `work/sprite-pipeline/`，成品写入 `outputs/sprite-pipeline/`；两者都不会提交到 Git。直接使用上游启动器时仍沿用其用户数据与文档导出目录。公开部署的 Cloudflare 页面不能启动本机 Python；若要远程使用，需要把管线单独部署到可信 HTTPS 服务，并补充访问控制和持久存储。
 
@@ -91,3 +103,13 @@ npm run workbench -- doctor --json
 ```
 
 修改上游组件时还应在 `Tools/SpritePipeline` 中按其锁定依赖运行 `python -m pytest -q` 和 `python -m pip check`。整体开发入口见 [开发与验证指南](development.md)。
+
+## 旧版资产恢复与任务栏
+
+工作台把序列帧任务保存在项目的 `work/sprite-pipeline/jobs`，角色参考保存在 `work/sprite-pipeline/characters`。独立版默认使用 Windows 用户目录 `%LOCALAPPDATA%/SpritePipeline`。两个目录不同会造成旧任务没有出现在工作台列表中，不能仅凭列表数量判断文件已丢失。
+
+工作台启动器默认启用 `SPRITE_PIPELINE_IMPORT_USER_ASSETS=1`：首次发现旧版的真实任务与角色参考时，校验并复制到项目目录。原目录保持不动；已有同名数据不覆盖，冲突副本放入 `work/sprite-pipeline/recovery`。导入结果记录在 `work/sprite-pipeline/config/user_library_import.json`。这是逐项的一次性导入：重复启动不会重复导入，删除已导入资产后不会从旧目录重新复活；后续仍在独立版修改同一个任务时不会双向同步。生成中的任务暂缓，fixture 流程测试不导入。设置该变量为 `0` 可关闭，显式 portable/test 根目录也不导入用户资产。
+
+工具上方的上下文栏显示当前位置、当前任务和实际状态；“制作记录”按钮打开已有记录，可从具体作品继续。生成、播放检查、修补和导出使用序列帧工具自己的标签页，上下文栏不再展示无法操作的三步条。
+
+验收时刷新页面，打开序列帧“资产库”，点击刷新后选择旧任务，再点“打开所选任务”，检查动画和逐帧图片。任务可能包含多个候选，任务数量不同于图片或候选数量。再点上方“制作记录”，确认可打开记录并返回对应作品。

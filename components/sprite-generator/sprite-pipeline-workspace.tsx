@@ -46,16 +46,19 @@ export function SpritePipelineWorkspace({
   const iframe = useRef<HTMLIFrameElement>(null);
   const { spriteItems } = useWorkbench();
   const [entryJob, setEntryJob] = useState('');
+  const [entryCharacter, setEntryCharacter] = useState('');
   const [activeJob, setActiveJob] = useState('');
   const [parentOrigin, setParentOrigin] = useState('');
   const embedded = new URL(pipelineUrl);
   if (entryJob) embedded.searchParams.set('workbench_job', entryJob);
+  else if (entryCharacter) embedded.searchParams.set('workbench_character', entryCharacter);
   if (parentOrigin) embedded.searchParams.set('workbench_origin', parentOrigin);
   const embeddedUrl = embedded.toString();
   useEffect(() => {
     const job = new URLSearchParams(location.search).get('job') || '';
     // oxlint-disable-next-line react/react-compiler -- Hydrate the browser-only deep link after server rendering.
     setEntryJob(job); setActiveJob(job); setParentOrigin(location.origin);
+    setEntryCharacter(new URLSearchParams(location.search).get('character') || '');
     const receive = (event: MessageEvent) => {
       if (event.origin !== new URL(pipelineUrl).origin || event.source !== iframe.current?.contentWindow) return;
       if (event.data?.type === 'workbench:sprite-job' && typeof event.data.jobId === 'string' && event.data.jobId.length <= 200) setActiveJob(event.data.jobId);

@@ -64,7 +64,11 @@ MCP、CLI 和 Web 提交的工作台任务汇入同一套运行时，因此不�
 
 交互物项目 schema 体量较大，采用生成式同步：`features/interactable-editor/contract.mjs` 是其字段定义编辑源，`npm run schema:interactable` 将其同步到清单。同步后必须检查 manifest diff，并运行工作台 doctor 与交互物测试。
 
-## 5. 三项生产能力
+## 5. 四项生产能力
+
+### 5.0 角色原图
+
+`reference-art` 通过 Node 适配器调用 SpritePipeline 中的窄接口，共用服务实例的受保护 PixelLab Key。Pixflux 后台任务 ID 记录在 runtime task 中；get/status 只查询原任务，完成后校验 128×128 透明 PNG 并写入任务产物。`transfer` 根据已完成源任务创建可复用角色预设，序列帧界面通过角色链接预选参考图，不生成动画。详见 [角色原图](reference-art.md)。
 
 ### 5.1 序列帧生成
 
@@ -80,13 +84,15 @@ MCP、CLI 和 Web 提交的工作台任务汇入同一套运行时，因此不�
 
 ## 6. Agent 调用面
 
-仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和五个工具：
+仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和 11 个工具：
 
 1. `workbench_list_capabilities`：读取当前能力目录。
 2. `workbench_describe_capability`：读取目标能力 schema、连接器和输出契约。
 3. `workbench_prepare_task`：仅校验并持久化任务，不运行能力。
 4. `workbench_run_task`：校验后运行清单选定的本地适配器。
 5. `workbench_get_task`：读取任务；对于运行中的异步任务，安全刷新同一个上游作业一次。
+
+另有环境、启动、预设、历史、结果和图片六个接口，三种入口共享 `lib/workbench/agent-api.mjs`，由 Runtime 导出。详见 [MCP 第一阶段](agent-phase1-acceptance.md)。
 
 CLI 的 `list`、`describe`、`prepare`、`run`、`status` 与上述语义对齐。浏览器页面还可以在宿主支持 `document.modelContext` 时注册页面级工具；它们只代表当前页面的交互能力，不替代仓库 STDIO MCP。
 

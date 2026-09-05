@@ -24,6 +24,7 @@
 | [Agent 客户端接入](agent-clients.md) | Codex、WorkBuddy 类客户端的 MCP 配置和调用流程 |
 | [连接器与任务契约](connector-contract.md) | 公共任务协议、状态机、HTTP 边界和安全规则 |
 | [Web 工作台界面](workbench-interface.md) | 页面职责、路由、本地草稿、任务聚合和部署边界 |
+| [角色原图](reference-art.md) | PixelLab 原图生成、共享密钥与序列帧参考交接 |
 | [序列帧生成](sprite-generator.md) | SpritePipeline 能力、操作、异步状态和产物 |
 | [地图拼接](map-stitcher.md) | 本地拼接、外部生成、编辑流程和导出 |
 | [地图拼接架构](MAP_STITCHER_ARCHITECTURE.md) | 地图模块的分层、数据流和格式兼容 |
@@ -52,3 +53,5 @@
 - 修改交互物字段：从 `features/interactable-editor/contract.mjs` 生成清单字段，禁止手工维护两份 schema。
 - 计划完成后：保留为历史快照，顶部写明状态、完成版本和当前文档入口。
 - 文档中的命令必须在仓库根目录可执行；提交前按 [开发与验证](development.md) 的矩阵检查。
+
+- [MCP 第一阶段功能与手动验收](agent-phase1-acceptance.md)
