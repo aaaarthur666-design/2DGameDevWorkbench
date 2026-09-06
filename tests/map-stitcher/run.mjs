@@ -214,6 +214,10 @@ try {
 
   test('only the obsolete default prompt is migrated; custom and empty edits are preserved', () => {
     assert.equal(
+      types.upgradeLegacyOverallPrompt(types.LEGACY_SIDE_VIEW_PROMPT),
+      types.DEFAULT_OVERALL_PROMPT,
+    );
+    assert.equal(
       types.upgradeLegacyOverallPrompt(types.LEGACY_PLAN_VIEW_PROMPT),
       types.DEFAULT_OVERALL_PROMPT,
     );
@@ -225,6 +229,7 @@ try {
       '',
       '  my flat side-view background  ',
       `${types.LEGACY_PLAN_VIEW_PROMPT} Keep my castle.`,
+      `${types.LEGACY_SIDE_VIEW_PROMPT} Keep my castle.`,
     ]) {
       assert.equal(types.upgradeLegacyOverallPrompt(custom), custom);
     }

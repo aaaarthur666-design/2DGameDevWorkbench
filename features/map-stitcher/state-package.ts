@@ -184,7 +184,10 @@ export async function createPixelworkStatePackage(
     drawShapes: snapshot.shapes,
     workbench: {
       tileAdditionalPrompts: Object.fromEntries(
-        snapshot.tiles.map((tile) => [tile.key, readAdditionalPrompt(tile.additionalPrompt)]),
+        snapshot.tiles.map((tile) => [
+          tile.key,
+          readAdditionalPrompt(tile.additionalPrompt),
+        ]),
       ),
       tileImageOrigins: Object.fromEntries(
         snapshot.tiles.map((tile) => [tile.key, tile.imageOrigins ?? {}]),
@@ -323,7 +326,9 @@ async function loadPixelworkManifest(
     manifest.drawShapes ?? manifest.drawingShapes,
   );
   const workbench = isRecord(manifest.workbench) ? manifest.workbench : {};
-  const prompts = isRecord(workbench.tileAdditionalPrompts) ? workbench.tileAdditionalPrompts : {};
+  const prompts = isRecord(workbench.tileAdditionalPrompts)
+    ? workbench.tileAdditionalPrompts
+    : {};
   const origins = isRecord(workbench.tileImageOrigins)
     ? workbench.tileImageOrigins
     : {};
@@ -407,7 +412,7 @@ async function loadPixelworkManifest(
     ),
     warnings:
       overallPrompt !== savedPrompt
-        ? ['旧版俯视默认提示词已更新为横版侧视默认词。']
+        ? ['旧版默认提示词已更新为强调地面等高衔接的横版侧视默认词。']
         : [],
     sourceFormat: 'pixelwork-v2',
   };
