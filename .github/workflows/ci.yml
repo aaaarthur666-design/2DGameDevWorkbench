@@ -25,6 +25,7 @@ jobs:
       - run: npm run workbench -- doctor --json
       - run: npm run test:mcp
       - run: npm run test:reference-art
+      - run: npm run test:task-isolation
       - run: npm run test:adapters
       - run: npm run test:http
       - run: npm run test:interactable

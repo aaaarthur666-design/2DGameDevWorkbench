@@ -25,6 +25,32 @@ class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AttackPlanBody(_Body):
+    character_id: str
+    keyframes_base64: list[str] = Field(min_length=5, max_length=5)
+    max_submissions: int = Field(default=7, ge=5, le=7)
+    keyframes_confirmed: bool = False
+
+
+class AttackSubmitBody(_Body):
+    retry: bool = False
+    reason: str = Field(default="", max_length=2000)
+
+
+class AttackAcceptBody(_Body):
+    token: str = Field(pattern=r"^[0-9a-f]{64}$")
+    points: list[list[float]] = Field(min_length=4, max_length=4)
+    phase_confirmed: bool = False
+    reviewer: str = Field(default="api", min_length=1, max_length=100)
+
+
+class MotionRepairBody(_Body):
+    base_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    note: str = Field(default="", max_length=500)
+    retry: bool = False
+    wait: bool = False
+
+
 class GenerateBody(_Body):
     wait: bool = False
     candidate_index: int | None = Field(default=None, ge=1)
@@ -178,6 +204,89 @@ def create_api(
             },
         )
 
+    from .attack_plans import AttackPlans
+    attack_plans = AttackPlans(service)
+
+    @app.post("/jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/ai-repair")
+    def motion_repair(job_id: str, candidate_index: int, frame_index: int, body: MotionRepairBody):
+        from .motion_correction import MotionCorrection
+        return MotionCorrection(service).manual(job_id,candidate_index,frame_index,body.base_sha256,body.note,retry=body.retry,wait=body.wait)
+
+    @app.post("/jobs/{job_id}/motion-review/resume")
+    def resume_motion_review(job_id: str):
+        from .motion_correction import MotionCorrection
+        return _job(MotionCorrection(service).resume(job_id))
+
+    @app.post("/jobs/{job_id}/motion-repairs/{attempt_id}/refresh")
+    def refresh_motion_repair(job_id: str, attempt_id: str):
+        from .motion_correction import MotionCorrection
+        controller=MotionCorrection(service)
+        with service.store.operation_lock(job_id,"motion",timeout_seconds=2):
+            attempt=controller._attempt(service.get_job(job_id),attempt_id)
+            if attempt["mode"]!="manual":
+                raise ValidationHarnessError("自动补做由后台处理")
+            if attempt["state"]=="reserved":
+                controller._advance_attempt(job_id,attempt_id,False)
+            return controller._attempt(service.get_job(job_id),attempt_id)
+
+    @app.post("/jobs/{job_id}/motion-repairs/{attempt_id}/adopt")
+    def adopt_motion_repair(job_id: str, attempt_id: str):
+        from .motion_correction import MotionCorrection
+        return _job(MotionCorrection(service).adopt(job_id,attempt_id,manual=True))
+
+    @app.get("/attack-plans")
+    def list_attack_plans() -> dict[str, Any]:
+        return {"plans": attack_plans.list_plans()}
+
+    @app.post("/attack-plans")
+    def create_attack_plan(body: AttackPlanBody) -> dict[str, Any]:
+        if not body.keyframes_confirmed:
+            raise ValidationHarnessError("请先确认五张关键姿势")
+        with tempfile.TemporaryDirectory(prefix="attack-keys-") as directory:
+            paths = []
+            for index, encoded in enumerate(body.keyframes_base64):
+                if len(encoded) > 28 * 1024 * 1024:
+                    raise ValidationHarnessError("关键姿势图片过大")
+                try:
+                    payload = base64.b64decode(encoded, validate=True)
+                except (ValueError, binascii.Error) as exc:
+                    raise ValidationHarnessError("关键姿势不是有效 base64 图片") from exc
+                path = Path(directory) / f"anchor_{index}.png"
+                path.write_bytes(payload)
+                paths.append(path)
+            return attack_plans.create(body.character_id, paths, max_submissions=body.max_submissions)
+
+    @app.get("/attack-plans/{plan_id}")
+    def get_attack_plan(plan_id: str) -> dict[str, Any]:
+        return attack_plans.load(plan_id)
+
+    @app.post("/attack-plans/{plan_id}/segments/{segment}/generate")
+    def submit_attack_segment(plan_id: str, segment: int, body: AttackSubmitBody) -> dict[str, Any]:
+        return attack_plans.submit(plan_id, segment, retry=body.retry, reason=body.reason)
+
+    @app.post("/attack-plans/{plan_id}/segments/{segment}/refresh")
+    def refresh_attack_segment(plan_id: str, segment: int) -> dict[str, Any]:
+        return attack_plans.refresh(plan_id, segment)
+
+    @app.get("/attack-plans/{plan_id}/segments/{segment}/review")
+    def get_attack_review(plan_id: str, segment: int) -> dict[str, Any]:
+        plan = attack_plans.load(plan_id)
+        job_id, paths = attack_plans.frames(plan, segment)
+        return {"job_id": job_id, "token": attack_plans.review_token(plan, segment),
+                "frames_base64": [base64.b64encode(p.read_bytes()).decode("ascii") for p in paths]}
+
+    @app.post("/attack-plans/{plan_id}/segments/{segment}/accept")
+    def accept_attack_segment(plan_id: str, segment: int, body: AttackAcceptBody) -> dict[str, Any]:
+        return attack_plans.accept(plan_id, segment, **body.model_dump())
+
+    @app.post("/attack-plans/{plan_id}/assemble")
+    def assemble_attack_plan(plan_id: str) -> dict[str, Any]:
+        return attack_plans.assemble(plan_id)
+
+    @app.post("/attack-plans/{plan_id}/stop")
+    def stop_attack_plan(plan_id: str) -> dict[str, Any]:
+        return attack_plans.stop(plan_id)
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {
@@ -186,6 +295,7 @@ def create_api(
             "version": "0.1.0",
             "workbench_api_version": 1,
             "pixellab_configured": bool(service.settings.pixellab_api_key),
+            "attack_extra_generation_limit": 2,
             "data_root": str(service.settings.data_root),
             "recovery_worker": recovery_worker.snapshot(),
         }

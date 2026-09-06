@@ -84,7 +84,14 @@ class JobStore:
         acquired = False
         try:
             if os.fstat(descriptor).st_size == 0:
-                os.write(descriptor, b"\0")
+                try:
+                    os.write(descriptor, b"\0")
+                except PermissionError:
+                    # Another process may have initialized and locked the byte
+                    # between fstat and write. Join normal lock acquisition;
+                    # genuine initialization/permission failures still surface.
+                    if os.fstat(descriptor).st_size == 0:
+                        raise
             deadline = time.monotonic() + timeout_seconds
             while not acquired:
                 try:
@@ -180,6 +187,8 @@ class JobStore:
                 for candidate in job.candidates
             )
         )
+        from .motion_correction import active as motion_active
+        needs_recovery = needs_recovery or (motion_active(job) and job.generation_requested_at is not None)
         return {
             "summary_schema_version": _JOB_SUMMARY_SCHEMA_VERSION,
             "job_revision": job.revision,
@@ -212,6 +221,9 @@ class JobStore:
             "exported": job.export is not None,
             "export_candidate_index": job.export.candidate_index if job.export else None,
             "needs_recovery": needs_recovery,
+            "motion_state": (job.motion_control or {}).get("state"),
+            "motion_message": (job.motion_control or {}).get("message"),
+            "execution_only": job.request.motion_repair is not None,
         }
 
     def _write_summary(self, job: JobRecord) -> None:

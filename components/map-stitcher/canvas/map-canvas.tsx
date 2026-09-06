@@ -8,7 +8,7 @@ import {
   type PointerEvent,
   type WheelEvent,
 } from 'react';
-import { Hand, Maximize, Minus, Plus, Upload } from 'lucide-react';
+import { Hand, Maximize, Minus, Plus, Upload, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   RegionDrawingOverlay,
@@ -209,10 +209,12 @@ export function MapCanvas({
   c,
   disabled,
   onImport,
+  onGenerate,
 }: {
   c: MapEditorController;
   disabled: boolean;
   onImport: () => void;
+  onGenerate: () => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<RegionDrawingHandle>(null);
@@ -592,8 +594,11 @@ export function MapCanvas({
         <div className="map-empty">
           <Upload size={30} />
           <h2>从一张地图开始</h2>
-          <p>导入中心图片，向外扩展；也可以打开状态或 Godot 包继续编辑。</p>
-          <Button onClick={onImport}>
+          <p>生成一张原图或导入已有图片，确认中心图后继续向外扩展。</p>
+          <Button disabled={disabled} onClick={onGenerate}>
+            <Sparkles /> 生成地图原图
+          </Button>
+          <Button variant="outline" disabled={disabled} onClick={onImport}>
             <Upload />
             导入地图图片
           </Button>

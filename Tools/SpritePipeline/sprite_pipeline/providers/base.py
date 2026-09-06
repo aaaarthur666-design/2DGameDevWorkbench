@@ -68,6 +68,8 @@ class ProviderRequest:
     frame_count: int
     seed: int | None = None
     transparent_background: bool = True
+    last_frame: bytes | None = None
+    edit_frames: tuple[bytes, ...] | None = None
 
     def __post_init__(self) -> None:
         """Normalize simple values and reject invalid provider-independent input."""
@@ -78,6 +80,18 @@ class ProviderRequest:
         if not reference:
             raise ValueError("reference_image must not be empty")
         object.__setattr__(self, "reference_image", reference)
+
+        if self.last_frame is not None:
+            if not isinstance(self.last_frame, (bytes, bytearray, memoryview)) or not self.last_frame:
+                raise ValueError("last_frame must contain nonempty image bytes")
+            object.__setattr__(self, "last_frame", bytes(self.last_frame))
+
+        if self.edit_frames is not None:
+            if self.last_frame is not None or len(self.edit_frames) != self.frame_count:
+                raise ValueError("edit_frames must match frame_count and cannot use last_frame")
+            if any(not isinstance(v, (bytes, bytearray, memoryview)) or not v for v in self.edit_frames):
+                raise ValueError("edit_frames must contain nonempty image bytes")
+            object.__setattr__(self, "edit_frames", tuple(bytes(v) for v in self.edit_frames))
 
         if not isinstance(self.prompt, str) or not self.prompt.strip():
             raise ValueError("prompt must not be empty")

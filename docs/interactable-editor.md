@@ -155,3 +155,12 @@ Godot 参数也可通过 `GODOT_46_BIN` 提供；无参数只运行 JavaScript �
 修改 `contract.mjs` 后运行 `npm run schema:interactable`，将完整字段 schema 同步到 manifest；JavaScript 测试会检查两者一致。此脚本只更新交互物能力的 project 字段，保留其他能力配置。同步结果必须与代码一起提交，并运行 doctor。Windows 隔离环境偶尔无法读取系统根证书，离线引擎测试会单独报告该环境提示，仍严格检查脚本错误和测试退出状态。
 
 完整验证矩阵见 [开发与验证指南](development.md)。早期设计取舍保留在 [实施计划历史快照](INTERACTABLE_EDITOR_PLAN.md)，不应据此覆盖当前契约。
+
+## MCP 制作与继续编辑
+
+1. 发现 `interactable-editor` 的 schema，再调用 `workbench_interactable_template`，传入 `kind`（inspect/toggle/pickup/sequence）和可选名称。模板查询不生成文件、不创建任务、不调用生图 API。
+2. Agent 在完整 `project` 中配置外观、触发、行为和记忆；保留 projectId 和 definitionId。`save-project` 保存全部物件与素材，产生可移植的 `interactable-project.json`，不导出 Godot 包。此操作不接受导出专用的 selectedDefinitionIds 或 targetProfile。
+3. `workbench_get_result` 返回带 task 参数的编辑地址；制作记录中的物件也直达编辑器。已有不同的同 ID 本机草稿会保留，Agent 版本另存；再次打开同一任务会恢复该版本的后续编辑。
+4. Agent 继续修改时，通过 get_task/read_artifact 读取已有源文件，修改后再次 save-project；需要交付包时才 export-godot。已保存不等于已导出。模板没有生成美术，缺图片时只能称为交互逻辑草稿。
+
+人工验收：重连 MCP 后说“制作一扇靠近按 E 开关的门，先保存逻辑草稿，不要生成美术或导出”。应出现一个可继续编辑的物件，前端可查看触发与切换状态；再说“把按键改为 F，然后导出 Godot”，应沿用原物件 ID 并给出真实 ZIP。另说“把地图自动拼起来”，应引导至地图前端，任务数量不增加。

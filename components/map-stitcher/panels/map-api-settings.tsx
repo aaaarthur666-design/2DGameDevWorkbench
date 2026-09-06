@@ -21,6 +21,8 @@ export interface MapApiSettings {
     host: string;
     model: string;
     configured: boolean;
+    setupUrl?: string;
+    usageNote?: string;
   }>;
 }
 export function useMapApiSettings() {
@@ -73,6 +75,8 @@ function readSettings(value: unknown): MapApiSettings {
           host: item.host,
           model: item.model,
           configured: item.configured === true,
+          setupUrl: item.setupUrl,
+          usageNote: item.usageNote,
         }))
     : [];
   return {
@@ -144,7 +148,7 @@ export function MapApiSettingsDialog({
           <DialogTitle>地图生成设置</DialogTitle>
           <DialogDescription>
             图片 API
-            用于整体层扩图。地表与透明物件可直接上传，或使用有效的黑白参考提取物件。
+            用于地图原图生成与整体层扩图。地表与透明物件可直接上传，或使用有效的黑白参考提取物件。
           </DialogDescription>
         </DialogHeader>
         <div className="map-form-grid">
@@ -181,6 +185,8 @@ export function MapApiSettingsDialog({
           <label>
             Model<output>{selected?.model ?? '—'}</output>
           </label>
+          {selected?.usageNote && <p className="map-muted">{selected.usageNote}</p>}
+          {selected?.setupUrl && <a href={selected.setupUrl} target="_blank" rel="noreferrer">开通账号 / 获取 API Key ↗</a>}
           <label>
             API Key
             <input
@@ -195,7 +201,7 @@ export function MapApiSettingsDialog({
             />
           </label>
           <p className="map-muted">
-            密钥由服务端保管。关闭 API 后不能生成整体图片。
+            密钥由服务端保管，网页不会回显。此处填写的密钥在当前服务运行期间有效；关闭 API 后停止原图生成与扩图。
           </p>
           <label>
             整体层提示词

@@ -28,6 +28,7 @@ import {
   importAsset,
   importProject,
   loadDraft,
+  loadTaskProject,
   saveDraft,
   downloadJson,
   exportProject,
@@ -134,7 +135,8 @@ export function InteractableEditor() {
   useEffect(() => {
     let alive = true;
     const params = new URLSearchParams(location.search);
-    loadDraft(params.get('project') || undefined)
+    const taskId = params.get('task');
+    (taskId ? loadTaskProject(taskId) : loadDraft(params.get('project') || undefined))
       .then(async (p) => {
         if (!p) {
           if (alive) setDraftStatus('开始编辑后自动保存');

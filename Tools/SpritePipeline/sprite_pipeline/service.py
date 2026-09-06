@@ -421,14 +421,19 @@ class SpritePipelineService:
             character.cell_height,
             action.generation_frame_count,
         )
+        controlled = action.action_id in {"attack", "attack_in_air"} and not action.loop
+        extra_units = 2 * self._pixellab_generation_units(character.cell_width, character.cell_height, 4) if controlled else 0
         return {
             "provider": "pixellab",
+            "maximum_extra_generations": 2 if controlled else 0,
+            "maximum_visual_reviews": candidate_count + 2 if controlled else 0,
+            "visual_review_billed_separately": controlled,
             "cell_width": character.cell_width,
             "cell_height": character.cell_height,
             "provider_frame_count": action.generation_frame_count,
             "candidate_count": candidate_count,
             "generation_units_per_candidate": per_candidate,
-            "maximum_generation_units": per_candidate * candidate_count,
+            "maximum_generation_units": per_candidate * candidate_count + extra_units,
             "formula": "ceil(width * height * frame_count / 65536)",
         }
 
@@ -439,6 +444,10 @@ class SpritePipelineService:
         if not isinstance(request, GenerationRequest):
             request = GenerationRequest.model_validate(request)
         fingerprint_payload = request.model_dump(mode="json", exclude={"request_key"})
+        if request.attack_segment is None:
+            fingerprint_payload.pop("attack_segment", None)  # Preserve pre-existing idempotency keys.
+        if request.motion_repair is None:
+            fingerprint_payload.pop("motion_repair", None)
         fingerprint = hashlib.sha256(
             json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
@@ -495,7 +504,15 @@ class SpritePipelineService:
                         "action_id": action.action_id,
                     },
                 )
-        full_prompt = compose_generation_prompt(character, action)
+        segment_inputs = None
+        if request.attack_segment is not None:
+            from .attack_plans import AttackPlans
+            segment_inputs = AttackPlans(self).generation_inputs(request)
+        motion_inputs = None
+        if request.motion_repair is not None:
+            from .motion_correction import MotionCorrection
+            motion_inputs = MotionCorrection(self).generation_inputs(request)
+        full_prompt = motion_inputs[1] if motion_inputs else segment_inputs[2] if segment_inputs else compose_generation_prompt(character, action)
         if request.provider == "pixellab" and len(full_prompt) > 1000:
             raise ValidationHarnessError(
                 "composed PixelLab action prompt exceeds the 1000 character API limit",
@@ -507,7 +524,13 @@ class SpritePipelineService:
         job_id, job_dir = self.store.create_layout(character.character_id, action.action_id)
         try:
             reference_dest = job_dir / "input" / "reference.png"
-            shutil.copy2(reference_source, reference_dest)
+            if motion_inputs:
+                self._atomic_write_bytes(reference_dest, motion_inputs[0][0])
+            elif segment_inputs:
+                self._atomic_write_bytes(reference_dest, segment_inputs[0])
+                self._atomic_write_bytes(job_dir / "input" / "last_frame.png", segment_inputs[1])
+            else:
+                shutil.copy2(reference_source, reference_dest)
             for field, filename in (
                 ("master", character.master),
                 ("palette", character.palette),
@@ -549,6 +572,8 @@ class SpritePipelineService:
                 full_prompt=full_prompt,
                 candidates=candidates,
             )
+            from .motion_correction import default_policy
+            job.motion_control = default_policy(request, action)
             job.touch("job_created", provider=request.provider, candidate_count=request.candidate_count)
             self.store.save(job)
             return job
@@ -761,6 +786,10 @@ class SpritePipelineService:
         job = self.store.load(job_id)
         if job.request.provider == "import":
             raise ValidationHarnessError("import jobs accept frames through ingest, not generate")
+        if job.motion_control and job.generation_requested_at is None and not any(c.submission_attempts for c in job.candidates):
+            from .vision_review import VisionReviewer
+            if not VisionReviewer(self.settings).configured:
+                raise ValidationHarnessError("请先在设置中保存 视觉检查 API Key；尚未提交生成")
         provider = get_provider(job.request.provider, self.settings)
         self.reconcile_saved_results(job_id)
         job = self.store.load(job_id)
@@ -833,7 +862,8 @@ class SpritePipelineService:
                 break
             if not wait:
                 break
-        return self.store.load(job_id)
+        from .motion_correction import MotionCorrection
+        return MotionCorrection(self).advance(job_id, wait=wait)
 
     def _check_submission_quota(
         self,
@@ -1003,6 +1033,20 @@ class SpritePipelineService:
                     "actual_sha256": actual_reference_sha,
                 },
             )
+        edit_frames = None
+        if snapshot.request.motion_repair is not None:
+            from .motion_correction import MotionCorrection
+            edit_frames, edit_prompt = MotionCorrection(self).generation_inputs(snapshot.request)
+            if reference_bytes != edit_frames[0] or snapshot.full_prompt != edit_prompt:
+                raise ValidationHarnessError("locked motion correction inputs changed")
+        last_frame = None
+        if snapshot.request.attack_segment is not None:
+            from .attack_plans import AttackPlans
+            first, last_frame, prompt = AttackPlans(self).generation_inputs(snapshot.request)
+            last_path = self.store.job_dir(job_id) / "input" / "last_frame.png"
+            if (reference_bytes != first or last_path.read_bytes() != last_frame
+                    or snapshot.full_prompt != prompt or len(snapshot.candidates) != 1):
+                raise ValidationHarnessError("locked attack segment inputs changed")
         estimated_result_bytes = max(
             64 * 1024 * 1024,
             snapshot.character.cell_width
@@ -1026,6 +1070,8 @@ class SpritePipelineService:
             frame_count=snapshot.action.generation_frame_count,
             seed=snapshot_candidate.seed,
             transparent_background=snapshot.character.transparent_background,
+            last_frame=last_frame,
+            edit_frames=edit_frames,
         )
         provider_dir = self.store.job_dir(job_id) / "provider"
         intent_path = provider_dir / f"{snapshot_candidate.candidate_id}.submit.intent.json"
@@ -1077,7 +1123,7 @@ class SpritePipelineService:
             candidate.submission_started_at = utc_now()
             candidate.submission_attempts = 1
             candidate.provider_name = provider.name
-            candidate.provider_model = "animate-with-text-v3" if provider.name == "pixellab" else "diagnostic-continuity-v2"
+            candidate.provider_model = ("edit-animation-v2" if snapshot.request.motion_repair else "animate-with-text-v3") if provider.name == "pixellab" else "diagnostic-continuity-v2"
             candidate.raw_request_path = relative_posix(intent_path, self.store.job_dir(job_id))
             job.status = JobStatus.submitting
             job.touch("candidate_submitting", candidate_index=candidate_index, provider=provider.name)
@@ -1971,6 +2017,8 @@ class SpritePipelineService:
                         candidate.status == CandidateStatus.created
                         for candidate in job.candidates
                     )
+                from .motion_correction import active as motion_active
+                active = active or motion_active(job)
                 if active and self.settings.pixellab_api_key:
                     before_revision = job.revision
                     advanced = self.generate_job(job_id, wait=False)
@@ -2237,6 +2285,11 @@ class SpritePipelineService:
             loop=job.action.loop,
             thresholds=self._qa_thresholds(job),
         )
+        if job.request.attack_segment or (job.request.request_key or "").startswith("attack-assembly-"):
+            from .attack_plans import AttackPlans
+            AttackPlans(self).apply_hold_policy(job, report)
+        from .motion_correction import apply_charge_hold
+        apply_charge_hold(job, report)
         self._apply_qa_report(candidate, report)
         if len(candidate.frames) != job.action.frame_count:
             imported = job.request.provider == "import"
@@ -2567,6 +2620,13 @@ class SpritePipelineService:
     ) -> JobRecord:
         with self.store.locked_job(job_id) as job:
             candidate = self._candidate(job, candidate_index)
+            from .motion_correction import active as motion_active
+            if motion_active(job):
+                raise ExportBlockedError("自动视觉检查和补做尚未完成")
+            if job.request.motion_repair is not None:
+                raise ExportBlockedError("修补片段需回到逐帧修补采用")
+            if job.request.attack_segment is not None:
+                raise ExportBlockedError("攻击片段需回到受约束攻击方案检查并采用，再合成完整动画")
             if candidate.status != CandidateStatus.review_ready:
                 raise ExportBlockedError(
                     "only a review_ready candidate can be approved",
@@ -3308,6 +3368,9 @@ class SpritePipelineService:
         *,
         operation: str,
     ) -> None:
+        from .motion_correction import active as motion_active
+        if motion_active(job) and operation not in {"motion reservation", "motion adoption"}:
+            raise ConflictError("自动检查和补做正在进行，请等待完成再修改")
         if candidate.status in {
             CandidateStatus.approved,
             CandidateStatus.rejected,
@@ -3496,6 +3559,11 @@ class SpritePipelineService:
             )
 
     def _assert_exportable(self, job_id: str, job: JobRecord, candidate: CandidateRecord) -> None:
+        from .motion_correction import active as motion_active
+        if motion_active(job) or job.request.motion_repair is not None:
+            raise ExportBlockedError("请等待自动检查完成，或回到逐帧修补采用结果")
+        if job.request.attack_segment is not None:
+            raise ExportBlockedError("攻击片段不能单独导出，请回到方案合成完整动画")
         if candidate.status != CandidateStatus.approved:
             raise ExportBlockedError("candidate is not approved", details={"status": candidate.status.value})
         self._assert_qa_current(job_id, job, candidate)

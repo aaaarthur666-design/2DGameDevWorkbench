@@ -16,7 +16,7 @@ import type { WorkbenchModule } from '@/lib/workbench/modules';
 import { useWorkbench } from '@/components/workbench/workbench-provider';
 import { publishEditorSession, removeEditorSession } from '@/lib/workbench/editor-session';
 
-type PipelineStatus = 'checking' | 'ready' | 'offline';
+type PipelineStatus = 'checking' | 'ready' | 'offline' | 'api-only';
 
 const defaultPipelineUrl = 'http://127.0.0.1:7860';
 
@@ -41,6 +41,7 @@ export function SpritePipelineWorkspace({
   module: WorkbenchModule;
 }) {
   const [status, setStatus] = useState<PipelineStatus>('checking');
+  const [connectionMessage, setConnectionMessage] = useState('');
   const [pipelineVersion, setPipelineVersion] = useState<string | null>(null);
   const pipelineUrl = normalizedPipelineUrl();
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -73,7 +74,7 @@ export function SpritePipelineWorkspace({
 
   const checkConnection = useCallback(async () => {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 2500);
+    const timeout = window.setTimeout(() => controller.abort(), 6000);
 
     try {
       const response = await fetch('/api/workbench/sprite-pipeline/health', {
@@ -83,13 +84,18 @@ export function SpritePipelineWorkspace({
       const payload = (await response.json().catch(() => null)) as {
         ok?: boolean;
         version?: string;
+        uiReady?: boolean;
+        uiError?: string;
+        error?: string;
       } | null;
       if (!response.ok || payload?.ok !== true || typeof payload.version !== 'string') {
-        throw new Error('Invalid SpritePipeline health response');
+        throw new Error(payload?.error || '序列帧服务未就绪。');
       }
       setPipelineVersion(payload.version);
-      setStatus('ready');
-    } catch {
+      setConnectionMessage(payload.uiError || '');
+      setStatus(payload.uiReady === true ? 'ready' : 'api-only');
+    } catch (error) {
+      setConnectionMessage(error instanceof Error ? error.message : '序列帧服务未就绪。');
       setPipelineVersion(null);
       setStatus('offline');
     } finally {
@@ -134,7 +140,7 @@ export function SpritePipelineWorkspace({
             ? '正在连接'
             : status === 'ready'
               ? `本地管线已连接${pipelineVersion ? ` · v${pipelineVersion}` : ''}`
-              : '本地管线未启动'}
+              : status === 'api-only' ? '接口已连接，界面未就绪' : '本地管线未启动'}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -170,7 +176,6 @@ export function SpritePipelineWorkspace({
           src={embeddedUrl}
           title="NativeFramesGeneration 序列帧生成工作区"
           className="min-h-0 w-full flex-1 border-0 bg-[#11101a]"
-          onLoad={() => setStatus('ready')}
         />
       ) : (
         <section className="grid min-h-0 flex-1 place-items-center overflow-auto px-4 py-8">
@@ -183,6 +188,7 @@ export function SpritePipelineWorkspace({
                 <h1 className="text-lg font-semibold text-white/90">
                   本地序列帧管线未就绪
                 </h1>
+                {connectionMessage && <p role="alert" className="mt-2 text-sm text-amber-200">{connectionMessage}</p>}
                 <p className="mt-1.5 text-sm leading-6 text-white/46">
                   完整的生成、播放检查、逐帧修补和 Sprite Sheet
                   导出界面由本项目内置的 Python

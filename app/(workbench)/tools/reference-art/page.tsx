@@ -2,5 +2,5 @@ import { ReferenceArtEditor } from '@/components/reference-art/reference-art-edi
 import '@/components/reference-art/reference-art.css';
 
 export default function ReferenceArtPage() {
-  return <ReferenceArtEditor />;
+  return <div className="ra-scroll-area"><ReferenceArtEditor /></div>;
 }

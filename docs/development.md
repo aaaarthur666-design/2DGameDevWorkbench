@@ -45,10 +45,10 @@ npm run dev:interactable
 ```powershell
 npm run dev:web
 npm run workbench:http
-npm run sprite-pipeline:api
+npm run sprite-pipeline
 ```
 
-`npm run sprite-pipeline` 启动 SpritePipeline 自身 UI。首次使用其 Python 环境时先运行：
+`npm run sprite-pipeline` 启动 SpritePipeline 的 UI 和 API；`npm run sprite-pipeline:api` 仅用于不需要网页界面的接口调试。仅 API 模式的根地址返回 404，不能用于工作台内嵌界面。工作台会分别检查 API 和界面状态；完整启动命令不会把 API-only 服务误当作界面已就绪。首次使用其 Python 环境时先运行：
 
 ```powershell
 npm run sprite-pipeline:setup
@@ -165,3 +165,16 @@ npm run dev
 npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健康服务会被复用，端口冲突会报错；远程服务配置继续按原规则处理。npm run sprite-pipeline 单独启动 UI，npm run sprite-pipeline:api 单独启动 API，两者使用相同的本机服务地址配置，默认监听 127.0.0.1:7860，不能同时占用该端口。npm run dev:interactable 可在无需 Python 的情况下启动地图、交互物和场景工具。
 
 初始化需要访问 Python 包仓库。依赖安装失败时不会报告就绪，请按错误检查网络或包仓库配置后重试。旧 PowerShell 入口保留为 Node.js 启动器的兼容包装。
+
+### 运行时测试数据隔离
+
+会创建任务的测试必须先导入 [runtime-workspace.mjs](../tests/helpers/runtime-workspace.mjs)。
+该入口设置每次运行独立的 `WORKBENCH_TEST_RUN`，MCP、HTTP 和 CLI 子进程继承同一标识。
+运行时将测试记录写入 `work/test-runs/<run-id>/tasks/`，产物写入 `outputs/test-runs/<run-id>/`；正式任务列表只读取清单原有目录。
+不要将此变量配置到日常工作台服务中。`npm run test:task-isolation` 验证正式目录不被新增任务、子进程继承、不同测试批次隔离及目录越界拒绝。
+
+### 前端测试缓存隔离
+
+使用 Vite 加载 TypeScript 的测试必须通过 `tests/helpers/vite-server.mjs` 创建服务器。每次测试使用 `work/test-runs/vite-<uuid>/cache`，不可与开发前端共用 `node_modules/.vite`。否则测试服务器会替换依赖索引，让仍在运行的网页请求旧模块时得到 `504 Outdated Optimize Dep`，表现为 `Failed to fetch dynamically imported module`。
+
+排查时同时检查页面入口和其 JavaScript 依赖的 HTTP 状态；入口返回 200 不代表整个页面可以加载。修复缓存后重启前端，再刷新旧页面；不要清空浏览器草稿或素材目录。服务没有闲置自动关闭机制，但关闭启动终端或某个受管理进程意外退出会影响服务。

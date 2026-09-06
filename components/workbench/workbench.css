@@ -1100,3 +1100,5 @@
   border-radius: 5px;
   font-size: 14px;
 }
+
+.wb-scene-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; }

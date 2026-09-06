@@ -78,7 +78,7 @@ Commands:
   list [--json]
   describe <capability-id> [--json]
   doctor [--json]
-  agent <guidance|environment|start|frontend|presets|tasks|result|artifact> [--input <json-file>] [--json]
+  agent <guidance|environment|start|frontend|presets|tasks|result|artifact|interactable-template> [--input <json-file>] [--json]
   prepare <capability-id> --input <json-file> [--json]
   run <capability-id> --input <json-file> [--json]
   status <task-id> [--json]
@@ -101,7 +101,7 @@ async function main() {
       await agentRequest(
         manifest,
         target,
-        flags.has('input') ? await loadInput(flags) : {},
+        flags.has('input') || flags.has('input-json') ? await loadInput(flags) : {},
       ),
       jsonMode,
     );

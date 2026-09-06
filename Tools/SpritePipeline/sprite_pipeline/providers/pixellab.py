@@ -279,6 +279,50 @@ class PixelLabProvider(SpriteProvider):
         if request.seed is not None:
             request_record["seed"] = request.seed
 
+        if request.last_frame is not None:
+            try:
+                last = normalize_image_bytes(
+                    request.last_frame, max_bytes=self.max_response_bytes,
+                    max_width=256, max_height=256, max_pixels=256 * 256,
+                )
+            except ImagePayloadError as exc:
+                raise ProviderPermanentError("last frame is not a valid image") from exc
+            if (last.width, last.height) != (reference.width, reference.height):
+                raise ProviderPermanentError("first and last frames must have the same dimensions")
+            payload["last_frame"] = {
+                "type": "base64", "base64": base64.b64encode(last.data).decode("ascii"), "format": "png",
+            }
+            request_record["last_frame"] = {
+                "type": "base64", "format": "png", "width": last.width,
+                "height": last.height, "byte_length": len(last.data), "sha256": last.sha256,
+            }
+
+        endpoint = "animate-with-text-v3"
+        if request.edit_frames is not None:
+            normalized = []
+            try:
+                for content in request.edit_frames:
+                    frame = normalize_image_bytes(content, max_bytes=self.max_response_bytes,
+                        max_width=256, max_height=256, max_pixels=256*256)
+                    if (frame.width, frame.height) != (reference.width, reference.height):
+                        raise ProviderPermanentError("animation edit frames must have matching dimensions")
+                    normalized.append(frame)
+            except ImagePayloadError as exc:
+                raise ProviderPermanentError("animation edit frame is invalid") from exc
+            endpoint = "edit-animation-v2"
+            payload = {"description": request.prompt,
+                "frames": [{"image": {"base64": base64.b64encode(frame.data).decode("ascii")},
+                    "size": {"width": frame.width, "height": frame.height}} for frame in normalized],
+                "image_size": {"width": reference.width, "height": reference.height},
+                "no_background": request.transparent_background}
+            if request.seed is not None:
+                payload["seed"] = request.seed
+            request_record = {"provider": self.name, "method": "POST", "path": "/v2/"+endpoint,
+                "description": request.prompt, "frame_count": len(normalized), "seed": request.seed,
+                "image_size": payload["image_size"], "no_background": request.transparent_background,
+                "frames": [{"sha256": frame.sha256, "width": frame.width, "height": frame.height,
+                    "byte_length": len(frame.data)} for frame in normalized]}
+
         httpx = self._httpx_for_errors()
         timeout_errors = (httpx.TimeoutException,) if httpx is not None else ()
         request_errors = (httpx.RequestError,) if httpx is not None else ()
@@ -286,7 +330,7 @@ class PixelLabProvider(SpriteProvider):
         for retry_index in range(self.max_get_retries + 1):
             try:
                 response = self._get_client().post(
-                    f"{self.api_root}/animate-with-text-v3",
+                    f"{self.api_root}/{endpoint}",
                     json=payload,
                 )
             except timeout_errors as exc:
@@ -315,7 +359,7 @@ class PixelLabProvider(SpriteProvider):
 
         assert response is not None
 
-        if response.status_code != 200:
+        if response.status_code not in ({200, 202} if request.edit_frames is not None else {200}):
             self._raise_submission_status(response, request_record)
 
         try:

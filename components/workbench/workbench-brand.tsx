@@ -4,18 +4,15 @@ import { workbenchBrand } from '@/lib/workbench/brand';
 export function WorkbenchBrand() {
   return (
     <>
-      <img
-        className="wb-brandmark"
-        src={workbenchBrand.icon}
-        width={40}
-        height={40}
-        alt=""
-        aria-hidden="true"
-      />
+      <WorkbenchBrandIcon />
       <span>
         <strong>{workbenchBrand.name}</strong>
         <small>{workbenchBrand.tagline}</small>
       </span>
     </>
   );
+}
+
+export function WorkbenchBrandIcon({ size = 40, className = 'wb-brandmark' }: { size?: number; className?: string }) {
+  return <img className={className} src={workbenchBrand.icon} width={size} height={size} alt="" aria-hidden="true" />;
 }

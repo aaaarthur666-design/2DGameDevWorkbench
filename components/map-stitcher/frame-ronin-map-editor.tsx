@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   FilePlus2,
+  Sparkles,
   CircleHelp,
   Download,
   FolderOpen,
@@ -57,9 +58,10 @@ import { MapCanvas } from './canvas/map-canvas';
 import { MapInspector } from './panels/map-inspector';
 import { MapApiSettingsDialog } from './panels/map-api-settings';
 import { ImageFineEditor } from './editors/image-fine-editor';
+import { MapOriginGenerator } from './panels/map-origin-generator';
 import './frame-ronin-editor.css';
 
-export function FrameRoninMapEditor() {
+export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOriginOpen?: boolean }) {
   const c = useMapEditorController();
   const workspace = useMapWorkspace(c);
   useMapAgentTools(c);
@@ -67,6 +69,14 @@ export function FrameRoninMapEditor() {
     layerInput = useRef<HTMLInputElement>(null),
     stateInput = useRef<HTMLInputElement>(null),
     directoryInput = useRef<HTMLInputElement>(null);
+  const [originOpen, setOriginOpen] = useState(initialOriginOpen);
+  useEffect(() => {
+    if (workspace.loading) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('origin') !== 'generate') return;
+    url.searchParams.delete('origin');
+    window.history.replaceState(window.history.state, '', url);
+  }, [workspace.loading]);
   const [settingsOpen, setSettingsOpen] = useState(false),
     [helpOpen, setHelpOpen] = useState(false),
     [exportOpen, setExportOpen] = useState(false),
@@ -216,6 +226,9 @@ export function FrameRoninMapEditor() {
           role="toolbar"
           aria-label="地图编辑工具栏"
         >
+          <Button variant="outline" size="sm" disabled={c.busy || workspace.loading || creating} onClick={() => setOriginOpen(true)}>
+            <Sparkles /> 生成原图
+          </Button>
           <fieldset className="map-primary-views" aria-label="图片视图">
             {(['overall', 'surface', 'object'] as const).map((layer) => (
               <Button
@@ -388,10 +401,12 @@ export function FrameRoninMapEditor() {
             disabled={
               c.busy ||
               settingsOpen ||
+              originOpen ||
               helpOpen ||
               exportOpen ||
               Boolean(c.fineSession)
             }
+            onGenerate={() => setOriginOpen(true)}
             onImport={() => sourceInput.current?.click()}
           />
         </MapWorkArea>
@@ -427,6 +442,7 @@ export function FrameRoninMapEditor() {
           </DropdownMenu>
           <EditorTaskSummary />
         </footer>
+        <MapOriginGenerator open={originOpen && !workspace.loading} onOpenChange={setOriginOpen} onSettings={openSettings} c={c} />
         <input
           ref={sourceInput}
           className="sr-only"
@@ -575,7 +591,7 @@ export function FrameRoninMapEditor() {
                 Cmd + Z 重做。
               </p>
               <p>
-                “新建项目”进入空白状态，再通过画布上的“导入地图图片”开始；“打开”恢复已有项目。草稿自动保存在本机，也可从“更多”下载编辑源文件。新
+                “新建项目”进入空白状态，再通过“生成原图”或画布上的“导入地图图片”开始；“打开”恢复已有项目。草稿自动保存在本机，也可从“更多”下载编辑源文件。新
                 Godot 包包含完整编辑源；旧包可能只能恢复合成图片。
               </p>
               <Button

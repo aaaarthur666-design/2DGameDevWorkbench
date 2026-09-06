@@ -22,6 +22,7 @@ export type WorkbenchModule = {
   productionLine: string;
   entryTitle: string;
   starterHint: string;
+  entryActions?: readonly { label: string; href: string }[];
   stages: readonly string[];
 };
 
@@ -41,6 +42,7 @@ export const workbenchModules: readonly WorkbenchModule[] = [
   productionLine: capability.ui.productionLine,
   entryTitle: capability.ui.entryTitle,
   starterHint: capability.ui.starterHint,
+  entryActions: ('entryActions' in capability.ui ? capability.ui.entryActions : undefined) as WorkbenchModule['entryActions'],
   stages: capability.ui.stages,
   href: capability.ui.route,
   icon:

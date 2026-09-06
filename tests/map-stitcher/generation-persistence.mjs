@@ -58,6 +58,7 @@ export async function registerGenerationPersistenceTests(server, test) {
       height: 8,
     });
     loadedUrls.push(center.images.overall.url);
+    center.imageOrigins = { overall: 'api-generated' };
     center.additionalPrompt = ' 中心森林\n保持侧视 ';
     const next = geometry.expandAroundFrameRoninTile(center, 4, 15, 15);
     assert.ok(next.every((tile) => !tile.additionalPrompt));
@@ -103,6 +104,7 @@ export async function registerGenerationPersistenceTests(server, test) {
         Buffer.from(await roundTrip.tiles[0].images.overall.file.arrayBuffer()),
         png,
       );
+      assert.equal(roundTrip.tiles[0].imageOrigins.overall, 'api-generated');
       const zip = await JSZip.loadAsync(await packed.blob.arrayBuffer());
       const manifest = JSON.parse(
         await zip.file('map_stitch_state.json').async('string'),

@@ -58,7 +58,7 @@ default_tools_approval_mode = "writes"
 
 ## 4. MCP 能力面
 
-Server 暴露只读资源 `workbench://manifest`，以及 12 个工具：
+Server 暴露只读资源 `workbench://manifest`，以及 13 个工具：
 
 | 工具 | 行为 |
 | --- | --- |
@@ -66,6 +66,7 @@ Server 暴露只读资源 `workbench://manifest`，以及 12 个工具：
 | `workbench_describe_capability` | 返回某一能力的输入 schema、输出与工作流契约 |
 | `workbench_prepare_task` | 校验输入并写入任务记录，不运行适配器 |
 | `workbench_run_task` | 对已授权请求运行清单选定的适配器 |
+| `workbench_interactable_template` | 获取四种行为的完整交互物模板，不创建任务 |
 | `workbench_get_task` | 读取任务；运行中时安全刷新已有上游作业一次 |
 
 新增工具：`workbench_start_frontend`（本地前端及运行时启动）、`workbench_get_environment`、`workbench_start_services`、`workbench_list_presets`、`workbench_list_tasks`、`workbench_get_result`、`workbench_read_artifact`。分别用于实际就绪检查、本机启动、角色与动作发现、历史查询、结构化结果和图像读取。完整契约和手动验收见 [MCP 第一阶段](agent-phase1-acceptance.md)。
@@ -103,9 +104,9 @@ Agent 的最终报告至少包括：能力和操作、任务 ID、当前状态�
 
 ```powershell
 npm run workbench -- list --json
-npm run workbench -- describe map-stitcher --json
-npm run workbench -- prepare map-stitcher --input examples/requests/map-stitcher.json --json
-npm run workbench -- run map-stitcher --input examples/requests/map-stitcher.json --json
+npm run workbench -- agent interactable-template --input-json '{"kind":"toggle","name":"门"}' --json
+npm run workbench -- describe interactable-editor --json
+npm run workbench -- run interactable-editor --input examples/requests/interactable-export.json --json
 npm run workbench -- status <task-id> --json
 ```
 
@@ -119,11 +120,11 @@ npm run workbench -- status <task-id> --json
 
 ### 地图
 
-选择 `map-stitcher`。确定性本地拼接与导出使用 `compose`；只有整体图层外部生成使用 `generate-layer`。外部 provider 未配置不影响本地 compose。详见 [地图拼接](map-stitcher.md)。
+地图在 `/tools/map-stitcher` 前端由用户操作。MCP 发现列表不提供该能力，describe/prepare/run 均拒绝地图制作请求，且不创建任务。CLI/HTTP 仍保留前端所需底层接口，Agent 不应绕过手动边界。详见 [地图拼接](map-stitcher.md)。
 
 ### 交互物
 
-选择 `interactable-editor` 的 `export-godot`，提交 `project` 和可选 `selectedDefinitionIds`。这是本地导出，不要求 API key、SpritePipeline 或 Godot。完成只证明资源包已生成，不证明目标游戏已通过回归测试。详见 [独立交互物编辑器](interactable-editor.md)。
+先调用 `workbench_interactable_template` 获取查看、切换、拾取或序列模板；按需求修改完整 `project`，调用 `interactable-editor` 的 `save-project` 保存。`get_result.viewPath` 可直接打开前端编辑；需要资源包时再用 `export-godot` 和可选 `selectedDefinitionIds`。这是本地导出，不要求 API key、SpritePipeline 或 Godot。完成只证明资源包已生成，不证明目标游戏已通过回归测试。详见 [独立交互物编辑器](interactable-editor.md)。
 
 跨能力请求应建立多个独立任务，再在对话中汇总它们的状态和产物；不要制造一个清单中不存在的复合 operation。
 
@@ -167,7 +168,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 手动验收：
 
-1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（总计 12 个工具），然后新建本项目对话。
+1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（总计 13 个工具），然后新建本项目对话。
 2. 发送“看看工作台现在有哪些功能”，无需要求打开网页。预期内部浏览器打开工作台首页，Agent 继续回答原问题。
 3. 再发送“列出已有角色”。预期复用页面，不增加重复预览；手动关掉预览后再发消息，也不应强行重开。
 4. 可选冷启动：正常关闭工作台开发服务，重新开启 WorkBuddy 项目对话并重复第 2 步。预期自动启动前端和 Runtime Bridge；无需 PixelLab Key 或 Python。若首次编译超过 60 秒，Agent 报告仍在启动和日志位置，不应谎报成功。
@@ -188,7 +189,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 | “只讨论方案：做个角色动画。” | 只问角色来源、动作等真正缺失选择，用提问工具（若可用）；不创建空任务。 |
 | “只讨论方案：用已有赛博战士做行走，你决定其他设置。” | 查真实角色/动作 ID，说明沿用 preset 和一个候选；不重复问角色、动作、帧数。 |
 | “只讨论方案：做一张森林地图，目前没有任何素材。” | 说明当前地图能力的模板/素材边界，给出下一步所需素材；不伪造一次文生地图调用。 |
-| “只讨论方案：把这四张图按两行两列、附件顺序拼起来。” | 已有布局就不重复追问；检查附件能否读取，选择 compose。 |
+| “只讨论方案：把这四张图按两行两列、附件顺序拼起来。” | 已有布局就不重复追问；提供地图前端入口，不运行 MCP 地图任务。 |
 | “只讨论方案：做个宝箱。” | 根据上下文区分外观图与可交互物，必要时询问；不默认宝箱等于拾取物。 |
 | “制作一个靠近按键可打开、可关上的门，只要可替换美术的逻辑包，通用 Godot。” | 选择 toggle 与 generic；执行本地导出，不要求 PixelLab Key，不新增角色生图。 |
 | 在提问卡片中取消或不作答 | 不提交依赖答案的任务，也不把推荐项当成用户选择。 |

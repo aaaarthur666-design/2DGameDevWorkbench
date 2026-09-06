@@ -1,3 +1,4 @@
+import { restoreTaskProject } from './task-project';
 import { readSourcePackage } from './source-package.mjs';
 import {
   readWorkspaceDraft,
@@ -94,6 +95,18 @@ export async function loadDraft(
     db.close();
   }
 }
+const pendingTaskProjects = new Map<string, Promise<InteractableProject>>();
+export async function loadTaskProject(taskId: string): Promise<InteractableProject> {
+  const pending = pendingTaskProjects.get(taskId);
+  if (pending) return pending;
+  const loading = restoreTaskProject(taskId, {
+    read: readWorkspaceDraft, save: saveWorkspaceDraft, request: fetch, items: interactableWorkItems,
+  });
+  pendingTaskProjects.set(taskId, loading);
+  try { return await loading; }
+  finally { if (pendingTaskProjects.get(taskId) === loading) pendingTaskProjects.delete(taskId); }
+}
+
 export function dataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();

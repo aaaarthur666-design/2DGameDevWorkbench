@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     return Response.json({ error: '请求体必须是有效的 JSON。' }, { status: 400 });
   }
   if (!isRecord(input)) {
-    return Response.json({ error: '地图扩图输入必须是 JSON 对象。' }, { status: 400 });
+    return Response.json({ error: '地图生图输入必须是 JSON 对象。' }, { status: 400 });
   }
 
   try {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     if (!response.ok || !payload) {
       return Response.json(
         {
-          error: payload?.error ?? `地图扩图任务失败（HTTP ${response.status}）。`,
+          error: payload?.error ?? `地图生图任务失败（HTTP ${response.status}）。`,
           taskId: payload?.taskId,
         },
         { status: response.status },
@@ -44,8 +44,8 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error: payload.requiredEnvironment
-            ? `外部扩图服务尚未配置：${payload.requiredEnvironment}`
-            : '外部扩图服务尚未配置。',
+            ? `图片生成服务尚未配置：${payload.requiredEnvironment}`
+            : '图片生成服务尚未配置。',
           taskId: payload.taskId,
         },
         { status: 503 },
@@ -53,12 +53,12 @@ export async function POST(request: Request) {
     }
 
     const output = payload.outputs?.find((value) =>
-      value.endsWith('/generated-layer.png'),
+      value.endsWith(input.operation === 'generate-origin' ? '/generated-origin.png' : '/generated-layer.png'),
     );
     if (payload.status !== 'completed' || !output) {
       return Response.json(
         {
-          error: payload.error ?? '地图扩图任务没有生成可用图片。',
+          error: payload.error ?? '地图生图任务没有生成可用图片。',
           taskId: payload.taskId,
         },
         { status: 502 },

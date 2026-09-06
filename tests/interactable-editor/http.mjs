@@ -1,3 +1,4 @@
+import '../helpers/runtime-workspace.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import net from 'node:net';

@@ -505,9 +505,9 @@ export function useMapEditorController() {
     setExportPreview(false);
     setPrompt(DEFAULT_OVERALL_PROMPT);
     setFitRequest((value) => value + 1);
-    setHint('已新建空白项目。导入中心地图图片即可开始。');
+    setHint('已新建空白项目。生成原图或导入中心地图图片即可开始。');
   };
-  const importImages = async (files: File[]) => {
+  const importImages = async (files: File[], origin: ImageOrigin = 'uploaded') => {
     if (!files.length) return;
     await saveBeforeReplacement('map-stitcher');
     invalidate();
@@ -517,7 +517,7 @@ export function useMapEditorController() {
     try {
       for (const file of files) assets.push(await fileToAsset(file));
       if (token !== epoch.current) throw new Error('导入已被新操作取消。');
-      const center = createFrameRoninCenterTile(assets[0]);
+      const center = { ...createFrameRoninCenterTile(assets[0]), imageOrigins: { overall: origin } };
       const next = [
         center,
         ...expandAroundFrameRoninTile(

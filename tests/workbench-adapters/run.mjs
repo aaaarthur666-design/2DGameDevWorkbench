@@ -1,3 +1,6 @@
+import '../helpers/runtime-workspace.mjs';
+import { testMapOrigin } from './map-origin.mjs';
+import { testHunyuanMap } from './hunyuan-map.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
@@ -199,7 +202,7 @@ try {
     output.endsWith('/frames/candidate-01/frame-000.png'),
   );
   assert(frameOutput);
-  assert(frameOutput.startsWith(`outputs/${spriteResult.task.id}/`));
+  assert(frameOutput.startsWith(`${manifest.workspace.outputDirectory}/${spriteResult.task.id}/`));
   const frameMetadata = await sharp(
     path.resolve(repositoryRoot, frameOutput),
   ).metadata();
@@ -521,6 +524,9 @@ try {
   assert.equal(awaitingKey.task.status, 'awaiting_configuration');
   assert.equal(awaitingKey.requiredEnvironment, 'OPENAI_API_KEY');
   assert.equal(requests.length, callsBeforeMissingKey);
+
+  await testMapOrigin(manifest, map);
+  await testHunyuanMap(manifest, map);
 
   process.stdout.write(
     `${JSON.stringify(

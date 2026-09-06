@@ -23,7 +23,7 @@
     "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }
   },
   "productionLines": [
-    { "id": "player", "name": "序列帧", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/player", "summary": ["角色原图", "动作序列帧", "导出"] },
+    { "id": "player", "name": "角色美术", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/player", "summary": ["角色原图", "动作序列帧", "导出"] },
     { "id": "scene", "name": "场景", "eyebrow": "SCENE / INTERACTION", "description": "制作地图和交互物，组装成完整场景。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作", "场景组装"] }
   ],
   "agentAssets": {
@@ -46,6 +46,7 @@
         "workbench_start_services",
         "workbench_start_frontend",
         "workbench_list_presets",
+        "workbench_interactable_template",
         "workbench_list_tasks",
         "workbench_get_result",
         "workbench_read_artifact"
@@ -154,7 +155,7 @@
       "id": "sprite-generator",
       "name": "2D 序列帧生成",
       "shortName": "序列帧",
-      "description": "从角色设定或动作描述出发，组织并生成可用于游戏的动画帧。",
+      "description": "从角色设定或动作描述出发生成动画帧。地面攻击与空中攻击默认进行视觉检查；整个任务最多额外补做两次，仍有问题进入逐帧修补。视觉检查默认使用混元 HY Vision 2.0（TokenHub），可选 OpenAI，使用单独配置的 API 并另行计费。",
       "category": "production",
       "workflow": "workbench/workflows/sprite-production.json",
       "ui": {
@@ -335,6 +336,7 @@
     },
     {
       "id": "map-stitcher",
+      "agent": { "mode": "manual", "reason": "地图拼接与扩图由用户在前端操作；MCP 不执行地图制作。" },
       "name": "地图拼接",
       "shortName": "地图拼接",
       "description": "以 FrameRonin / Pixelwork v2 模型组合地图切片，编辑独立图片图层和矢量区域，并输出可恢复状态与引擎资源。",
@@ -344,7 +346,11 @@
         "icon": "map",
         "productionLine": "scene",
         "entryTitle": "搭建地图",
-        "starterHint": "准备一张或多张地图图片，在地图工具中选择新建 / 导入。",
+        "starterHint": "上传地图图片，或先生成中心原图，确认采用后向外扩图。",
+        "entryActions": [
+          { "label": "生成地图原图", "href": "/tools/map-stitcher?origin=generate" },
+          { "label": "打开地图编辑器", "href": "/tools/map-stitcher" }
+        ],
         "stages": ["地图拼接", "检查并导出"],
         "accent": "cyan",
         "status": "ready",
@@ -372,8 +378,22 @@
             "model": "gpt-image-2",
             "protocol": "openai-images-edits",
             "endpoint": "https://api.openai.com/v1/images/edits",
+            "generationEndpoint": "https://api.openai.com/v1/images/generations",
+            "generationEndpointEnv": "MAP_STITCHER_OPENAI_GENERATION_API_URL",
             "endpointEnv": "MAP_STITCHER_OPENAI_API_URL",
             "apiKeyEnv": "OPENAI_API_KEY"
+          },
+          {
+            "id": "hunyuan-image-3",
+            "name": "混元 Image 3.0",
+            "model": "hy-image-v3",
+            "protocol": "hunyuan-tokenhub-image",
+            "endpoint": "https://tokenhub.tencentmaas.com/v1/wand/hunyuan-image/v3-generation",
+            "endpointEnv": "MAP_STITCHER_HUNYUAN_API_URL",
+            "apiKeyEnv": "TOKENHUB_API_KEY",
+            "setupUrl": "https://console.cloud.tencent.com/tokenhub/apikey",
+            "usageNote": "支持地图原图与参考扩图。扩图接缝效果需检查；使用 TokenHub 在线推理 API Key。",
+            "artifactHostSuffixes": [".myqcloud.com"]
           }
         ]
       },
@@ -384,17 +404,18 @@
         "properties": {
           "operation": {
             "type": "string",
-            "enum": ["compose", "generate-layer"],
-            "description": "compose 在本地拼接图片；generate-layer 使用与网页相同的扩图请求。"
+            "enum": ["compose", "generate-layer", "generate-origin"],
+            "description": "compose 本地拼接；generate-layer 按模板扩图；generate-origin 从提示词生成中心原图。"
           },
           "prompt": {
             "type": "string",
             "minLength": 1,
-            "description": "generate-layer 的唯一整体层生成提示词。"
+            "description": "地图原图或扩图的提示词。"
           },
+          "aspectRatio": { "type": "string", "enum": ["1:1", "3:2", "2:3"], "description": "generate-origin 的画幅比例，默认 1:1；保留模型返回的原始像素尺寸。" },
           "provider": {
             "type": "string",
-            "enum": ["nano-banana", "gpt-image-2"],
+            "enum": ["nano-banana", "gpt-image-2", "hunyuan-image-3"],
             "description": "整体层扩图使用的官方图片模型。省略时使用已激活的 API 设置。"
           },
           "images": {
@@ -465,13 +486,13 @@
           }
         }
       },
-      "outputs": ["generatedLayer", "stitchedMap", "seamReport", "statePackage", "regionAnnotations", "godotPackage", "metadata"]
+      "outputs": ["generatedOrigin", "generatedLayer", "stitchedMap", "seamReport", "statePackage", "regionAnnotations", "godotPackage", "metadata"]
     },
     {
       "id": "interactable-editor",
       "name": "交互物编辑器",
       "shortName": "交互物",
-      "description": "独立编辑查看、切换、拾取和序列物件，直接导出 Godot 原生资源包。",
+      "description": "使用行为模板制作查看、切换、拾取和序列物件，保存源项目并在前端继续编辑，按需导出 Godot 资源包。",
       "category": "production",
       "workflow": "workbench/workflows/interactable-production.json",
       "ui": {
@@ -506,6 +527,7 @@
           "operation": {
             "type": "string",
             "enum": [
+              "save-project",
               "export-godot"
             ]
           },

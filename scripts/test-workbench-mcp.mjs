@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import '../tests/helpers/runtime-workspace.mjs';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -8,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
 import { loadManifest, agentRequest } from '../lib/workbench/runtime.mjs';
-import { createProject } from '../features/interactable-editor/contract.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '..');
@@ -22,6 +22,7 @@ const expectedTools = [
   'workbench_start_services',
   'workbench_start_frontend',
   'workbench_list_presets',
+  'workbench_interactable_template',
   'workbench_list_tasks',
   'workbench_get_result',
   'workbench_read_artifact',
@@ -127,30 +128,48 @@ try {
     throw new Error('Prepared task could not be read back.');
   }
 
-  const awaitingConfiguration = await client.callTool({
-    name: 'workbench_run_task',
-    arguments: {
-      capabilityId: 'map-stitcher',
-      input: {
-        operation: 'generate-layer',
-        provider: 'nano-banana',
-        image: 'data:image/png;base64,iVBORw0KGgo=',
-        prompt: 'MCP connector-state self-test',
-        tile: { key: '0,0', x: 0, y: 0, w: 1, h: 1 },
-        layer: 'overall',
-        mask_mode: 'white',
-      },
-    },
-  });
-  if (
-    awaitingConfiguration.isError ||
-    awaitingConfiguration.structuredContent?.status !==
-      'awaiting_configuration' ||
-    awaitingConfiguration.structuredContent?.requiredEnvironment !==
-      'GEMINI_API_KEY'
-  ) {
-    throw new Error('Unconfigured connector state was not preserved.');
+  const beforeManual = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
+  assert(!capabilities.structuredContent.capabilities.some((c) => c.id === 'map-stitcher'));
+  for (const name of ['workbench_prepare_task', 'workbench_run_task', 'workbench_describe_capability']) {
+    const blocked = await client.callTool({ name, arguments: { capabilityId: 'map-stitcher', ...(name === 'workbench_describe_capability' ? {} : { input: { operation: 'compose' } }) } });
+    assert(blocked.isError);
+    assert.match(blocked.content[0].text, /manual frontend/);
   }
+  const afterManual = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
+  assert.deepEqual(afterManual.structuredContent, beforeManual.structuredContent);
+  for (const kind of ['inspect', 'toggle', 'pickup', 'sequence']) {
+    const candidate = await client.callTool({ name: 'workbench_interactable_template', arguments: { kind } });
+    assert(!candidate.isError);
+    assert.equal(candidate.structuredContent.project.objects[0].behavior.kind, kind);
+  }
+  const template = await client.callTool({ name: 'workbench_interactable_template', arguments: { kind: 'toggle', name: '可开关的门' } });
+  assert(!template.isError);
+  assert.equal(template.structuredContent.createsTask, false);
+  assert.equal(template.structuredContent.project.objects[0].behavior.kind, 'toggle');
+  assert.deepEqual((await client.callTool({ name: 'workbench_list_tasks', arguments: {} })).structuredContent, beforeManual.structuredContent);
+  const project = template.structuredContent.project;
+  project.objects[0].content.prompt = '按 E 开门';
+  const saved = await client.callTool({ name: 'workbench_run_task', arguments: { capabilityId: 'interactable-editor', input: { operation: 'save-project', project } } });
+  assert(!saved.isError);
+  assert.equal(saved.structuredContent.status, 'completed');
+  assert(!saved.structuredContent.outputs.some((p) => p.endsWith('.zip')));
+  const savedResult = await client.callTool({ name: 'workbench_get_result', arguments: { taskId: saved.structuredContent.taskId } });
+  assert.equal(savedResult.structuredContent.result.exported, false);
+  assert.match(savedResult.structuredContent.viewPath, /interactable-editor\?task=/);
+  const savedSource = saved.structuredContent.outputs.find((p) => p.endsWith('/interactable-project.json'));
+  const sourceResult = await client.callTool({ name: 'workbench_read_artifact', arguments: { taskId: saved.structuredContent.taskId, artifactPath: savedSource } });
+  assert.equal(sourceResult.structuredContent.value.objects[0].content.prompt, '按 E 开门');
+  project.objects[0].activation.key = 'F';
+  project.objects[0].content.prompt = '按 F 开门';
+  const revised = await client.callTool({ name: 'workbench_run_task', arguments: { capabilityId: 'interactable-editor', input: { operation: 'save-project', project } } });
+  assert(!revised.isError);
+  const revision = await client.callTool({ name: 'workbench_get_task', arguments: { taskId: revised.structuredContent.taskId } });
+  assert.equal(revision.structuredContent.task.input.project.projectId, project.projectId);
+  assert.equal(revision.structuredContent.task.input.project.objects[0].definitionId, project.objects[0].definitionId);
+  assert.equal(revision.structuredContent.task.input.project.objects[0].activation.key, 'F');
+  const previousSource = await client.callTool({ name: 'workbench_read_artifact', arguments: { taskId: saved.structuredContent.taskId, artifactPath: savedSource } });
+  assert.equal(previousSource.structuredContent.value.objects[0].activation.key, 'E');
+
 
   const invalid = await client.callTool({
     name: 'workbench_prepare_task',
@@ -175,7 +194,7 @@ try {
       input: {
         operation: 'export-godot',
         targetProfile: 'copyworms',
-        project: createProject(),
+        project,
       },
     },
   });
@@ -204,7 +223,7 @@ try {
             (capability) => capability.id,
           ) ?? [],
         preparedTask: prepared.structuredContent.taskId,
-        connectorFallback: awaitingConfiguration.structuredContent.status,
+        manualMapExecution: 'blocked without creating tasks',
         invalidInputRejected: true,
         interactionExport: {
           taskId: interaction.structuredContent.taskId,
