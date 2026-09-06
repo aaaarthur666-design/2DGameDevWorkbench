@@ -1,3 +1,5 @@
+import { probeSpritePipelineUi } from '@/lib/workbench/sprite-pipeline-supervisor.mjs';
+
 const DEFAULT_API_URL = 'http://127.0.0.1:7860';
 
 function endpointUrl(baseUrl: string) {
@@ -27,9 +29,12 @@ export async function GET() {
         { status: 502 },
       );
     }
+    const ui = await probeSpritePipelineUi(process.env.NEXT_PUBLIC_SPRITE_PIPELINE_UI_URL?.trim() || DEFAULT_API_URL);
     return Response.json(
       {
         ok: true,
+        uiReady: ui.ready,
+        uiError: ui.error,
         version: payload.version,
         pixellabConfigured: payload.pixellab_configured === true,
       },

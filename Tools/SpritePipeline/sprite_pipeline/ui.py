@@ -422,6 +422,13 @@ def build_ui(
             action.provider_frame_count,
         )
         total = per_candidate * resolved
+        if action_id in {"attack", "attack_in_air"}:
+            extra = 2 * service._pixellab_generation_units(profile.cell_width, profile.cell_height, 4)
+            from .vision_review import VisionReviewer
+            configured = VisionReviewer(service.settings).configured
+            return _notice("info" if configured else "warn", "已默认启用：攻击检查与有限补做",
+                f"先生成并检查，发现问题后最多额外补做 2 次（整个任务共用）。PixelLab 预计最多 {total + extra} 个额度；视觉检查另行计费，最多 {resolved + 2} 次。"
+                + ("仍有问题会标记到逐帧修补。" if configured else "请先在设置中配置 视觉检查 API Key。"))
         return _notice(
             "warn" if total > per_candidate else "info",
             f"本次最多消耗 {total} 个 generation 额度",
@@ -655,7 +662,7 @@ def build_ui(
         result: list[tuple[str, str]] = []
         for row in service.list_jobs():
             job_id = str(row.get("job_id", ""))
-            if row.get("status") == "invalid":
+            if row.get("execution_only") or row.get("status") == "invalid":
                 continue
             if row.get("character_id") == "diagnostic_dummy" and job_id not in visible_diagnostic_jobs:
                 continue
@@ -670,7 +677,7 @@ def build_ui(
         choices: list[tuple[str, str]] = []
         for row in service.list_jobs():
             job_id = str(row.get("job_id", ""))
-            if row.get("status") == "invalid" or row.get("provider") == "fixture":
+            if row.get("execution_only") or row.get("status") == "invalid" or row.get("provider") == "fixture":
                 continue
             choices.append((job_summary_label(row), job_id))
         return choices
@@ -913,6 +920,7 @@ def build_ui(
                 f'<span class="qa-count hard">{len(candidate.hard_failures)} 个阻止问题</span>'
                 f'<span class="qa-count warn">{len(candidate.warnings)} 条提醒</span></div></div>'
             )
+            summary += motion_review_html(job, candidate)
             if candidate.frames and not qa_current:
                 summary += _notice(
                     "warn",
@@ -1005,8 +1013,68 @@ def build_ui(
             f"第 {frame.index + 1} 帧",
             f"人工状态：{REVIEW_STATUS_CN.get(frame.review_status.value, frame.review_status.value)}；"
             f"自动提示 {issues} 项；手工像素版本 {frame.manual_edit_versions} 个；"
-            f"外部/未来 AI 替换 {frame.repair_attempts}/2 次。",
+            f"上传替换 {frame.repair_attempts}/2 次。",
         )
+
+    def motion_review_html(job, candidate):
+        from .motion_correction import MotionCorrection
+        state=job.motion_control or {}
+        review=candidate.motion_review
+        count=len(candidate.frames)
+        if review:
+            try:
+                paths=[service.store.resolve_job_path(job.job_id,f.active_path) for f in candidate.frames]
+                current=MotionCorrection.digest(paths)==review.get("digest")
+            except Exception:
+                current=False
+            report=review["report"]
+            if not current:
+                return _notice("warn","当前版本尚未经过视觉检查","画面已修改；旧版本的检查结论不能用于当前版本。")
+            verdict=report["verdict"]
+            title={"pass":"视觉检查已通过","fail":"视觉检查发现动作问题","uncertain":"视觉检查未能可靠判断"}[verdict]
+            evidence="；".join(f"第 {', '.join(str(i) for i in issue['frames'])} 帧：{issue['description']}" for issue in report.get("issues",[]))
+            extra=f"；已使用自动补做 {sum(a['mode']=='auto' for a in state.get('attempts',[]))}/2 次"
+            return _notice("ok" if verdict=="pass" else "warn",title,
+                f"已检查全部 {report.get('frame_count',count)} 帧 · {report.get('model','已保存的视觉报告')}{extra}。{report['summary']} {evidence}")
+        record=state.get("reviews",{}).get(f"initial-{candidate.candidate_index}",{})
+        legacy=MotionCorrection._legacy_unsent(job,f"initial-{candidate.candidate_index}",record)
+        if state.get("state") in {"waiting","checking","repairing"}:
+            title="视觉检查请求已开始" if record.get("request_started") else "等待视觉检查"
+            detail=f"将检查全部 {count} 帧；请稍后刷新当前结果。"
+        elif record.get("request_started") or (record.get("state")=="checking" and not legacy):
+            title="视觉检查未取得有效结论"
+            detail="请求已开始或结果未知；为避免重复计费，已停止自动重试。"+state.get("message","")
+        else:
+            title="视觉检查未执行"
+            detail=(f"实际 {count} 帧。旧版本误要求 16 帧，尚未发送检查请求；现在可点击下方“继续视觉检查”。"
+                    if legacy else f"实际 {count} 帧。"+state.get("message","此结果没有视觉检查记录。"))
+        return _notice("info" if state.get("state") in {"waiting","checking","repairing"} else "warn",title,detail)
+
+    def resume_vision_projection(job_id):
+        from .motion_correction import MotionCorrection
+        try:
+            job=service.get_job(str(job_id))
+            state=job.motion_control or {}
+            unfinished=[(key,r) for key,r in state.get("reviews",{}).items() if r.get("state")!="complete"]
+            unsent=all((r.get("state") in {"prepared","not_sent"} and r.get("request_started") is False)
+                       or MotionCorrection._legacy_unsent(job,key,r) for key,r in unfinished)
+            available=(state.get("state")=="needs_repair" and unsent
+                       and (bool(unfinished) or not any(c.motion_review for c in job.candidates))
+                       and bool(job.candidates) and all(c.frames and c.status.value not in {"approved","rejected","failed"} for c in job.candidates))
+            return gr.update(visible=available)
+        except Exception:
+            return gr.update(visible=False)
+
+    def resume_motion_review(job_id, candidate_index):
+        try:
+            from .motion_correction import MotionCorrection
+            if not job_id:
+                raise ValidationHarnessError("请先选择动画")
+            MotionCorrection(service).resume(str(job_id))
+            status=_notice("info","已继续视觉检查","复用已保存的全部帧。视觉检查按用量计费，自动补做仍累计最多两次；稍后刷新当前结果。")
+        except Exception as exc:
+            status=_notice("error","未继续视觉检查",_human_error(exc))
+        return status,*review_payload(job_id,candidate_index)
 
     def review_payload(job_id: str | None, candidate_index: int | None = None) -> tuple[Any, ...]:
         empty = (
@@ -1058,6 +1126,7 @@ def build_ui(
                 f"<p>来源：{_escape(source)} · {len(candidate.frames)} 帧 · {job.action.fps:g} FPS · {'循环' if job.action.loop else '单次'}</p>"
                 f'<div class="qa-counts"><span class="qa-count hard">{hard_count} 个阻止问题</span><span class="qa-count warn">{warning_count} 条提醒</span></div>{diagnostic}</div>'
             )
+            summary += motion_review_html(job, candidate)
             if not integrity_ok:
                 summary += _notice(
                     "error",
@@ -1139,6 +1208,8 @@ def build_ui(
                 value="正在读取任务状态…",
                 interactive=False,
             )
+        if summary.get("motion_state") in {"waiting", "checking", "repairing"}:
+            return gr.update(value=summary.get("motion_message") or "正在检查攻击动作…", interactive=False)
         if int(summary.get("saved_candidate_count") or 0) > 0:
             return gr.update(
                 value="进入 2 · 播放检查 →",
@@ -1170,6 +1241,10 @@ def build_ui(
                 raise ValidationHarnessError("PixelLab API key is not configured")
             if not action_id:
                 raise ValidationHarnessError("请选择要生成的动作")
+            if action_id in {"attack", "attack_in_air"}:
+                from .vision_review import VisionReviewer
+                if not VisionReviewer(service.settings).configured:
+                    raise ValidationHarnessError("请先在设置中保存 视觉检查 API Key，再开始攻击生成")
             character_id, updated_reference_state = resolve_generation_character(
                 uploaded_reference,
                 updated_reference_state,
@@ -1659,8 +1734,8 @@ def build_ui(
                     notice_title,
                     f"只修改这一格；其他 {len(candidate.frames) - 1} 帧不变。"
                     f"当前还有 {len(problem_indices)} 帧待修补。{edit_guidance}"
-                    f"手工像素版本 {frame.manual_edit_versions} 个；外部/未来 AI 替换 {frame.repair_attempts}/2 次。",
-                ) + _repair_qa_change_html(candidate),
+                    f"手工像素版本 {frame.manual_edit_versions} 个；上传替换 {frame.repair_attempts}/2 次。",
+                ) + motion_review_html(job, candidate) + _repair_qa_change_html(candidate),
                 gr.update(interactive=can_replace), gr.update(value=frame.issue_type.value if frame.issue_type else "other"), gr.update(value=frame.review_note),
                 _pixel_editor_embed(job.job_id, selected_candidate, selected_frame), frame.sha256,
                 gr.update(value=None), {},
@@ -1964,6 +2039,75 @@ def build_ui(
         except Exception as exc:
             choices = repair_job_choices_with_context(str(job_id) if job_id else None)
             return _notice("error", "替换没有生效", _human_error(exc)), gr.update(choices=choices, value=job_id), *repair_projection(job_id, candidate_index, frame_index)
+
+    def vision_status():
+        from .vision_review import VisionReviewer
+        reviewer=VisionReviewer(service.settings)
+        configured=reviewer.configured
+        note=("可复用服务端 TOKENHUB_API_KEY；若密钥只填在地图页面，请在此保存一次。" if reviewer.provider=="hunyuan" else "使用独立的 OpenAI API Key。")
+        return _notice("ok" if configured else "warn", "视觉检查已配置" if configured else "视觉检查待配置",
+            f"使用 {reviewer.info['label']} 检查连续 16 帧；图片发送给所选服务，按 API 用量计费。" + note)
+
+    def select_vision_provider(provider):
+        from .vision_review import VisionReviewer
+        try:
+            VisionReviewer(service.settings).select(provider)
+            return vision_status(), "", gr.update(value=provider)
+        except Exception as exc:
+            return _notice("error","切换失败",_human_error(exc)), "", gr.update(value=VisionReviewer(service.settings).provider)
+
+    def save_vision_key(value, provider):
+        from .vision_review import VisionReviewer
+        try:
+            reviewer=VisionReviewer(service.settings)
+            if reviewer.provider!=provider:
+                raise ValidationHarnessError("所选服务已改变，请重新选择服务再保存 Key")
+            reviewer.save_key(value)
+            return vision_status(), ""
+        except Exception as exc:
+            return _notice("error", "保存失败", _human_error(exc)), ""
+
+    def ai_repair_display(job_id, attempt):
+        token={"job_id":job_id, "attempt_id":attempt["id"], "candidate_index":attempt["candidate_index"], "frame_index":attempt["targets"][0]}
+        ready=attempt["state"]=="proposed"
+        path=service.store.job_dir(job_id)/"motion"/attempt["id"]/f"proposed_{attempt['targets'][0]}.png"
+        report=attempt.get("report",{})
+        message=report.get("summary") or "请求已保存；稍后点击刷新结果，不会再次生成。"
+        return _notice("info", "修补预览：确认后再采用" if ready else "正在修补", message), str(path) if ready else None, token
+
+    def ai_repair_start(job_id, candidate_index, frame_index, base_sha256, retry=False):
+        try:
+            from .motion_correction import MotionCorrection
+            result=MotionCorrection(service).manual(str(job_id),int(candidate_index),int(frame_index),base_sha256,retry=retry,wait=False)
+            return ai_repair_display(str(job_id),result)
+        except Exception as exc:
+            return _notice("error","AI 修补未完成",_human_error(exc)),None,{}
+
+    def ai_repair_refresh(token):
+        try:
+            from .motion_correction import MotionCorrection
+            if not token:
+                raise ValidationHarnessError("请先生成修补预览")
+            controller=MotionCorrection(service)
+            with service.store.operation_lock(token["job_id"],"motion",timeout_seconds=2):
+                job=service.get_job(token["job_id"])
+                attempt=controller._attempt(job,token["attempt_id"])
+                if attempt["state"]=="reserved":
+                    controller._advance_attempt(token["job_id"],token["attempt_id"],False)
+                attempt=controller._attempt(service.get_job(token["job_id"]),token["attempt_id"])
+            return ai_repair_display(token["job_id"],attempt)
+        except Exception as exc:
+            return _notice("error","查询未完成",_human_error(exc)),None,token
+
+    def ai_repair_adopt(token, job_id, candidate_index, frame_index):
+        try:
+            from .motion_correction import MotionCorrection
+            if not token or (str(job_id),int(candidate_index),int(frame_index)) != (token["job_id"],token["candidate_index"],token["frame_index"]):
+                raise ValidationHarnessError("请回到生成预览时选中的帧再采用")
+            MotionCorrection(service).adopt(str(job_id),token["attempt_id"],manual=True)
+            return _notice("ok","已采用修补帧","原版已保留；请播放检查衔接。"), *repair_projection(job_id,candidate_index,frame_index)
+        except Exception as exc:
+            return _notice("error","采用失败",_human_error(exc)), *repair_projection(job_id,candidate_index,frame_index)
 
     def capture_repair_upload_context(
         replacement: Any,
@@ -2335,13 +2479,14 @@ def build_ui(
                 with gr.Group(visible=bool(initial_review[12].get("visible", False))) as review_candidate_group:
                     review_candidate = gr.Radio(initial_review[0].get("choices", []), value=initial_review[0].get("value"), label="选择 AI 生成结果", elem_classes=["choice-cards"])
                 review_summary = gr.HTML(initial_review[3])
+                resume_vision_button = gr.Button("继续视觉检查（按用量计费；累计最多补做两次）", visible=False, elem_classes=["compact-action"])
                 gr.HTML('<div class="section-label"><span>先看整体</span><h3>播放整段动画</h3><p>需要时可反复从头播放；这里使用项目实际 FPS。</p></div>')
                 with gr.Row():
                     with gr.Column(scale=3, elem_classes=["workspace-card"]):
                         animation_preview = gr.Image(initial_review[1], label="动画预览（项目 FPS）", type="filepath", interactive=False, height=390, elem_classes=["pixel-preview"], elem_id="animation-preview")
                         replay_animation_button = gr.Button("▶ 从头播放一次", elem_classes=["replay-action"])
                     with gr.Column(scale=2, elem_classes=["workspace-card"]):
-                        gr.HTML(_card_heading("自动检查", "机器检查摘要", "它用于发现尺寸、透明度和突变位移；最终仍以你的视觉判断为准。"))
+                        gr.HTML(_card_heading("本机检查", "尺寸与透明度等基础检查", "它用于发现尺寸、透明度和突变位移；最终仍以你的视觉判断为准。"))
                         review_issues = gr.Markdown(initial_review[4])
                 gr.HTML('<div class="section-label"><span>再看细节</span><h3>逐帧检查</h3><p>点击一帧后，只做一个判断：采用，或标记为待修补。</p></div>')
                 with gr.Column(elem_classes=["workspace-card"]):
@@ -2424,6 +2569,16 @@ def build_ui(
                 gr.HTML('<div class="section-label"><span>像素画布</span><h3>编辑当前帧</h3><p>保存会建立新版本并自动复查，不消耗生成额度；原始帧永久保留。</p></div>')
                 repair_editor = gr.HTML(initial_repair[8], elem_classes=["editor-shell"])
                 repair_base_sha256 = gr.State(initial_repair[9])
+                with gr.Accordion("AI 修补当前问题帧", open=False):
+                    gr.Markdown("结合前后帧修补，先预览再采用。每帧最多生成 2 次，与生成阶段的两次自动补做分别计数；手工像素修补不受此限制。")
+                    with gr.Row():
+                        ai_repair_button = gr.Button("AI 修补当前帧", variant="primary")
+                        ai_retry_button = gr.Button("再试一次（最多两次）")
+                        ai_refresh_button = gr.Button("刷新修补结果")
+                    ai_repair_status = gr.HTML()
+                    ai_repair_preview = gr.Image(label="修补预览", type="filepath", interactive=False, height=256, elem_classes=["pixel-preview"])
+                    ai_repair_token = gr.State({})
+                    ai_adopt_button = gr.Button("采用这张修补帧")
                 with gr.Accordion("辅助判断：相邻帧与原问题记录", open=False, elem_classes=["advanced-panel"]):
                     with gr.Row():
                         repair_current = gr.Image(initial_repair[2], label="当前版本", type="filepath", interactive=False, height=330, elem_classes=["pixel-preview"])
@@ -2521,8 +2676,15 @@ def build_ui(
                 gr.HTML(_stage_header("设置", "API 与项目合同", "日常流程不需要修改这里；首次生成前配置一次 API Key 即可。"))
                 with gr.Row():
                     with gr.Column(elem_classes=["workspace-card"]):
-                        gr.HTML(_card_heading("API", "PixelLab 生成权限", "只用于生成动画；检查、修补和导出不需要 API。"))
+                        gr.HTML(_card_heading("API", "PixelLab 生成权限", "用于生成与 AI 补做；手工像素修补和导出不需要 API。"))
                         api_status = gr.HTML(api_settings_status())
+                        from .vision_review import VisionReviewer
+                        vision_provider = gr.Dropdown(choices=[("混元 HY Vision 2.0（默认）", "hunyuan"), ("OpenAI GPT-5.4", "openai")], value=VisionReviewer(service.settings).provider, label="视觉检查服务", filterable=False)
+                        vision_api_status = gr.HTML(vision_status())
+                        vision_api_key = gr.Textbox(label="视觉检查 API Key", type="password", placeholder="保存后清空；无需每次填写")
+                        with gr.Row():
+                            save_vision_button = gr.Button("保存视觉检查 Key")
+                            clear_vision_button = gr.Button("清除视觉检查 Key")
                         api_key = gr.Textbox(label="API Key", type="password", placeholder="粘贴后点击保存；保存成功会自动清空输入框")
                         with gr.Row():
                             save_api_button = gr.Button("保存并立即生效", variant="primary")
@@ -2787,6 +2949,8 @@ def build_ui(
             queue=False,
             api_visibility="private",
         )
+        review_summary.change(resume_vision_projection, inputs=review_job, outputs=resume_vision_button, queue=False)
+        resume_vision_button.click(resume_motion_review, inputs=[review_job, review_candidate], outputs=[review_action_status, *review_outputs])
         recheck_button.click(recheck_candidate, inputs=[review_job, review_candidate], outputs=[review_action_status, *review_outputs])
         frame_gallery.select(select_frame, inputs=[review_job, review_candidate], outputs=[selected_frame_index, selected_frame_banner], queue=False)
         mark_ok_button.click(lambda j, c, f, i, n: mark_frame(j, c, f, "approved", i, n), inputs=[review_job, review_candidate, selected_frame_index, issue_type, review_note], outputs=[review_action_status, *review_outputs, repair_job, *repair_outputs])
@@ -2875,6 +3039,15 @@ def build_ui(
         export_candidate.input(export_projection, inputs=[export_job, export_candidate], outputs=export_outputs, queue=False)
         export_button.click(export_one, inputs=[export_job, export_candidate, export_filename, export_overwrite], outputs=[export_status, exported_sheet, export_attachments, export_details])
 
+        vision_provider.input(select_vision_provider, inputs=vision_provider, outputs=[vision_api_status, vision_api_key, vision_provider]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
+        save_vision_button.click(save_vision_key, inputs=[vision_api_key, vision_provider], outputs=[vision_api_status, vision_api_key]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
+        clear_vision_button.click(lambda p: save_vision_key("",p), inputs=vision_provider, outputs=[vision_api_status, vision_api_key]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
+        ai_inputs = [repair_job, repair_candidate, repair_frame, repair_base_sha256]
+        ai_outputs = [ai_repair_status, ai_repair_preview, ai_repair_token]
+        ai_repair_button.click(ai_repair_start, inputs=ai_inputs, outputs=ai_outputs)
+        ai_retry_button.click(lambda j,c,f,b: ai_repair_start(j,c,f,b,True), inputs=ai_inputs, outputs=ai_outputs)
+        ai_refresh_button.click(ai_repair_refresh, inputs=ai_repair_token, outputs=ai_outputs)
+        ai_adopt_button.click(ai_repair_adopt, inputs=[ai_repair_token, repair_job, repair_candidate, repair_frame], outputs=[ai_repair_status, *repair_outputs])
         save_api_button.click(save_api_key, inputs=api_key, outputs=[header_status, api_status, ai_api_banner, generate_button, api_key])
         clear_api_button.click(clear_api_key, outputs=[header_status, api_status, ai_api_banner, generate_button, api_key])
         settings_back_button.click(

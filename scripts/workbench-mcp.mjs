@@ -3,10 +3,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as z from 'zod/v4';
+import { KINDS } from '../features/interactable-editor/contract.mjs';
 
 import {
   agentRequest,
-  findCapability,
+  findAgentCapability,
+  agentCapabilities,
   loadManifest,
   prepareTask,
   publicCapability,
@@ -18,11 +20,11 @@ import {
 const server = new McpServer(
   {
     name: '2d-game-workbench',
-    version: '0.5.0',
+    version: '0.6.0',
   },
   {
     instructions:
-      'WorkBuddy session startup: on the first user message after connecting this server, unless the user opts out of opening the UI, call workbench_get_environment. If frontend.ready is false, call workbench_start_frontend once when services are offline, then poll get_environment at bounded intervals (up to 60 seconds); stop on blocked/conflict/unreachable and report the reason. When ready, discover the host-native present_files tool (possibly connector-proxy namespaced), inspect its schema, and call it with frontend.hostAction.arguments to open frontend.url in the WorkBuddy internal preview. Reuse an existing workbench preview and do not reopen it on each message, reconnect, or if the user closes it in this conversation. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
+      'WorkBuddy session startup: on the first user message after connecting this server, unless the user opts out of opening the UI, call workbench_get_environment. If frontend.ready is false, call workbench_start_frontend once when services are offline, then poll get_environment at bounded intervals (up to 60 seconds); stop on blocked/conflict/unreachable and report the reason. When ready, discover the host-native present_files tool (possibly connector-proxy namespaced), inspect its schema, and call it with frontend.hostAction.arguments to open frontend.url in the WorkBuddy internal preview. Reuse an existing workbench preview and do not reopen it on each message, reconnect, or if the user closes it in this conversation. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. Map stitching and map generation are manual frontend workflows and cannot be prepared or run through MCP. For interactables, get a template without creating a task, edit its project, save-project for frontend continuation, then export-godot when requested. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
   },
 );
 
@@ -80,7 +82,7 @@ registerTool(
   async () => {
     const manifest = await loadManifest();
     return {
-      capabilities: manifest.capabilities.map(publicCapability),
+      capabilities: agentCapabilities(manifest).map(publicCapability),
       conversationGuidance: await agentRequest(manifest, 'guidance'),
     };
   },
@@ -104,7 +106,7 @@ registerTool(
   },
   async ({ capabilityId }) => {
     const manifest = await loadManifest();
-    return { capability: findCapability(manifest, capabilityId) };
+    return { capability: findAgentCapability(manifest, capabilityId) };
   },
 );
 
@@ -131,7 +133,7 @@ registerTool(
   },
   async ({ capabilityId, input }) => {
     const manifest = await loadManifest();
-    const capability = findCapability(manifest, capabilityId);
+    const capability = findAgentCapability(manifest, capabilityId);
     return summarizeTask(await prepareTask(manifest, capability, input));
   },
 );
@@ -152,7 +154,7 @@ registerTool(
   },
   async ({ capabilityId, input }) => {
     const manifest = await loadManifest();
-    const capability = findCapability(manifest, capabilityId);
+    const capability = findAgentCapability(manifest, capabilityId);
     return summarizeTask(await runConnector(manifest, capability, input));
   },
 );
@@ -186,6 +188,12 @@ registerTool(
 );
 
 const discoveryTools = [
+  [
+    'workbench_interactable_template',
+    'interactable-template',
+    'Return a complete editable interactable project template without writing a task. Choose inspect, toggle, pickup or sequence; preserve returned IDs while editing. Save with save-project, open get_result.viewPath for frontend editing, and export-godot only when requested.',
+    { kind: z.enum(KINDS).optional(), name: z.string().min(1).max(200).optional() },
+  ],
   [
     'workbench_start_frontend',
     'frontend',
@@ -243,7 +251,7 @@ for (const [name, operation, description, inputSchema] of discoveryTools) {
       annotations: {
         readOnlyHint: !['start', 'frontend'].includes(operation),
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: operation !== 'interactable-template',
         openWorldHint: ['environment', 'presets', 'tasks'].includes(operation),
       },
     },

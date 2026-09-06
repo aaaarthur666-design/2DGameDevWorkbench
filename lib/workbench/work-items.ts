@@ -140,7 +140,7 @@ export function taskWorkItems(
             definitions.map((o) => ({
               id: interactableItemId(project.projectId!, o.definitionId),
               title: o.displayName || project.name || '交互物',
-              href: `/advanced?task=${encodeURIComponent(task.id)}`,
+              href: `${capabilityModule.href}?task=${encodeURIComponent(task.id)}&object=${encodeURIComponent(o.definitionId)}`,
             }))
           : [
               {
@@ -155,7 +155,7 @@ export function taskWorkItems(
             ];
     const state: WorkItemState =
       task.status === 'completed'
-        ? 'completed'
+        ? input.operation === 'save-project' ? 'saved' : 'completed'
         : task.status === 'running'
           ? 'running'
           : 'attention';
@@ -166,6 +166,7 @@ export function taskWorkItems(
         capabilityId: capabilityModule.id,
         state,
         detail:
+          (input.operation === 'save-project' && task.status === 'completed' ? '交互物已保存，可继续编辑；尚未导出' : '') ||
           task.error ||
           task.refreshError ||
           (task.status === 'awaiting_configuration'

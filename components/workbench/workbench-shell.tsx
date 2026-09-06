@@ -96,7 +96,7 @@ export function SceneWorkflow() {
       </div>
       <div className="wb-eyebrow">BUILD YOUR WORLD</div>
       <h1>制作素材，组装场景。</h1>
-      <p className="wb-intro">先拼接地图、制作交互物，再拖放组装成完整场景。</p>
+      <p className="wb-intro">从生成地图原图开始，也可导入已有地图；制作交互物后再组装场景。</p>
       <div className="wb-scene-stages">
         {modules
           .filter((m) => m.productionLine === line?.id)
@@ -107,10 +107,13 @@ export function SceneWorkflow() {
               </span>
               <h2>{m.entryTitle}</h2>
               <p>{m.starterHint}</p>
-              <a className="wb-button wb-primary" href={m.href}>
-                进入{m.shortName}工具
-                <ArrowRight size={16} />
-              </a>
+              <div className="wb-scene-entry-actions">
+                {(m.entryActions ?? [{ label: `进入${m.shortName}工具`, href: m.href }]).map((action, index) => (
+                  <a className={`wb-button${index === 0 ? ' wb-primary' : ''}`} href={action.href} key={action.href}>
+                    {action.label}<ArrowRight size={16} />
+                  </a>
+                ))}
+              </div>
             </article>
           ))}
       </div>

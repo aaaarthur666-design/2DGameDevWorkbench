@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { createTestViteServer as createServer } from '../helpers/vite-server.mjs';
 import { registerEditorTests } from './editor-behavior.mjs';
 import { registerGenerationPersistenceTests } from './generation-persistence.mjs';
 

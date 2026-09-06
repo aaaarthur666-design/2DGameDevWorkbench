@@ -11,8 +11,14 @@ import {
 } from '../../lib/workbench/sprite-pipeline-supervisor.mjs';
 
 let healthMode = 'valid';
+let uiMode = 'missing';
 const server = http.createServer((request, response) => {
   response.setHeader('content-type', 'application/json');
+  if (request.url === '/' && uiMode !== 'missing') {
+    response.setHeader('content-type', 'text/html');
+    response.end(uiMode === 'valid' ? '<html><gradio-app></gradio-app></html>' : '<html>Other application</html>');
+    return;
+  }
   if (request.url !== '/health') {
     response.writeHead(404);
     response.end('{}');
@@ -39,6 +45,13 @@ const target = {
 const ready = await probeSpritePipeline(target);
 assert.deepEqual(ready, { state: 'ready', version: 'test-version' });
 
+const apiOnly = await probeSpritePipeline(target, { requireUi: true });
+assert.equal(apiOnly.state, 'conflict');
+assert.match(apiOnly.reason, /API 已连接.*界面不可用/);
+uiMode = 'other';
+assert.equal((await probeSpritePipeline(target, { requireUi: true })).state, 'conflict');
+uiMode = 'valid';
+assert.deepEqual(await probeSpritePipeline(target, { requireUi: true }), ready);
 healthMode = 'invalid';
 const conflict = await probeSpritePipeline(target);
 assert.equal(conflict.state, 'conflict');

@@ -1,3 +1,10 @@
+.ra-scroll-area {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
 .ra-workspace {
   max-width: 1320px;
   margin: 0 auto;

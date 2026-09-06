@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { createServer } from 'vite';
+import { createTestViteServer as createServer } from '../helpers/vite-server.mjs';
 
 const server = await createServer({
   root: process.cwd(),
@@ -28,6 +28,36 @@ try {
   const { createProject } = await server.ssrLoadModule(
     '/features/interactable-editor/contract.mjs',
   );
+  const { restoreTaskProject } = await server.ssrLoadModule('/features/interactable-editor/task-project.ts');
+  test('Agent project resume preserves different local drafts and reuses the imported version', async () => {
+    const project = createProject();
+    const local = structuredClone(project);
+    local.objects[0].displayName = '本机未导出的门';
+    const records = new Map([[`interactable-project:${project.projectId}`, local]]);
+    let requests = 0;
+    const storage = {
+      read: async (key) => records.get(key),
+      save: async (key, value, _items, mapping) => { records.set(key, value); records.set(mapping, key); },
+      items: () => [],
+      request: async (url) => { requests++; return Response.json(url.includes('/tasks/') ? { task: { capabilityId: 'interactable-editor', status: 'completed', input: { operation: 'save-project' }, outputs: ['outputs/t1/interactable-project.json'] } } : project); },
+    };
+    const loaded = await restoreTaskProject('t1', storage);
+    assert.notEqual(loaded.projectId, project.projectId);
+    assert.equal(records.get(`interactable-project:${project.projectId}`).objects[0].displayName, '本机未导出的门');
+    loaded.objects[0].displayName = '继续编辑 Agent 版本';
+    assert.equal((await restoreTaskProject('t1', storage)).objects[0].displayName, '继续编辑 Agent 版本');
+    assert.equal(requests, 2);
+    await assert.rejects(restoreTaskProject('bad', { ...storage, request: async () => Response.json({ task: { capabilityId: 'map-stitcher', status: 'completed' } }) }), /尚未完成或无法读取/);
+  });
+  test('saved Agent projects appear saved and link directly to the editor', () => {
+    const project = createProject();
+    const [item] = taskWorkItems([{ id: 'saved-task', capabilityId: 'interactable-editor', status: 'completed', input: { operation: 'save-project', project } }], modules);
+    assert.equal(item.state, 'saved');
+    assert.match(item.detail, /尚未导出/);
+    assert.match(item.href, /interactable-editor\?task=saved-task/);
+    assert.equal(lines.find((line) => line.id === 'player').name, '角色美术');
+  });
+
   const at = '2026-09-05T10:00:00.000Z';
   const later = '2026-09-05T10:01:00.000Z';
   const task = (overrides = {}) => ({
@@ -207,7 +237,7 @@ try {
       modules,
     );
     assert.equal(item.id, interactableItemId('p1', 'chest'));
-    assert.equal(item.href, '/advanced?task=task-1');
+    assert.equal(item.href, '/tools/interactable-editor?task=task-1&object=chest');
     assert.equal(item.title, '宝箱');
     assert.equal(item.state, 'completed');
   });

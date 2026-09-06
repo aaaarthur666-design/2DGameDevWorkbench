@@ -1,3 +1,4 @@
+import '../helpers/runtime-workspace.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
@@ -15,6 +16,7 @@ const child = spawn(process.execPath, ['scripts/workbench-http.mjs'], {
     WORKBENCH_RUNTIME_PORT: String(port),
     GEMINI_API_KEY: '',
     OPENAI_API_KEY: '',
+    TOKENHUB_API_KEY: '',
     MAP_STITCHER_IMAGE_PROVIDER: '',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -42,13 +44,21 @@ try {
     await agentRequest(await loadManifest(), 'guidance'),
   );
 
+  const template = await fetch(`${baseUrl}/v1/agent/interactable-template`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'pickup', name: '钥匙' }),
+  });
+  assert.equal(template.status, 200);
+  const templateValue = await template.json();
+  assert.equal(templateValue.createsTask, false);
+  assert.equal(templateValue.project.objects[0].behavior.kind, 'pickup');
+
   const initialSettings = await jsonFetch(
     `${baseUrl}/v1/map-stitcher/settings`,
   );
   assert.equal(initialSettings.active, false);
   assert.deepEqual(
     initialSettings.providers.map((provider) => provider.id),
-    ['nano-banana', 'gpt-image-2'],
+    ['nano-banana', 'gpt-image-2', 'hunyuan-image-3'],
   );
   assert.equal(JSON.stringify(initialSettings).includes('apiKey'), false);
 
@@ -86,6 +96,15 @@ try {
     JSON.stringify(savedSettings).includes('runtime-test-secret'),
     false,
   );
+
+  const hunyuanSaved = await jsonFetch(`${baseUrl}/v1/map-stitcher/settings`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'hunyuan-image-3', active: true, apiKey: 'test-tokenhub-secret' }),
+  });
+  assert.equal(hunyuanSaved.provider, 'hunyuan-image-3');
+  assert.equal(hunyuanSaved.providers.find(p => p.id === 'hunyuan-image-3').configured, true);
+  assert.equal(hunyuanSaved.providers.find(p => p.id === 'nano-banana').configured, true);
+  assert.equal(JSON.stringify(hunyuanSaved).includes('test-tokenhub-secret'), false);
 
   const tile = await sharp({
     create: {
@@ -153,8 +172,8 @@ async function waitForHealth(url) {
   throw new Error(`runtime bridge did not become ready: ${stderr}`);
 }
 
-async function jsonFetch(url) {
-  const response = await fetch(url);
+async function jsonFetch(url, options) {
+  const response = await fetch(url, options);
   assert.equal(response.status, 200);
   return response.json();
 }

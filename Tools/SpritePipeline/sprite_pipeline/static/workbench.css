@@ -336,3 +336,17 @@ body {
   .safety-track { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-card { padding: 12px !important; }
 }
+
+/* Keep pose review and its coordinate table usable on narrow screens. */
+@media (max-width: 640px) {
+  #generation-tab, #generation-tab .row, #generation-tab .column,
+  #generation-tab .form, #generation-tab .block { min-width: 0 !important; max-width: 100% !important; }
+  #generation-tab .row { flex-wrap: wrap !important; }
+  #generation-tab .row > .column, #generation-tab .row > .block,
+  #generation-tab .row > .form { flex: 1 1 100% !important; }
+}
+
+.gradio-container { width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+.gradio-container > .main, .gradio-container .wrap, .gradio-container .contain {
+  min-width: 0 !important; max-width: 100% !important; box-sizing: border-box !important;
+}

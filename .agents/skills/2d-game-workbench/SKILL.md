@@ -14,7 +14,7 @@ You are the main Agent running in an external client. The user's request control
 
 ## Understand vague requests
 
-Use the `conversationGuidance` returned by `workbench_list_capabilities`, or read [the shared conversation guide](../../../workbench/conversation-guide.md), when a creator describes a goal without tool parameters. It covers character motion, map composition/extension, and interactable behavior. Inspect available context and assets first. Ask only about unresolved choices affecting the result; prefer WorkBuddy's currently available `AskUserQuestion` after reading its schema, with concise chat as fallback. Never invent tool availability, switch mode solely for a question, treat a cancelled question as an answer, or create placeholder tasks while clarifying. Do not ask again for choices already supplied. Preserve the user's plan-only versus execution scope.
+Use the `conversationGuidance` returned by `workbench_list_capabilities`, or read [the shared conversation guide](../../../workbench/conversation-guide.md), when a creator describes a goal without tool parameters. It covers character art/motion, manual map editing boundaries, and interactable behavior. Inspect available context and assets first. Ask only about unresolved choices affecting the result; prefer WorkBuddy's currently available `AskUserQuestion` after reading its schema, with concise chat as fallback. Never invent tool availability, switch mode solely for a question, treat a cancelled question as an answer, or create placeholder tasks while clarifying. Do not ask again for choices already supplied. Preserve the user's plan-only versus execution scope.
 
 ## Workflow with MCP
 
@@ -60,7 +60,7 @@ Use the `conversationGuidance` returned by `workbench_list_capabilities`, or rea
 - Use `reference-art` `generate` for PixelLab character images (128x128 transparent PNG, prompt and optional name/facing/seed). It shares the SpritePipeline protected key. Use `transfer` with the completed source task ID to import a reusable character; this never generates animation. Poll with get/status and never resubmit to recover an ambiguous paid POST.
 
 - Use `sprite-generator` for SpritePipeline `create`, `create-and-generate`, `generate-existing`, `get`, `export`, `check`, `safety`, `review-frame`, `approve`, `reject`, `recover`, and `attach-provider-job`. Use declared preset IDs; do not derive IDs from free text.
-- Use `map-stitcher` `compose` for deterministic local composition and exports. Use `generate-layer` only for the optional external image-generation step.
+- Map stitching and extension are manual frontend workflows. MCP excludes map-stitcher; direct the user to /tools/map-stitcher. Do not bypass this boundary through CLI, HTTP or browser tools.
 - Use `interactable-editor` `export-godot` for inspect, toggle, pickup, and sequence objects. Export is local and does not require credentials, SpritePipeline, a Godot installation, or a mandatory validation step.
 - For copyWorms compatibility, use the declared `copyworms` target profile. Export success means files were created, not that the target game passed engine regression tests.
 - When a request spans capabilities, run separate tasks as authorized, then summarize their outputs together.
@@ -75,3 +75,7 @@ Use the `conversationGuidance` returned by `workbench_list_capabilities`, or rea
 - Protocol and troubleshooting: `docs/connector-contract.md` and `docs/agent-clients.md`.
 
 - First-stage MCP acceptance and manual prompts: `docs/agent-phase1-acceptance.md`.
+
+## Interactable authoring
+
+Use workbench_interactable_template for a complete inspect/toggle/pickup/sequence project without creating a task. Fill in the requested behavior and supplied assets, preserving projectId and definitionId. Run save-project to persist a portable source project without exporting. get_result.viewPath opens this task in the frontend editor; differing local drafts are retained separately. Resume by reading the existing source artifact, editing it and saving again. Use export-godot only for a requested package. A saved logic draft is not an exported asset or generated artwork.

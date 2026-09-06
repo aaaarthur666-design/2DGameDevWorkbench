@@ -16,15 +16,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useWorkbench } from './workbench-provider';
+import { WorkbenchBrandIcon } from './workbench-brand';
+import { workbenchBrand } from '@/lib/workbench/brand';
 
 export function EditorWorkbenchMenu() {
   const wb = useWorkbench();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="sm" aria-label="工作台导航" />}
+        render={<Button variant="ghost" size="sm" aria-label={`${workbenchBrand.name} · 工作台导航`} />}
       >
-        <span className="map-workbench-mark">2D</span>
+        <WorkbenchBrandIcon size={24} className="map-workbench-mark" />
         <ChevronDown size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="map-compact-menu">

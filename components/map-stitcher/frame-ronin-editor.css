@@ -779,9 +779,11 @@ output.map-drawing-hint {
   white-space: nowrap;
 }
 .map-workbench-mark {
-  color: #88dcd7;
-  font-weight: 750;
-  letter-spacing: -0.04em;
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 .map-workspace .map-draft-control {
   color: #a1b5c5;
@@ -1051,3 +1053,16 @@ output.map-drawing-hint {
 .map-workspace .map-job-prompt { min-width: 0; font-size: 12px; }
 .map-workspace .map-job-prompt summary { cursor: pointer; overflow-wrap: anywhere; }
 .map-workspace .map-job-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; font: inherit; }
+
+.map-origin-dialog { width: min(800px, calc(100vw - 32px)); max-width: 800px; max-height: 90dvh; overflow-y: auto; }
+.map-origin-body { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.map-origin-form, .map-origin-result { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.map-origin-form textarea { min-height: 150px; }
+.map-origin-form legend { margin-bottom: 8px; }
+.map-origin-ratios { display: flex; gap: 6px; flex-wrap: wrap; }
+.map-origin-model, .map-origin-note { font-size: 12px; color: #a1acc0; overflow-wrap: anywhere; }
+.map-origin-result { padding: 16px; border: 1px solid #283140; border-radius: 12px; justify-content: center; }
+.map-origin-result img { width: 100%; max-height: 340px; object-fit: contain; image-rendering: pixelated; border-radius: 6px; }
+.map-origin-result a { color: #69d9ec; font-size: 13px; }
+.map-origin-error { color: #fda4af; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .map-origin-body { grid-template-columns: 1fr; } }

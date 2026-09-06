@@ -68,7 +68,7 @@ async function ensureSpritePipeline() {
   }
 
   const token = process.env.SPRITE_PIPELINE_API_TOKEN?.trim();
-  const current = await probeSpritePipeline(target, { token });
+  const current = await probeSpritePipeline(target, { token, requireUi: true });
   if (current.state === 'ready') {
     console.log(`SpritePipeline 已在 ${target.baseUrl} 运行 · v${current.version}`);
     return;
@@ -84,6 +84,7 @@ async function ensureSpritePipeline() {
     child: pipeline,
     token,
     shouldStop: () => stopping,
+    requireUi: true,
   });
   console.log(`SpritePipeline 已就绪 · v${ready.version}`);
 }

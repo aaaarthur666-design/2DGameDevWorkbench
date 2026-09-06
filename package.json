@@ -26,6 +26,7 @@
     "test:interactable-web": "vinext build && node tests/interactable-editor/http.mjs --web",
     "schema:interactable": "node scripts/sync-interactable-schema.mjs",
     "typecheck": "tsc --noEmit --incremental false",
+    "test:task-isolation": "node tests/task-isolation/run.mjs",
     "test:adapters": "node tests/workbench-adapters/run.mjs",
     "test:http": "node tests/workbench-http/run.mjs",
     "test:scene-composer": "node tests/scene-composer/run.mjs",

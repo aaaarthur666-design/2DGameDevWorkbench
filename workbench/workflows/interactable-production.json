@@ -2,9 +2,11 @@
   "schemaVersion": 1,
   "id": "interactable-production",
   "capabilityId": "interactable-editor",
-  "name": "交互物直接导出",
+  "name": "交互物制作与导出",
   "steps": [
+    { "id": "template", "name": "读取行为模板，不创建任务", "kind": "expert" },
     { "id": "edit", "name": "整理物件定义和素材", "kind": "expert" },
+    { "id": "save", "name": "保存源项目并在前端继续编辑", "kind": "connector" },
     { "id": "export", "name": "本地生成 Godot 场景和资源包", "kind": "connector" },
     { "id": "handoff", "name": "下载 ZIP 和可恢复源文件", "kind": "handoff" }
   ]

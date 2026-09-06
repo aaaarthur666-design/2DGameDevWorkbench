@@ -170,10 +170,23 @@ class ActionPreset(StrictModel):
         ]
 
 
+class AttackSegmentBinding(StrictModel):
+    plan_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    segment_index: int = Field(ge=0, le=4)
+    attempt: int = Field(ge=1, le=2)
+
+
+class MotionRepairBinding(StrictModel):
+    parent_job_id: str = Field(min_length=1, max_length=200)
+    attempt_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
 class GenerationRequest(StrictModel):
     schema_version: Literal[1] = 1
     character_id: str
     action_id: str
+    attack_segment: AttackSegmentBinding | None = None
+    motion_repair: MotionRepairBinding | None = None
     provider: Literal["pixellab", "fixture", "import"] = "pixellab"
     candidate_count: int = Field(default=1, ge=1, le=8)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
@@ -299,6 +312,7 @@ class CandidateRecord(StrictModel):
     qa_completed_at: datetime | None = None
     qa_input_sha256: str | None = None
     qa_algorithm_version: str | None = None
+    motion_review: dict[str, Any] | None = None
     # Defaults keep job.json files written by earlier harness versions readable.
     qa_issue_baseline: QAIssueBaseline | None = None
     qa_change_summary: QAChangeSummary | None = None
@@ -349,6 +363,7 @@ class JobRecord(StrictModel):
     input_sha256: dict[str, str] = Field(default_factory=dict)
     full_prompt: str
     candidates: list[CandidateRecord]
+    motion_control: dict[str, Any] | None = None
     export: ExportRecord | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
 

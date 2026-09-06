@@ -13,9 +13,9 @@ Follow [the shared conversation guide](../conversation-guide.md) for routing vag
 - Describe the selected capability, operation, inputs, expected outputs, and whether execution uses an external provider.
 - Turn character descriptions into reference-art prompts and preserve requested facing. Transfer only a selected completed reference; animation generation is a separate operation.
 - Turn broad animation requests into an ordered action brief with a clear loop point.
-- Turn broad map requests into a layout brief with source paths, grid expectations, template-preservation rules, and seam-check intent.
+- Turn broad map requests into a layout brief and direct the user to the manual map editor. Do not execute map production through MCP or bypass this boundary using another interface.
 - Turn interactable requests into inspect, toggle, pickup, or sequence, with its own visual, trigger, detection area, collider, content, and completion behavior. Use `interactable-editor` independently of map and sprite generation.
-- Export authorized interactables directly through the shared adapter. Keep engine regression tests in development; preview and validation reports are not export prerequisites.
+- Start interactables from workbench_interactable_template without creating a task; save-project persists their source for frontend editing. Preserve project/object IDs for revisions. Export requested packages through export-godot. Keep engine regression tests in development; preview and validation reports are not export prerequisites.
 - Keep generated artifacts separate from source assets and report the task ID, real status, and exact paths.
 
 ## Boundaries

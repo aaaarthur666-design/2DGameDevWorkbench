@@ -305,7 +305,7 @@ function ProductionStatus() {
             <span className="wb-muted">
               {wb.refreshing && wb.runtimeOnline === null
                 ? '正在读取制作记录…'
-                : '选择序列帧或场景，开始第一件作品。'}
+                : '选择角色美术或场景，开始第一件作品。'}
             </span>
           )}
         </div>

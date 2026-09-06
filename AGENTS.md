@@ -35,8 +35,8 @@
 - `reference-art` generates 128x128 transparent character art through PixelLab using the SpritePipeline service's protected API key. `transfer` imports a completed reference task as a reusable character preset without generating animation. Never put the key in task input.
 
 - `sprite-generator` integrates the real SpritePipeline service. Generation may be asynchronous or use its own configured provider; `get` refreshes the existing job.
-- `map-stitcher` runs deterministic `compose` locally. `generate-layer` is the optional external image-generation operation and can require Gemini or OpenAI configuration.
-- `interactable-editor` exports inspect, toggle, pickup, and sequence objects locally as Godot 4.6.x resources. It does not require SpritePipeline, an API key, or a Godot installation.
+- `map-stitcher` is a manual frontend workflow. MCP discovery and execution exclude it; do not use CLI, HTTP or browser tools to bypass this boundary. Its local compose and optional generation adapters remain available for the frontend.
+- `interactable-editor` provides task-free behavior templates with `workbench_interactable_template`, persists complete projects with `save-project`, and opens them in the frontend using get_result.viewPath. Preserve existing project/object IDs when editing. Use `export-godot` to export inspect, toggle, pickup, and sequence objects locally as Godot 4.6.x resources. It does not require SpritePipeline, an API key, or a Godot installation.
 - A request spanning capabilities is represented by separate tasks whose outputs can be summarized together.
 
 ## Task truth and data boundaries

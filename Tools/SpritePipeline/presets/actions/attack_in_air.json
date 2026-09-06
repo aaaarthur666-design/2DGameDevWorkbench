@@ -14,7 +14,7 @@
   "action_description": "A 16-frame airborne sword attack on one continuous flight arc. Keep frame 1 unchanged; frames 2-4 prepare, frames 5-8 swing, frames 9-10 reach full extension, frames 11-13 follow through, and frames 14-16 recover without an abrupt position jump.",
   "locked_constraints": [
     "maintain one continuous airborne root trajectory",
-    "preserve sword length and hand contact",
+    "one strike only; fixed sword length/grip",
     "do not add a ground shadow, attacker, projectile, or impact text",
     "keep body and sword inside the canvas"
   ]
