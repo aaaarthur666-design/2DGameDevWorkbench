@@ -23,6 +23,7 @@ import {
 import { useWorkbench } from './workbench-provider';
 import { workStateLabels, type WorkItem } from '@/lib/workbench/work-items';
 import { ModuleIcon } from './module-icon';
+import { WorkbenchBrand } from './workbench-brand';
 
 const GUIDE_KEY = 'workbench.onboarding.v1';
 type Guide = { step: number; line: string; dismissed: boolean };
@@ -79,12 +80,8 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
   return (
     <div className="wb-app">
       <header className="wb-header">
-        <a className="wb-brand" href="/" aria-label="返回开始页">
-          <span className="wb-brandmark">2D</span>
-          <span>
-            <strong>2D Game Dev Workbench</strong>
-            <small>游戏资产生产工作台</small>
-          </span>
+        <a className="wb-brand" href="/" aria-label="Forge · 返回开始页">
+          <WorkbenchBrand />
         </a>
         <nav className="wb-nav" aria-label="工作台导航">
           <a href="/" aria-current={wb.pathname === '/' ? 'page' : undefined}>

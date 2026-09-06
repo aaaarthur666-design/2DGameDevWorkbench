@@ -77,27 +77,24 @@
   flex-shrink: 0;
 }
 .wb-brandmark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  font:
-    13px Consolas,
-    monospace;
-  border: 1px solid #685791;
-  border-radius: 5px;
-  color: #d5c7ff;
-  background: #1d1730;
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 }
 .wb-brand strong {
   display: block;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.015em;
+  font-size: 25px;
+  line-height: 1.05;
+  font-weight: 650;
+  letter-spacing: -0.055em;
 }
 .wb-brand small {
   display: block;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: 0.035em;
   color: var(--wb-muted);
 }
 .wb-nav {
@@ -988,10 +985,10 @@
     padding: 10px 14px;
   }
   .wb-brand strong {
-    font-size: 12px;
+    font-size: 23px;
   }
   .wb-brand small {
-    font-size: 12px;
+    font-size: 9px;
   }
   .wb-nav {
     order: 3;
