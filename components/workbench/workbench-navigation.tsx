@@ -2,11 +2,12 @@
 
 /* oxlint-disable next/no-html-link-for-pages -- Vinext dev currently bundles next/link with a duplicate React instance; native links keep navigation reliable. */
 import { useSyncExternalStore } from 'react';
-import { Sparkles, WandSparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { WorkbenchModule } from '@/lib/workbench/modules';
 import { ModuleIcon } from './module-icon';
+import { WorkbenchBrand } from './workbench-brand';
 
 function subscribeToPath(callback: () => void) {
   window.addEventListener('popstate', callback);
@@ -29,18 +30,10 @@ export function WorkbenchNavigation({
       <div className="mx-auto flex h-[var(--workbench-nav-height)] max-w-[1800px] items-center gap-3 px-3 sm:px-5">
         <a
           href="/"
-          aria-label="返回 2D Game Dev Workbench 开始页"
-          className="flex shrink-0 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70"
+          aria-label="Forge · 返回开始页"
+          className="wb-brand flex shrink-0 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70"
         >
-          <span className="flex size-8 items-center justify-center rounded-xl border border-violet-300/20 bg-violet-500/14 text-violet-200 shadow-lg shadow-violet-950/20">
-            <WandSparkles className="size-4" />
-          </span>
-          <span className="hidden text-sm font-semibold tracking-[-0.01em] text-white/92 sm:block">
-            2D Game Dev Workbench
-          </span>
-          <span className="text-sm font-semibold text-white/92 sm:hidden">
-            2D Workbench
-          </span>
+          <WorkbenchBrand />
         </a>
 
         <nav

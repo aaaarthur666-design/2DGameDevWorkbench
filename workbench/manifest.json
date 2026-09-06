@@ -16,7 +16,8 @@
     }
   ],
   "workspace": {
-    "name": "2D Game Dev Workbench",
+    "name": "Forge — 2D game dev workbench",
+    "brand": { "name": "Forge", "tagline": "2D game dev workbench", "icon": "/favicon.svg?v=forge-play" },
     "taskDirectory": "work/tasks",
     "outputDirectory": "outputs",
     "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }

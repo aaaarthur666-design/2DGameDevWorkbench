@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { workbenchBrand, workbenchTitle } from '@/lib/workbench/brand';
 
 export const metadata: Metadata = {
-  title: '2D Game Dev Workbench · 游戏资产生产工作台',
+  title: workbenchTitle,
+  applicationName: workbenchBrand.name,
+  icons: { icon: { url: workbenchBrand.icon, type: 'image/svg+xml' } },
   description: '制作玩家动画、拼接地图和交互物，保存草稿并从制作记录继续。',
 };
 
