@@ -6,7 +6,6 @@ import {
   type EditableLayer,
   type Feather,
   type LayerId,
-  type MaskMode,
   type SavedImageReference,
   type SceneMakerState,
   type Tile,
@@ -224,72 +223,6 @@ export async function downloadTileLayer(tiles: Tile[], target: Tile, layer: Laye
   const blob = await canvasToBlob(canvas);
   const layerName = layer === 'overall' ? 'overall' : layer;
   downloadBlob(blob, `${baseFileName(source.layers.ground!.name)}_${target.key.replace(',', '_')}_${layerName}.png`);
-}
-
-function mirrorUnit(value: number) {
-  const wrapped = ((value % 2) + 2) % 2;
-  return wrapped <= 1 ? wrapped : 2 - wrapped;
-}
-
-function distanceBetweenTiles(a: Tile, b: Tile) {
-  const ax = a.x + a.w / 2;
-  const ay = a.y + a.h / 2;
-  const bx = b.x + b.w / 2;
-  const by = b.y + b.h / 2;
-  return Math.hypot(ax - bx, ay - by);
-}
-
-export async function generateLocalExpansion(
-  tiles: Tile[],
-  target: Tile,
-  layer: LayerId,
-  _maskMode: MaskMode,
-) {
-  if (layer === 'collision') throw new Error('碰撞层不能自动扩图');
-  const source = sourceTile(tiles);
-  const sourceAsset = source.layers.ground!;
-  const candidates = completedTiles(tiles, layer).filter((tile) => tile.key !== target.key);
-  if (!candidates.length) throw new Error('周边没有可用于扩图的图片');
-  candidates.sort((a, b) => distanceBetweenTiles(a, target) - distanceBetweenTiles(b, target));
-  const nearest = candidates[0];
-  const nearestCanvas = await renderTile(nearest, source, layer, false);
-  const nearestContext = nearestCanvas.getContext('2d', { willReadFrequently: true });
-  if (!nearestContext) throw new Error('无法读取邻接图片');
-  const sourcePixels = nearestContext.getImageData(0, 0, nearestCanvas.width, nearestCanvas.height).data;
-  const width = Math.max(1, Math.round(target.w * sourceAsset.width));
-  const height = Math.max(1, Math.round(target.h * sourceAsset.height));
-  const output = document.createElement('canvas');
-  output.width = width;
-  output.height = height;
-  const context = output.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('无法创建扩图画布');
-  const imageData = context.createImageData(width, height);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const worldX = target.x + (x / Math.max(1, width - 1)) * target.w;
-      const worldY = target.y + (y / Math.max(1, height - 1)) * target.h;
-      const u = mirrorUnit((worldX - nearest.x) / nearest.w);
-      const v = mirrorUnit((worldY - nearest.y) / nearest.h);
-      const sx = clamp(Math.round(u * (nearestCanvas.width - 1)), 0, nearestCanvas.width - 1);
-      const sy = clamp(Math.round(v * (nearestCanvas.height - 1)), 0, nearestCanvas.height - 1);
-      const sourceOffset = (sy * nearestCanvas.width + sx) * 4;
-      const targetOffset = (y * width + x) * 4;
-      imageData.data[targetOffset] = sourcePixels[sourceOffset];
-      imageData.data[targetOffset + 1] = sourcePixels[sourceOffset + 1];
-      imageData.data[targetOffset + 2] = sourcePixels[sourceOffset + 2];
-      imageData.data[targetOffset + 3] = sourcePixels[sourceOffset + 3];
-    }
-  }
-  context.putImageData(imageData, 0, 0);
-
-  for (const neighbor of candidates.filter((tile) => rectsIntersect(tile, target))) {
-    const neighborCanvas = await renderTile(neighbor, source, layer, false);
-    const x = Math.round((neighbor.x - target.x) * sourceAsset.width);
-    const y = Math.round((neighbor.y - target.y) * sourceAsset.height);
-    context.drawImage(neighborCanvas, x, y);
-  }
-  return canvasToBlob(output);
 }
 
 export async function generateLayerVariant(

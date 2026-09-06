@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 import { registerEditorTests } from './editor-behavior.mjs';
+import { registerGenerationPersistenceTests } from './generation-persistence.mjs';
 
 const server = await createServer({
   root: process.cwd(),
@@ -33,6 +34,126 @@ try {
   const engine = await server.ssrLoadModule(
     '/features/map-stitcher/engine-export.ts',
   );
+
+  const { parseMapLayout } = await server.ssrLoadModule(
+    '/features/map-stitcher/editor-layout.ts',
+  );
+  test('damaged or incompatible device layout preferences keep the editor usable', () => {
+    for (const raw of [
+      null,
+      '{broken',
+      'null',
+      'true',
+      '[]',
+      '{"width":"520","open":0}',
+      '{"width":1e999}',
+    ]) {
+      assert.deepEqual(parseMapLayout(raw), { width: 320, open: true });
+    }
+    assert.deepEqual(parseMapLayout('{"width":-200,"open":false}'), {
+      width: 280,
+      open: false,
+    });
+    assert.deepEqual(parseMapLayout('{"width":9999,"open":true}'), {
+      width: 520,
+      open: true,
+    });
+    assert.deepEqual(parseMapLayout('{"width":420,"open":false}'), {
+      width: 420,
+      open: false,
+    });
+  });
+
+  test('output frame excludes empty expansion cards and distant hidden images', () => {
+    const center = geometry.createFrameRoninCenterTile({
+      width: 4096,
+      height: 4096,
+    });
+    const placeholders = geometry.expandAroundFrameRoninTile(center, 4, 15, 15);
+    const hidden = { ...center, key: 'far', x: 100, hidden: true };
+    const frame = layers.stitchedMapFrame(
+      [center, ...placeholders, hidden],
+      4096,
+      4096,
+    );
+    assert.equal(frame.width, 4096);
+    assert.equal(frame.height, 4096);
+    assert.equal(frame.originX, 0);
+    assert.equal(frame.originY, 0);
+    assert.deepEqual(
+      frame.tiles.map((t) => t.key),
+      ['0,0'],
+    );
+  });
+
+  test('all output layers share negative origins and collisions keep world coordinates', () => {
+    const center = geometry.createFrameRoninCenterTile({
+      width: 100,
+      height: 80,
+    });
+    const left = {
+      ...center,
+      key: 'left',
+      x: -0.85,
+      y: -0.5,
+      images: { object: center.images.overall },
+    };
+    const tiles = [center, left];
+    const frame = layers.stitchedMapFrame(tiles, 100, 80);
+    assert.equal(frame.originX, -85);
+    assert.equal(frame.originY, -40);
+    assert.equal(frame.width, 185);
+    assert.equal(frame.height, 120);
+    const shape = {
+      id: 'collision',
+      tileKey: 'left',
+      layer: 'collision',
+      mapLayer: 'object',
+      mode: 'polygon',
+      points: [
+        { x: 0, y: 0 },
+        { x: 20, y: 0 },
+        { x: 20, y: 20 },
+      ],
+    };
+    const manifest = engine.buildRegionManifest(tiles, [shape], 100, 80, frame);
+    assert.deepEqual(manifest.regions[0].points[0], { x: -85, y: -40 });
+    assert.match(
+      engine.buildGodotScene(manifest, ['overall', 'object']),
+      /position = Vector2\(-85, -40\)/,
+    );
+  });
+
+  test('empty output fails clearly and genuinely oversized images remain protected', async () => {
+    const center = geometry.createFrameRoninCenterTile({
+      width: 4096,
+      height: 4096,
+    });
+    assert.throws(
+      () => layers.stitchedMapFrame([{ ...center, images: {} }], 4096, 4096),
+      /可见图像/,
+    );
+    await assert.rejects(
+      layers.renderStitchedMap(
+        [{ ...center, hidden: true }],
+        'overall',
+        [],
+        4096,
+        4096,
+      ),
+      /可见图像/,
+    );
+    await assert.rejects(
+      layers.renderStitchedMap(
+        [center, { ...center, key: 'far', x: 8 }],
+        'overall',
+        [],
+        4096,
+        4096,
+      ),
+      /36864/,
+    );
+  });
 
   test('FrameRonin image and annotation layers remain separate', () => {
     assert.deepEqual(types.MAP_IMAGE_LAYERS, [
@@ -263,6 +384,7 @@ try {
   });
 
   await registerEditorTests(server, test);
+  await registerGenerationPersistenceTests(server, test);
   for (const entry of tests) {
     await entry.run();
     passed += 1;

@@ -3,44 +3,6 @@ param(
     [ValidateSet('ui', 'api')]
     [string] $Mode = 'ui'
 )
-
 $ErrorActionPreference = 'Stop'
-
-$repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$pipelineRoot = Join-Path $repositoryRoot 'Tools\SpritePipeline'
-$pipelineCli = Join-Path $pipelineRoot 'cli.py'
-$pipelinePython = Join-Path $pipelineRoot '.venv\Scripts\python.exe'
-
-if (-not (Test-Path -LiteralPath $pipelinePython -PathType Leaf)) {
-    throw 'The sprite pipeline environment is missing. Run npm run sprite-pipeline:setup first.'
-}
-
-if (-not (Test-Path -LiteralPath $pipelineCli -PathType Leaf)) {
-    throw "The sprite pipeline CLI was not found: $pipelineCli"
-}
-
-$env:SPRITE_PIPELINE_INSTALL_ROOT = $pipelineRoot
-if ($null -eq $env:SPRITE_PIPELINE_IMPORT_USER_ASSETS) {
-    $env:SPRITE_PIPELINE_IMPORT_USER_ASSETS = "1"
-}
-if ($null -eq $env:SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS) {
-    $env:SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS = "1"
-}
-if ([string]::IsNullOrWhiteSpace($env:SPRITE_PIPELINE_DATA_DIR)) {
-    $env:SPRITE_PIPELINE_DATA_DIR = Join-Path $repositoryRoot 'work\sprite-pipeline'
-}
-if ([string]::IsNullOrWhiteSpace($env:SPRITE_PIPELINE_EXPORTS_DIR)) {
-    $env:SPRITE_PIPELINE_EXPORTS_DIR = Join-Path $repositoryRoot 'outputs\sprite-pipeline'
-}
-
-$command = if ($Mode -eq 'api') { 'serve-api' } else { 'serve-ui' }
-& $pipelinePython $pipelineCli $command
-$pipelineExitCode = $LASTEXITCODE
-$normalCancellationExitCodes = @(-1, 130, -1073741510, 3221225786)
-if ($pipelineExitCode -in $normalCancellationExitCodes) {
-    Write-Verbose "Sprite pipeline $command was stopped by the user."
-    exit 0
-}
-if ($pipelineExitCode -ne 0) {
-    throw "Sprite pipeline $command exited with code $pipelineExitCode"
-}
+& node (Join-Path $PSScriptRoot 'run-sprite-pipeline.mjs') $Mode
+exit $LASTEXITCODE

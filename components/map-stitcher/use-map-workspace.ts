@@ -94,7 +94,7 @@ export function useMapWorkspace(c: MapEditorController) {
       snapshot: current.getWorkspaceSnapshot(),
       pending: current.queueState.jobs
         .filter((j) => ['pending', 'running', 'failed'].includes(j.status))
-        .map(({ tileKey, layer }) => ({ tileKey, layer })),
+        .map(({ tileKey, layer, request }) => ({ tileKey, layer, request })),
     };
     const write = chain.current
       .catch(() => undefined)
@@ -200,5 +200,23 @@ export function useMapWorkspace(c: MapEditorController) {
       removeEditorSession('map-stitcher');
     };
   }, [save]);
-  return { loading, error };
+  // Keep an explicit empty-project URL so refresh cannot resurrect the latest draft.
+  useEffect(() => {
+    if (loading || !c.workspaceId || !c.sourceAsset) return;
+    const url = new URL(location.href);
+    url.searchParams.set('map', c.workspaceId);
+    window.history.replaceState(window.history.state, '', url);
+  }, [loading, c.workspaceId, c.sourceAsset]);
+  const newProject = async () => {
+    await save();
+    latest.current.newProject();
+    completed.current = '';
+    savedRef.current = { fingerprint: '', at: '' };
+    setSaved(savedRef.current);
+    setError('');
+    const url = new URL(location.href);
+    url.searchParams.set('map', 'new');
+    window.history.replaceState(window.history.state, '', url);
+  };
+  return { loading, error, newProject };
 }

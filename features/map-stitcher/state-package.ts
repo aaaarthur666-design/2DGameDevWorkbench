@@ -1,3 +1,4 @@
+import { readAdditionalPrompt } from './generation-request';
 import JSZip from 'jszip';
 import {
   blobToAsset,
@@ -182,6 +183,9 @@ export async function createPixelworkStatePackage(
     ),
     drawShapes: snapshot.shapes,
     workbench: {
+      tileAdditionalPrompts: Object.fromEntries(
+        snapshot.tiles.map((tile) => [tile.key, readAdditionalPrompt(tile.additionalPrompt)]),
+      ),
       tileImageOrigins: Object.fromEntries(
         snapshot.tiles.map((tile) => [tile.key, tile.imageOrigins ?? {}]),
       ),
@@ -319,6 +323,7 @@ async function loadPixelworkManifest(
     manifest.drawShapes ?? manifest.drawingShapes,
   );
   const workbench = isRecord(manifest.workbench) ? manifest.workbench : {};
+  const prompts = isRecord(workbench.tileAdditionalPrompts) ? workbench.tileAdditionalPrompts : {};
   const origins = isRecord(workbench.tileImageOrigins)
     ? workbench.tileImageOrigins
     : {};
@@ -326,6 +331,7 @@ async function loadPixelworkManifest(
     ? workbench.surfaceDrafts
     : {};
   for (const tile of tiles) {
+    tile.additionalPrompt = readAdditionalPrompt(prompts[tile.key]);
     const value = origins[tile.key];
     const values = isRecord(value) ? value : {};
     tile.imageOrigins = Object.fromEntries(

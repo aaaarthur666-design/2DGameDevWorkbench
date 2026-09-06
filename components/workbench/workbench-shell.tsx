@@ -95,8 +95,8 @@ export function SceneWorkflow() {
         <span>场景</span>
       </div>
       <div className="wb-eyebrow">BUILD YOUR WORLD</div>
-      <h1>一片场景，两种创作。</h1>
-      <p className="wb-intro">可以先搭地图，也可以直接制作一个宝箱、一扇门。</p>
+      <h1>制作素材，组装场景。</h1>
+      <p className="wb-intro">先拼接地图、制作交互物，再拖放组装成完整场景。</p>
       <div className="wb-scene-stages">
         {modules
           .filter((m) => m.productionLine === line?.id)
@@ -117,7 +117,7 @@ export function SceneWorkflow() {
       <div className="wb-scene-handoff">
         <div>
           <h2>一起组成你的场景</h2>
-          <p>地图与交互物可以分别制作和导出，随后在 Godot 中组合。</p>
+          <p>在场景组装中摆放交互物、右键调整遮挡，并导出完整 Godot 场景。</p>
         </div>
       </div>
     </main>

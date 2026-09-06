@@ -28,6 +28,7 @@
 | [序列帧生成](sprite-generator.md) | SpritePipeline 能力、操作、异步状态和产物 |
 | [地图拼接](map-stitcher.md) | 本地拼接、外部生成、编辑流程和导出 |
 | [地图拼接架构](MAP_STITCHER_ARCHITECTURE.md) | 地图模块的分层、数据流和格式兼容 |
+| [场景组装](scene-composer.md) | 地图与交互物摆放、遮挡、手动替换、保存和完整场景导出 |
 | [独立交互物编辑器](interactable-editor.md) | 交互模型、编辑器、Godot 导出和 Agent 调用 |
 | [第三方声明](../THIRD_PARTY_NOTICES.md) | 上游组件、兼容性实现和参考项目边界 |
 | [贡献指南](../CONTRIBUTING.md) | 变更流程、架构约束和提交前检查 |

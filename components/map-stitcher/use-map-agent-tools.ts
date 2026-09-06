@@ -94,7 +94,7 @@ export function useMapAgentTools(controller: MapEditorController) {
           pan: c.pan,
           generatorMode: c.api.settings.active
             ? c.api.settings.provider
-            : 'local',
+            : 'unconfigured',
           queue: c.queueState,
         }),
         true,

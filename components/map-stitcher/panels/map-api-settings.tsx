@@ -195,7 +195,7 @@ export function MapApiSettingsDialog({
             />
           </label>
           <p className="map-muted">
-            密钥仅保存在本地运行时内存。关闭 API 时，扩图使用本地镜像补全。
+            密钥由服务端保管。关闭 API 后不能生成整体图片。
           </p>
           <label>
             整体层提示词
@@ -206,8 +206,7 @@ export function MapApiSettingsDialog({
             />
           </label>
           <p className="map-muted">
-            默认用于纯 2D 横版侧视背景；仅在激活 API
-            后生效。本地镜像补全不读取提示词。
+            默认用于纯 2D 横版侧视背景。地图块的额外提示词会追加在此基础提示词后；修改仅影响新加入的任务。
           </p>
           <Button
             variant="outline"

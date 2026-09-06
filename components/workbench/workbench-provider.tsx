@@ -294,12 +294,14 @@ function AgentBridge() {
         },
         annotations: { readOnlyHint: true, untrustedContentHint: false },
         execute: () => ({
-          capabilities: modules.map((m) => ({
-            id: m.id,
-            name: m.name,
-            description: m.description,
-            features: m.capabilities,
-          })),
+          capabilities: modules
+            .filter((m) => m.executable)
+            .map((m) => ({
+              id: m.id,
+              name: m.name,
+              description: m.description,
+              features: m.capabilities,
+            })),
         }),
       },
       {
@@ -311,7 +313,10 @@ function AgentBridge() {
           required: ['capabilityId', 'input'],
           additionalProperties: false,
           properties: {
-            capabilityId: { type: 'string', enum: modules.map((m) => m.id) },
+            capabilityId: {
+              type: 'string',
+              enum: modules.filter((m) => m.executable).map((m) => m.id),
+            },
             input: {
               type: 'object',
               description: '符合该能力 Manifest 中的 inputSchema。',
@@ -326,7 +331,7 @@ function AgentBridge() {
           } | null;
           if (
             !value ||
-            !modules.some((m) => m.id === value.capabilityId) ||
+            !modules.some((m) => m.id === value.capabilityId && m.executable) ||
             !value.input ||
             typeof value.input !== 'object' ||
             Array.isArray(value.input)

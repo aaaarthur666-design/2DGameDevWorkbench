@@ -52,6 +52,18 @@ try {
   );
   assert.equal(JSON.stringify(initialSettings).includes('apiKey'), false);
 
+  for (const apiKey of ['test-密钥', 'test key', 'test\nkey']) {
+    const invalid = await fetch(`${baseUrl}/v1/map-stitcher/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'gpt-image-2', active: true, apiKey }),
+    });
+    assert.equal(invalid.status, 400);
+    const rejected = await invalid.json();
+    assert.match(rejected.error, /密钥格式无效/);
+    assert.ok(!JSON.stringify(rejected).includes(apiKey));
+    assert.deepEqual(await jsonFetch(`${baseUrl}/v1/map-stitcher/settings`), initialSettings);
+  }
+
   const settingsResponse = await fetch(`${baseUrl}/v1/map-stitcher/settings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

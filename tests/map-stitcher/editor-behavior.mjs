@@ -22,6 +22,121 @@ export async function registerEditorTests(server, test) {
   const { GenerationQueue } = await server.ssrLoadModule(
     '/features/map-stitcher/generation-queue.ts',
   );
+  const requests = await server.ssrLoadModule(
+    '/features/map-stitcher/generation-request.ts',
+  );
+  const api = {
+    active: true,
+    provider: 'first',
+    providers: [
+      { id: 'first', configured: true },
+      { id: 'second', configured: true },
+    ],
+  };
+  test('additional requirements preserve Chinese, lines and empty-base compatibility', () => {
+    const base = '  Preserve seams and style.  ';
+    assert.equal(requests.composeGenerationPrompt(base, ' \n '), base);
+    assert.equal(requests.readAdditionalPrompt(undefined), '');
+    assert.equal(requests.readAdditionalPrompt(' 文本\n'), ' 文本\n');
+    assert.equal(requests.readAdditionalPrompt('图'.repeat(2000)).length, 2000);
+    assert.throws(
+      () => requests.readAdditionalPrompt('图'.repeat(2001)),
+      /2000/,
+    );
+    assert.throws(
+      () => requests.readAdditionalPrompt({ text: 'bad import' }),
+      /文本/,
+    );
+    const result = requests.captureGenerationRequest(
+      api,
+      base,
+      ' 森林木桥\n保持原有色彩 ',
+    );
+    assert.match(result.prompt, /^Preserve seams and style\./);
+    assert.ok(result.prompt.endsWith('森林木桥\n保持原有色彩'));
+    assert.equal(result.provider, 'first');
+    assert.throws(
+      () => requests.captureGenerationRequest({ ...api, active: false }, base),
+      /未启用/,
+    );
+    assert.throws(
+      () => requests.captureGenerationRequest({ ...api, providers: [] }, base),
+      /尚未配置/,
+    );
+    assert.throws(
+      () => requests.captureGenerationRequest(api, '  '),
+      /基础提示词/,
+    );
+  });
+  test('queued prompts and provider survive edits, retry, serialized restoration and outside mutation', async () => {
+    const seen = [];
+    const queue = new GenerationQueue({
+      concurrency: () => 1,
+      canStart: () => null,
+      run: async (job) => {
+        seen.push(job.request);
+        if (seen.length === 1) throw new Error('retry');
+      },
+      onChange: () => {},
+    });
+    queue.pause();
+    const input = {
+      ...requests.captureGenerationRequest(api, 'base', '第一张'),
+    };
+    queue.add([
+      { tileKey: 'a', layer: 'overall', request: input },
+      {
+        tileKey: 'b',
+        layer: 'overall',
+        request: requests.captureGenerationRequest(api, 'base', '第二张'),
+      },
+    ]);
+    input.prompt = 'later edit';
+    input.provider = 'second';
+    const stored = JSON.parse(JSON.stringify(queue.snapshot().jobs));
+    assert.equal(stored[0].request.provider, 'first');
+    assert.ok(stored[0].request.prompt.endsWith('第一张'));
+    assert.ok(stored[1].request.prompt.endsWith('第二张'));
+    assert.throws(() => {
+      queue.snapshot().jobs[0].request.prompt = 'mutation';
+    }, TypeError);
+    queue.resume();
+    await tick();
+    assert.equal(queue.snapshot().jobs[0].status, 'failed');
+    queue.retry();
+    await tick();
+    assert.deepEqual(seen[0], seen[2]);
+    const restored = new GenerationQueue({
+      concurrency: () => 1,
+      canStart: () => null,
+      run: async (job) => {
+        seen.push(job.request);
+      },
+      onChange: () => {},
+    });
+    restored.pause();
+    restored.add(stored);
+    await tick();
+    assert.equal(seen.length, 3);
+    restored.resume();
+    await tick();
+    assert.deepEqual(seen[3], seen[0]);
+    assert.equal(requests.readGenerationRequest({}), undefined);
+    assert.equal(
+      requests.generationUnavailableReason(
+        { ...api, active: false },
+        'first',
+      ) !== null,
+      true,
+    );
+    assert.equal(
+      requests.generationUnavailableReason(
+        { ...api, provider: 'second' },
+        'first',
+      ),
+      null,
+    );
+  });
   const asset = (url) => ({ url, width: 100, height: 80 });
   const tile = {
     key: '0,0',
@@ -417,6 +532,45 @@ export async function registerEditorTests(server, test) {
     queue.resume();
     await tick();
     assert.equal(calls, 1);
+  });
+  test('new project queue reset detaches old work and accepts new jobs', async () => {
+    let finishOld;
+    let oldSignal;
+    const completed = [];
+    const queue = new GenerationQueue({
+      concurrency: () => 1,
+      canStart: () => null,
+      onChange: () => {},
+      onComplete: (job) => completed.push(job.tileKey),
+      run: async (job, signal) => {
+        if (job.tileKey === 'old') {
+          oldSignal = signal;
+          await new Promise((resolve) => {
+            finishOld = resolve;
+          });
+        }
+      },
+    });
+    queue.add([
+      { tileKey: 'old', layer: 'overall' },
+      { tileKey: 'pending', layer: 'overall' },
+    ]);
+    await tick();
+    queue.reset();
+    assert.equal(oldSignal.aborted, true);
+    assert.deepEqual(queue.snapshot(), {
+      jobs: [],
+      active: 0,
+      paused: false,
+      reason: '',
+    });
+    queue.add([{ tileKey: 'new', layer: 'overall' }]);
+    await tick();
+    finishOld();
+    await tick();
+    assert.deepEqual(completed, ['new']);
+    assert.equal(queue.snapshot().jobs.length, 1);
+    assert.equal(queue.snapshot().jobs[0].tileKey, 'new');
   });
   test('queue cancellation aborts active work and suppresses completion expansion', async () => {
     let resolve,

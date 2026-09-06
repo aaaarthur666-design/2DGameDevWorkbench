@@ -1,9 +1,15 @@
+import {
+  readGenerationRequest,
+  type GenerationRequest,
+} from './generation-request';
+
 export interface GenerationJob {
   id: string;
   tileKey: string;
   layer: 'overall' | 'object';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   error?: string;
+  request?: GenerationRequest;
 }
 export interface QueueSnapshot {
   jobs: GenerationJob[];
@@ -43,7 +49,7 @@ export class GenerationQueue {
   private emit() {
     this.options.onChange(this.snapshot());
   }
-  add(targets: Array<Pick<GenerationJob, 'tileKey' | 'layer'>>) {
+  add(targets: Array<Pick<GenerationJob, 'tileKey' | 'layer' | 'request'>>) {
     for (const target of targets) {
       if (
         this.jobs.some(
@@ -55,7 +61,9 @@ export class GenerationQueue {
       )
         continue;
       this.jobs.push({
-        ...target,
+        tileKey: target.tileKey,
+        layer: target.layer,
+        request: readGenerationRequest(target.request),
         id: `generation_${++this.serial}`,
         status: 'pending',
       });
@@ -81,6 +89,13 @@ export class GenerationQueue {
       if (job.status === 'pending' || job.status === 'running')
         job.status = 'cancelled';
     for (const controller of this.controllers.values()) controller.abort();
+    this.emit();
+  }
+  reset() {
+    this.cancel();
+    this.controllers.clear();
+    this.jobs = [];
+    this.reason = '';
     this.emit();
   }
   retry() {

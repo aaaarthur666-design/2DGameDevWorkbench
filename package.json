@@ -11,9 +11,9 @@
     "dev:interactable": "node scripts/dev.mjs --without-sprite-pipeline",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "sprite-pipeline:setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-sprite-pipeline.ps1",
-    "sprite-pipeline": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-sprite-pipeline.ps1 -Mode ui",
-    "sprite-pipeline:api": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-sprite-pipeline.ps1 -Mode api",
+    "sprite-pipeline:setup": "node scripts/setup-sprite-pipeline.mjs",
+    "sprite-pipeline": "node scripts/run-sprite-pipeline.mjs ui",
+    "sprite-pipeline:api": "node scripts/run-sprite-pipeline.mjs api",
     "workbench": "node scripts/workbench.mjs",
     "workbench:mcp": "node scripts/workbench-mcp.mjs",
     "workbench:http": "node scripts/workbench-http.mjs",
@@ -28,12 +28,14 @@
     "typecheck": "tsc --noEmit --incremental false",
     "test:adapters": "node tests/workbench-adapters/run.mjs",
     "test:http": "node tests/workbench-http/run.mjs",
+    "test:scene-composer": "node tests/scene-composer/run.mjs",
     "test:map-stitcher": "node tests/map-stitcher/run.mjs",
     "test:workbench-shell": "node tests/workbench-shell/run.mjs",
     "test:frontend": "node tests/frontend-service/run.mjs",
     "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "test:desktop-services": "node tests/desktop-services/run.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

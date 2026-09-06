@@ -27,6 +27,7 @@ import {
 } from '../lib/workbench/map-generation-settings.mjs';
 
 import { referenceServiceRequest } from '../lib/workbench/adapters/reference-art.mjs';
+import { exportSceneRequest } from '../lib/workbench/scene-export.mjs';
 
 const host = process.env.WORKBENCH_RUNTIME_HOST || '127.0.0.1';
 const port = readPort(process.env.WORKBENCH_RUNTIME_PORT, 8790);
@@ -44,6 +45,11 @@ const server = http.createServer(async (request, response) => {
         version: 1,
         service: '2d-game-workbench-runtime',
       });
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/scene-composer/export') {
+      try { sendJson(response, 200, await exportSceneRequest(request, repositoryRoot)); }
+      catch (error) { sendJson(response, 400, { error: error.message }); }
       return;
     }
     if (request.method === 'POST' && url.pathname.startsWith('/v1/agent/')) {
