@@ -4,8 +4,10 @@
   --sc-accent: #69e1c4;
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 112px);
-  min-height: 640px;
+  /* The workbench route already subtracts the variable-height navigation,
+     current-work bar and status bar. Do not overflow that remaining space. */
+  height: 100%;
+  min-height: 0;
   color: #e4edf2;
   background: #101a22;
   font-size: 14px;
@@ -171,7 +173,7 @@
 .sc-canvas {
   width: 100%;
   height: 100%;
-  min-height: 300px;
+  min-height: 0;
   display: block;
   touch-action: none;
   outline: none;
@@ -494,20 +496,18 @@
   }
 }
 @media (max-width: 760px) {
-  .sc-workspace {
-    height: auto;
-    min-height: calc(100dvh - 60px);
-  }
   .sc-header,
   .sc-toolbar {
     flex-wrap: wrap;
   }
   .sc-body {
     grid-template-columns: 145px minmax(0, 1fr);
-    min-height: 600px;
+    min-height: 0;
+    overflow: auto;
   }
   .sc-stage {
     height: 600px;
+    min-height: 600px;
   }
   .sc-inspector {
     grid-column: 1/-1;

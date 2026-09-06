@@ -103,7 +103,8 @@ export function SceneCanvas(p: Props) {
         scene.map?.layers.find((l) => l.id === id)?.name ||
         id;
   const start = (event: PointerEvent<SVGSVGElement>) => {
-    svg.current?.focus();
+    // Keyboard focus must not scroll the clipped workbench route over its header.
+    svg.current?.focus({ preventScroll: true });
     if (p.disabled || event.button === 2) return;
     const q = screenPoint(event.clientX, event.clientY);
     if (p.targetMode) {
