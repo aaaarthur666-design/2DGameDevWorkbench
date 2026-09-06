@@ -1,5 +1,20 @@
 {
   "schemaVersion": 1,
+  "editorModules": [
+    {
+      "id": "scene-composer",
+      "name": "场景组装",
+      "shortName": "组装",
+      "description": "将地图与交互物组装成完整的 2D 平台跳跃场景。",
+      "ui": {
+        "icon": "scene", "productionLine": "scene", "entryTitle": "组装完整场景",
+        "starterHint": "选择地图，拖入交互物，调整遮挡后导出 Godot 场景。",
+        "stages": ["导入素材", "摆放与遮挡", "保存与导出"],
+        "accent": "cyan", "status": "ready", "route": "/tools/scene-composer", "surface": "editor",
+        "capabilities": ["拖放与批量摆放", "右键遮挡与节点排序", "手动替换素材", "完整场景导出"]
+      }
+    }
+  ],
   "workspace": {
     "name": "2D Game Dev Workbench",
     "taskDirectory": "work/tasks",
@@ -8,7 +23,7 @@
   },
   "productionLines": [
     { "id": "player", "name": "序列帧", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/player", "summary": ["角色原图", "动作序列帧", "导出"] },
-    { "id": "scene", "name": "场景", "eyebrow": "SCENE / INTERACTION", "description": "搭建地图，制作可以互动的物件。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作"] }
+    { "id": "scene", "name": "场景", "eyebrow": "SCENE / INTERACTION", "description": "制作地图和交互物，组装成完整场景。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作", "场景组装"] }
   ],
   "agentAssets": {
     "role": "external-client",

@@ -3,18 +3,37 @@
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 import {
+  FilePlus2,
   CircleHelp,
   Download,
   FolderOpen,
-  Layers3,
   PanelRight,
   Redo2,
   Save,
   Settings,
+  ChevronDown,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  SlidersHorizontal,
   Undo2,
-  Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+} from '@/components/ui/dropdown-menu';
+import {
+  EditorWorkbenchMenu,
+  EditorDraftControl,
+  EditorTaskSummary,
+} from '@/components/workbench/editor-chrome';
+import { MapWorkArea } from './map-work-area';
+import { MapSceneButton } from '@/components/scene-composer/map-scene-button';
 import {
   Dialog,
   DialogContent,
@@ -23,10 +42,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Toaster } from '@/components/ui/toast';
-import {
-  MAP_DISPLAY_LAYERS,
-  REGION_LAYER_META,
-} from '@/features/map-stitcher/frame-ronin-types';
+import { REGION_LAYER_META } from '@/features/map-stitcher/frame-ronin-types';
 import {
   hasImageView,
   IMAGE_VIEW_LABELS,
@@ -53,7 +69,26 @@ export function FrameRoninMapEditor() {
     directoryInput = useRef<HTMLInputElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false),
     [helpOpen, setHelpOpen] = useState(false),
-    [exportOpen, setExportOpen] = useState(false);
+    [exportOpen, setExportOpen] = useState(false),
+    [newProjectOpen, setNewProjectOpen] = useState(false),
+    [creating, setCreating] = useState(false);
+  const createProject = () =>
+    c.perform(async () => {
+      setCreating(true);
+      try {
+        await workspace.newProject();
+        for (const input of [
+          sourceInput,
+          layerInput,
+          stateInput,
+          directoryInput,
+        ])
+          if (input.current) input.current.value = '';
+        setNewProjectOpen(false);
+      } finally {
+        setCreating(false);
+      }
+    });
   const openSettings = () => {
     c.resetSession();
     setSettingsOpen(true);
@@ -69,41 +104,51 @@ export function FrameRoninMapEditor() {
     });
   return (
     <Toaster>
-      <main className="map-workspace" data-map-editor>
-        {workspace.loading && <output className="wb-loading-veil">正在恢复地图草稿…</output>}
-        {workspace.error && <div className="wb-map-draft-error" role="alert">{workspace.error}</div>}
+      <main
+        className="map-workspace"
+        data-map-editor
+        data-focus-mode={c.focusMode}
+      >
+        {workspace.loading && (
+          <output className="wb-loading-veil">正在恢复地图草稿…</output>
+        )}
+        {workspace.error && (
+          <div className="wb-map-draft-error" role="alert">
+            {workspace.error}
+          </div>
+        )}
         <header className="map-project-bar">
           <div className="map-project-title">
-            <Layers3 size={21} />
-            <h1>地图拼接</h1>
+            <EditorWorkbenchMenu />
+            <h1 title={c.sourceAsset?.name || '地图拼接'}>
+              {c.sourceAsset?.name.replace(/\.[^.]+$/, '') || '地图拼接'}
+            </h1>
             <span>{c.tiles.length} 块</span>
           </div>
           <div className="map-project-actions">
+            <EditorDraftControl capabilityId="map-stitcher" />
+            <MapSceneButton c={c} />
             <Button
+              className="map-project-wide-action"
               variant="outline"
-              disabled={c.busy}
-              onClick={() => sourceInput.current?.click()}
+              size="sm"
+              disabled={c.busy || workspace.loading || creating}
+              onClick={() => setNewProjectOpen(true)}
             >
-              <Upload />
-              新建 / 导入
+              <FilePlus2 /> 新建项目
             </Button>
             <Button
+              className="map-project-wide-action"
               variant="outline"
+              size="sm"
               disabled={c.busy}
               onClick={() => stateInput.current?.click()}
             >
               <FolderOpen />
-              打开状态 / Godot
+              打开
             </Button>
             <Button
-              variant="outline"
-              disabled={c.busy || !c.sourceAsset}
-              onClick={() => doExport('state')}
-            >
-              <Save />
-              保存
-            </Button>
-            <Button
+              size="sm"
               disabled={c.busy || !c.sourceAsset}
               onClick={() => {
                 c.resetSession();
@@ -113,32 +158,70 @@ export function FrameRoninMapEditor() {
               <Download />
               导出
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="生成设置"
-              onClick={openSettings}
-            >
-              <Settings />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="地图帮助"
-              onClick={() => {
-                c.resetSession();
-                setHelpOpen(true);
-              }}
-            >
-              <CircleHelp />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="更多地图操作"
+                  />
+                }
+              >
+                <MoreHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="map-compact-menu">
+                <DropdownMenuItem
+                  className="map-project-overflow-action"
+                  disabled={c.busy || workspace.loading || creating}
+                  onClick={() => setNewProjectOpen(true)}
+                >
+                  <FilePlus2 /> 新建项目
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="map-project-overflow-action"
+                  disabled={c.busy}
+                  onClick={() => stateInput.current?.click()}
+                >
+                  <FolderOpen />
+                  打开状态 / Godot
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={c.busy || !c.sourceAsset}
+                  onClick={() => doExport('state')}
+                >
+                  <Save />
+                  下载编辑源文件
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={openSettings}>
+                  <Settings />
+                  生成设置
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    c.resetSession();
+                    setHelpOpen(true);
+                  }}
+                >
+                  <CircleHelp />
+                  地图帮助
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
-        <div className="map-view-bar">
+        <div
+          className="map-view-bar"
+          role="toolbar"
+          aria-label="地图编辑工具栏"
+        >
           <fieldset className="map-primary-views" aria-label="图片视图">
             {(['overall', 'surface', 'object'] as const).map((layer) => (
               <Button
+                className="map-view-wide"
                 key={layer}
+                size="sm"
                 variant={
                   c.activeMapLayer === layer && !c.exportPreview
                     ? 'default'
@@ -148,87 +231,46 @@ export function FrameRoninMapEditor() {
                 onClick={() => c.selectView(layer)}
               >
                 {IMAGE_VIEW_LABELS[layer]}
-                <span>
-                  {c.tiles.filter((tile) => hasImageView(tile, layer)).length}/
-                  {c.tiles.length}
-                </span>
               </Button>
             ))}
-            <select
-              aria-label="参考与派生预览"
-              value={
-                ['black', 'white', 'mask'].includes(c.activeMapLayer) &&
-                !c.exportPreview
-                  ? c.activeMapLayer
-                  : ''
-              }
-              onChange={(event) => {
-                const layer = event.target.value;
-                if (
-                  MAP_DISPLAY_LAYERS.includes(layer as typeof c.activeMapLayer)
-                )
-                  c.selectView(layer as typeof c.activeMapLayer);
-              }}
-            >
-              <option value="" disabled>
-                参考与派生
-              </option>
-              <option value="black">黑底参考</option>
-              <option value="white">白底参考</option>
-              <option value="mask">Mask · 只读</option>
-            </select>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    className="map-view-menu-trigger"
+                    variant="ghost"
+                    size="sm"
+                    aria-label="选择图片视图"
+                  />
+                }
+              >
+                <span>{IMAGE_VIEW_LABELS[c.activeMapLayer]}</span>
+                <ChevronDown size={14} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="map-compact-menu">
+                {(
+                  [
+                    'overall',
+                    'surface',
+                    'object',
+                    'black',
+                    'white',
+                    'mask',
+                  ] as const
+                ).map((layer) => (
+                  <DropdownMenuCheckboxItem
+                    key={layer}
+                    checked={c.activeMapLayer === layer && !c.exportPreview}
+                    onClick={() => c.selectView(layer)}
+                  >
+                    {IMAGE_VIEW_LABELS[layer]}
+                    {layer === 'mask' ? ' · 只读' : ''}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </fieldset>
           <div className="map-view-options">
-            <label className="map-check">
-              <input
-                type="checkbox"
-                checked={c.preferences.showImage}
-                onChange={(event) =>
-                  c.setPreferences((value) => ({
-                    ...value,
-                    showImage: event.target.checked,
-                  }))
-                }
-              />
-              底图
-            </label>
-            <label className="map-check">
-              <input
-                type="checkbox"
-                checked={c.preferences.showRegions}
-                onChange={(event) => {
-                  c.resetSession();
-                  c.setPreferences((value) => ({
-                    ...value,
-                    showRegions: event.target.checked,
-                  }));
-                }}
-              />
-              区域标注
-            </label>
-            <label className="map-check">
-              <input
-                type="checkbox"
-                checked={c.hideCards && c.hideBorders}
-                onChange={(event) => {
-                  c.setHideCards(event.target.checked);
-                  c.setHideBorders(event.target.checked);
-                }}
-              />
-              干净预览
-            </label>
-            <Button
-              size="sm"
-              variant={c.exportPreview ? 'default' : 'outline'}
-              disabled={!c.sourceAsset}
-              aria-pressed={c.exportPreview}
-              onClick={() => {
-                c.resetSession();
-                c.setExportPreview((value) => !value);
-              }}
-            >
-              导出效果
-            </Button>
             <Button
               size="icon-sm"
               variant="ghost"
@@ -249,18 +291,98 @@ export function FrameRoninMapEditor() {
             >
               <Redo2 />
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button size="sm" variant="ghost" aria-label="显示选项" />
+                }
+              >
+                <SlidersHorizontal />
+                <span className="map-tool-label">显示</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="map-compact-menu">
+                <DropdownMenuItem
+                  className="map-project-overflow-action"
+                  disabled={c.busy || workspace.loading || creating}
+                  onClick={() => setNewProjectOpen(true)}
+                >
+                  <FilePlus2 /> 新建项目
+                </DropdownMenuItem>
+                <DropdownMenuCheckboxItem
+                  checked={c.preferences.showImage}
+                  onCheckedChange={(showImage) =>
+                    c.setPreferences((value) => ({ ...value, showImage }))
+                  }
+                >
+                  底图
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={c.preferences.showRegions}
+                  onCheckedChange={(showRegions) => {
+                    c.resetSession();
+                    c.setPreferences((value) => ({ ...value, showRegions }));
+                  }}
+                >
+                  区域标注
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={c.hideCards && c.hideBorders}
+                  onCheckedChange={(value) => {
+                    c.setHideCards(value);
+                    c.setHideBorders(value);
+                  }}
+                >
+                  干净预览
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={c.exportPreview}
+                  disabled={!c.sourceAsset}
+                  onCheckedChange={(value) => {
+                    c.resetSession();
+                    c.setExportPreview(value);
+                  }}
+                >
+                  导出效果
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               size="sm"
-              variant="outline"
+              variant={c.panelOpen ? 'outline' : 'ghost'}
               aria-expanded={c.panelOpen}
+              aria-controls="map-inspector"
+              aria-label="切换属性栏"
               onClick={() => c.setPanelOpen((value) => !value)}
             >
               <PanelRight />
-              属性
+              <span className="map-tool-label">属性</span>
             </Button>
+            <Button
+              size="sm"
+              variant={c.focusMode ? 'default' : 'ghost'}
+              aria-pressed={c.focusMode}
+              aria-label={c.focusMode ? '退出专注模式' : '进入专注模式'}
+              onClick={() => c.setFocusMode((value) => !value)}
+            >
+              {c.focusMode ? <Minimize2 /> : <Maximize2 />}
+              <span className="map-focus-label">
+                {c.focusMode ? '退出专注' : '专注'}
+              </span>
+            </Button>
+            {c.focusMode && <EditorTaskSummary compact />}
           </div>
         </div>
-        <div className={`map-work-area ${c.panelOpen ? 'panel-open' : ''}`}>
+        <MapWorkArea
+          c={c}
+          inspector={
+            <MapInspector
+              c={c}
+              onUpload={() => layerInput.current?.click()}
+              onSettings={openSettings}
+            />
+          }
+        >
           <MapCanvas
             c={c}
             disabled={
@@ -272,26 +394,38 @@ export function FrameRoninMapEditor() {
             }
             onImport={() => sourceInput.current?.click()}
           />
-          <MapInspector c={c} onUpload={() => layerInput.current?.click()} />
-        </div>
-        <footer className="map-status-bar">
-          <span>
+        </MapWorkArea>
+        <footer className="map-status-bar" aria-label="地图与制作状态">
+          <span
+            className="map-selection-status"
+            title={`${c.selectedKey ?? '未选卡片'} · ${IMAGE_VIEW_LABELS[c.activeMapLayer]} ${activeCount}/${c.tiles.length}`}
+          >
             {c.selectedKey ?? '未选卡片'} ·{' '}
             {IMAGE_VIEW_LABELS[c.activeMapLayer]} {activeCount}/{c.tiles.length}
           </span>
-          <span>
+          <span className="map-mode-status">
             {c.mode === 'region'
               ? `${REGION_LAYER_META[c.activeRegionLayer].label} · ${{ select: '选择', rectangle: '矩形', polygon: '多边形', free: '自由套索', delete: '删除' }[c.regionTool]}`
               : c.mode === 'pixel'
                 ? '像素精修'
                 : '地图浏览'}
           </span>
-          <output className="map-status-hint">
-            {c.busy ? '正在处理文件…' : c.hint}
-          </output>
-          <span>
-            {c.imageCount} 图 · {c.shapes.length} 区域
-          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="map-status-hint"
+              title={c.busy ? '正在处理文件…' : c.hint}
+              aria-label="展开完整操作提示"
+            >
+              {c.busy ? '正在处理文件…' : c.hint}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" className="map-hint-detail">
+              <p>{c.busy ? '正在处理文件…' : c.hint}</p>
+              <p>
+                {c.imageCount} 图 · {c.shapes.length} 区域
+              </p>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <EditorTaskSummary />
         </footer>
         <input
           ref={sourceInput}
@@ -299,7 +433,7 @@ export function FrameRoninMapEditor() {
           type="file"
           accept="image/png,image/jpeg,image/webp,.jfif"
           multiple
-          aria-label="新建地图图片"
+          aria-label="导入地图图片"
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             event.target.value = '';
@@ -353,6 +487,33 @@ export function FrameRoninMapEditor() {
             onClose={() => setSettingsOpen(false)}
           />
         )}
+        <Dialog
+          open={newProjectOpen}
+          onOpenChange={(open) => {
+            if (!creating) setNewProjectOpen(open);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>新建空白地图项目</DialogTitle>
+              <DialogDescription>
+                清空当前画布、编辑历史、提示词和项目参数，取消本页生成队列。
+                旧项目保留为本机草稿，API 设置和面板布局保留。 已发送的图片 API
+                请求可能仍会在服务端完成，结果不会写入新项目。
+              </DialogDescription>
+            </DialogHeader>
+            <Button disabled={creating} onClick={createProject}>
+              {creating ? '正在新建…' : '新建空白项目'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={creating}
+              onClick={() => setNewProjectOpen(false)}
+            >
+              取消
+            </Button>
+          </DialogContent>
+        </Dialog>
         <Dialog open={exportOpen} onOpenChange={setExportOpen}>
           <DialogContent className="map-export-dialog">
             <DialogHeader>
@@ -399,6 +560,9 @@ export function FrameRoninMapEditor() {
             </DialogHeader>
             <div className="map-help-copy">
               <p>
+                拖动属性栏左侧边界可调整宽度；方向键也可调整，双击恢复默认。较窄窗口使用抽屉，关闭后可从工具栏重新打开。专注模式保留编辑工具，点击“退出专注”恢复项目栏和状态栏。
+              </p>
+              <p>
                 先选地图块，再切换整体、地表或物件视图。在区域页签选择类别和工具后直接绘制。
               </p>
               <p>
@@ -411,7 +575,7 @@ export function FrameRoninMapEditor() {
                 Cmd + Z 重做。
               </p>
               <p>
-                新建 / 导入会建立新地图。开始新项目之前，请先保存当前状态。新
+                “新建项目”进入空白状态，再通过画布上的“导入地图图片”开始；“打开”恢复已有项目。草稿自动保存在本机，也可从“更多”下载编辑源文件。新
                 Godot 包包含完整编辑源；旧包可能只能恢复合成图片。
               </p>
               <Button

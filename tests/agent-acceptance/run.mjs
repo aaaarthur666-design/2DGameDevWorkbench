@@ -28,6 +28,10 @@ const pipeline = spawn(
   { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
 );
 let serviceErrors = '';
+let startupError;
+pipeline.once('error', (error) => {
+  startupError = error;
+});
 pipeline.stderr.on('data', (chunk) => {
   serviceErrors += chunk.toString();
 });
@@ -83,7 +87,9 @@ try {
   );
   assert.deepEqual(
     tools.tools.map((tool) => tool.name).sort((a, b) => a.localeCompare(b)),
-    [...manifest.agentAssets.mcpServer.tools].sort((a, b) => a.localeCompare(b)),
+    [...manifest.agentAssets.mcpServer.tools].sort((a, b) =>
+      a.localeCompare(b),
+    ),
   );
   const listed = value(await call('workbench_list_capabilities'));
   assert(listed.capabilities.some((c) => c.id === 'reference-art'));
@@ -330,6 +336,13 @@ async function freePort() {
 }
 async function waitForService(url) {
   for (let n = 0; n < 100; n++) {
+    if (startupError)
+      throw new Error(
+        'SpritePipeline Python 无法启动，请运行 npm run sprite-pipeline:setup。' +
+          startupError.message,
+      );
+    if (pipeline.exitCode !== null)
+      throw new Error('SpritePipeline 已退出：' + serviceErrors.slice(-2000));
     try {
       if (
         (await fetch(`${url}/health`, { signal: AbortSignal.timeout(500) })).ok

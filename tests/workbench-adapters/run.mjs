@@ -6,6 +6,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 import { preserveMapTemplatePixels } from '../../lib/workbench/adapters/map-generation-image.mjs';
+import { planMapGenerationSize, mapOutputPrompt } from '../../lib/workbench/adapters/map-generation-size.mjs';
 
 import {
   findCapability,
@@ -13,6 +14,7 @@ import {
   refreshTask,
   repositoryRoot,
   runConnector,
+  summarizeTask,
   validateInput,
 } from '../../lib/workbench/runtime.mjs';
 
@@ -28,6 +30,8 @@ const generatedTile = await sharp({
   .png()
   .toBuffer();
 let baseUrl = '';
+let mapResponseMode = 'success';
+const combinedPrompt = 'Preserve the template pixels.\n\nAdditional requirements for this tile:\n森林木桥\n保持侧视';
 
 const server = http.createServer(async (request, response) => {
   const chunks = [];
@@ -92,6 +96,15 @@ const server = http.createServer(async (request, response) => {
     );
     return;
   }
+  if (request.method === 'POST' && ['/gemini', '/openai'].includes(request.url) && ['http-error', 'no-image'].includes(mapResponseMode)) {
+    if (mapResponseMode === 'http-error') {
+      response.statusCode = 401;
+      response.end(JSON.stringify({ error: { message: 'test invalid key' } }));
+    } else {
+      response.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'No image' }] } }], data: [] }));
+    }
+    return;
+  }
   if (request.method === 'POST' && request.url === '/gemini') {
     response.end(
       JSON.stringify({
@@ -99,6 +112,7 @@ const server = http.createServer(async (request, response) => {
           {
             content: {
               parts: [
+                { thought: true, inlineData: { mimeType: 'image/png', data: 'not-a-final-image' } },
                 {
                   inlineData: {
                     mimeType: 'image/png',
@@ -114,9 +128,12 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   if (request.method === 'POST' && request.url === '/openai') {
+    const size = /name="size"\r\n\r\n(\d+)x(\d+)/.exec(rawBody.toString('utf8'));
+    assert.ok(size, 'OpenAI edit requests must set an explicit size');
+    const returned = mapResponseMode === 'wrong-size' ? generatedTile : await sharp(generatedTile).resize(Number(size[1]), Number(size[2]), { kernel: 'nearest' }).png().toBuffer();
     response.end(
       JSON.stringify({
-        data: [{ b64_json: generatedTile.toString('base64') }],
+        data: [{ b64_json: returned.toString('base64') }],
       }),
     );
     return;
@@ -334,7 +351,7 @@ try {
     operation: 'generate-layer',
     provider: 'nano-banana',
     image: dataUrl(generationTemplate),
-    prompt: 'extend the test tile',
+    prompt: combinedPrompt,
     tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
     layer: 'overall',
     mask_mode: 'white',
@@ -376,7 +393,7 @@ try {
   assert.equal(geminiRequest.headers['x-goog-api-key'], 'test-gemini-key');
   assert.equal(
     geminiRequest.body.contents[0].parts[0].text,
-    'extend the test tile',
+    combinedPrompt,
   );
   assert.equal(
     geminiRequest.body.contents[0].parts[1].inline_data.mime_type,
@@ -390,7 +407,7 @@ try {
     operation: 'generate-layer',
     provider: 'gpt-image-2',
     image: dataUrl(generationTemplate),
-    prompt: 'complete the transparent test tile',
+    prompt: combinedPrompt,
     tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
     layer: 'overall',
     mask_mode: 'white',
@@ -418,14 +435,79 @@ try {
     openAIRequest.headers['content-type'],
     /^multipart\/form-data; boundary=/,
   );
-  const multipart = openAIRequest.rawBody.toString('latin1');
+  const multipart = openAIRequest.rawBody.toString('utf8');
   assert.match(multipart, /name="model"[\s\S]*gpt-image-2/);
-  assert.match(
-    multipart,
-    /name="prompt"[\s\S]*complete the transparent test tile/,
-  );
+  assert.ok(multipart.includes(combinedPrompt.replaceAll('\n', '\r\n')));
   assert.match(multipart, /name="image\[\]"; filename="map-input.png"/);
+  assert.match(multipart, /name="size"\r\n\r\n1024x1024/);
+  assert.match(multipart, /Return exactly 1024 x 1024 pixels/);
+  assert.match(multipart, /name="output_format"\r\n\r\npng/);
 
+  for (const mode of ['http-error', 'no-image']) {
+    mapResponseMode = mode;
+    for (const provider of ['nano-banana', 'gpt-image-2']) {
+      const failed = await runConnector(manifest, map, {
+        operation: 'generate-layer', provider, image: dataUrl(generationTemplate),
+        prompt: combinedPrompt, tile: { key: '1,0', x: 1, y: 0, w: 1, h: 1 },
+        layer: 'overall', mask_mode: 'white',
+      });
+      assert.equal(failed.task.status, 'failed');
+      assert.equal(summarizeTask(failed).error, failed.task.error);
+      assert.match(failed.task.error, mode === 'http-error' ? /401/ : /did not return/);
+      assert.ok(failed.task.outputs.some((name) => name.endsWith('generation-diagnostics.json')));
+      assert.ok(!failed.task.outputs.some((name) => name.endsWith('generated-layer.png')));
+    }
+  }
+  mapResponseMode = 'success';
+  // Regression for the reported 5504 x 3072 template: real PNG decoding, wire size and pixel recovery.
+  assert.deepEqual(planMapGenerationSize(5504, 3072), { width: 2064, height: 1152, size: '2064x1152' });
+  assert.deepEqual(planMapGenerationSize(3072, 5504), { width: 1152, height: 2064, size: '1152x2064' });
+  for (const [width, height] of [[128, 128], [1920, 1080], [7225, 4118], [1001, 563], [2400, 800]]) {
+    const output = planMapGenerationSize(width, height);
+    assert.equal(output.width % 16, 0); assert.equal(output.height % 16, 0);
+    assert.ok(output.width * output.height >= 655360 && output.width * output.height <= 3686400);
+    assert.ok(Math.abs(output.width * height - output.height * width) <= Math.max(width, height));
+  }
+  assert.throws(() => planMapGenerationSize(0, 100), /无效/);
+  const largePixels = Buffer.alloc(5504 * 3072 * 4);
+  largePixels.set([70, 80, 90, 128], 0);
+  largePixels.set([22, 33, 44, 255], 4);
+  const largeTemplate = await sharp(largePixels, { raw: { width: 5504, height: 3072, channels: 4 } }).png().toBuffer();
+  const originalPrompt = 'Continue the forest. Return the same canvas dimensions and aspect ratio, with no crop, border or reframing.\n森林木桥';
+  const largeInput = { operation: 'generate-layer', provider: 'gpt-image-2', image: dataUrl(largeTemplate),
+    prompt: originalPrompt, tile: { key: '0.85,0', x: 0.85, y: 0, w: 1, h: 1 }, layer: 'overall', mask_mode: 'white' };
+  const largeResult = await runConnector(manifest, map, largeInput);
+  assert.equal(largeResult.task.status, 'completed');
+  const largeOutput = await sharp(outputPath(largeResult.task.outputs, 'generated-layer.png')).raw().toBuffer({ resolveWithObject: true });
+  assert.equal(largeOutput.info.width, 5504); assert.equal(largeOutput.info.height, 3072);
+  assert.deepEqual([...largeOutput.data.subarray(0, 8)], [70, 80, 90, 128, 22, 33, 44, 255]);
+  assert.deepEqual([...largeOutput.data.subarray(8, 12)], [10, 20, 30, 255]);
+  const sizeRecord = JSON.parse(await readFile(outputPath(largeResult.task.outputs, 'generation-diagnostics.json'), 'utf8'));
+  assert.deepEqual(sizeRecord.template, { width: 5504, height: 3072 });
+  assert.equal(sizeRecord.requested.size, '2064x1152');
+  assert.equal(sizeRecord.returned.width, 2064); assert.equal(sizeRecord.returned.height, 1152);
+  assert.equal(sizeRecord.effectivePrompt, mapOutputPrompt(originalPrompt, sizeRecord.requested));
+  assert.doesNotMatch(sizeRecord.effectivePrompt, /Return the same canvas dimensions/);
+  assert.ok(sizeRecord.effectivePrompt.includes('森林木桥'));
+  assert.ok(!JSON.stringify(sizeRecord).includes('test-openai-key'));
+  assert.equal(largeInput.prompt, originalPrompt, 'saved user prompt must remain unchanged');
+  const largeWire = requests.filter((r) => r.url === '/openai').at(-1).rawBody.toString('utf8');
+  assert.match(largeWire, /name="size"\r\n\r\n2064x1152/);
+  assert.ok(largeWire.includes(sizeRecord.effectivePrompt.replaceAll('\n', '\r\n')));
+  mapResponseMode = 'wrong-size';
+  const wrongSize = await runConnector(manifest, map, largeInput);
+  assert.equal(wrongSize.task.status, 'failed');
+  assert.match(wrongSize.task.error, /5504×3072.*2064×1152.*2×2/);
+  assert.ok(!wrongSize.task.outputs.some((name) => name.endsWith('generated-layer.png')));
+  assert.deepEqual(await readFile(outputPath(wrongSize.task.outputs, 'provider-response.png')), generatedTile);
+  const failureRecord = JSON.parse(await readFile(outputPath(wrongSize.task.outputs, 'generation-diagnostics.json'), 'utf8'));
+  assert.equal(failureRecord.stage, 'failed'); assert.equal(failureRecord.returned.width, 2);
+  mapResponseMode = 'success';
+  const callsBeforeBadRatio = requests.length;
+  const badRatio = await runConnector(manifest, map, { ...largeInput, image: dataUrl(await sharp(generatedTile).resize(400, 100).png().toBuffer()) });
+  assert.equal(badRatio.task.status, 'failed'); assert.match(badRatio.task.error, /3:1/);
+  assert.equal(requests.length, callsBeforeBadRatio);
+  const callsBeforeMissingKey = requests.length;
   delete process.env.OPENAI_API_KEY;
   const awaitingKey = await runConnector(manifest, map, {
     operation: 'generate-layer',
@@ -438,6 +520,7 @@ try {
   });
   assert.equal(awaitingKey.task.status, 'awaiting_configuration');
   assert.equal(awaitingKey.requiredEnvironment, 'OPENAI_API_KEY');
+  assert.equal(requests.length, callsBeforeMissingKey);
 
   process.stdout.write(
     `${JSON.stringify(

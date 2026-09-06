@@ -99,31 +99,26 @@ import {
   exportPsd,
   exportStateZip,
   generateLayerVariant,
-  generateLocalExpansion,
   imageReferenceToBlob,
   legacyCollisionMaskToRectangles,
   loadGodotPackage,
   readStatePackage,
-  renderTile,
   sourceTile,
 } from '@/features/map-stitcher/export-utils';
 
 const BASE_TILE_WIDTH = 360;
 const GEMINI_URL = 'https://gemini.google.com/gem/1lJTnukifhxITzO7l084Icn3Q_ctIID9g?usp=sharing';
 
-type GeneratorMode = 'local' | 'external';
 interface PaintSession {
   tileKey: string;
   layer: VisualLayer | 'collision';
 }
 
 interface GeneratorSettings {
-  mode: GeneratorMode;
   prompt: string;
 }
 
 const DEFAULT_GENERATOR: GeneratorSettings = {
-  mode: 'local',
   prompt: '保持原图像素风、透视、光照与地形连续，只补全透明区域，不改变已有重叠像素。',
 };
 
@@ -460,15 +455,15 @@ export function MapEditor() {
 
   const generatedBlob = useCallback(async (target: Tile) => {
     if (activeLayer === 'collision') throw new Error('碰撞层请使用碰撞区域编辑器');
-    if (generator.mode === 'local') {
-      if (editableLayer !== 'ground' && (target.layers.ground || target.layers.object)) {
-        return generateLayerVariant(tilesRef.current, target, editableLayer);
-      }
-      return generateLocalExpansion(tilesRef.current, target, activeLayer, maskMode);
+    if (editableLayer !== 'ground') {
+      return generateLayerVariant(tilesRef.current, target, editableLayer);
     }
-    const template = editableLayer !== 'ground' && (target.layers.ground || target.layers.object)
-      ? await renderTile(target, sourceTile(tilesRef.current), 'overall', false)
-      : await createOverlapTemplate(tilesRef.current, target, activeLayer);
+    const settingsResponse = await fetch('/api/workbench/map-stitcher/settings', { cache: 'no-store' });
+    const settings = await settingsResponse.json() as { active?: boolean; provider?: string; providers?: Array<{ id: string; configured: boolean }> };
+    if (!settingsResponse.ok || !settings.active || !settings.provider ||
+        !settings.providers?.some((item: { id: string; configured: boolean }) => item.id === settings.provider && item.configured))
+      throw new Error('请在新版地图拼接工具的 API 设置中启用并配置图片 API。');
+    const template = await createOverlapTemplate(tilesRef.current, target, activeLayer);
     const response = await fetch('/api/workbench/map-stitcher/generate', {
       method: 'POST',
       headers: {
@@ -476,10 +471,11 @@ export function MapEditor() {
       },
       body: JSON.stringify({
         operation: 'generate-layer',
+        provider: settings.provider,
         image: await canvasDataUrl(template),
         prompt: generator.prompt,
         tile: { key: target.key, x: target.x, y: target.y, w: target.w, h: target.h },
-        layer: editableLayer === 'ground' ? 'surface' : editableLayer,
+        layer: 'overall',
         mask_mode: maskMode,
       }),
     });
@@ -488,7 +484,7 @@ export function MapEditor() {
     const result = data.image ?? data.data ?? data.url;
     if (!result) throw new Error('扩图服务未返回 image、data 或 url 字段');
     if (result.startsWith('data:')) return dataUrlToBlob(result);
-    if (/^https?:\/\//.test(result)) return urlToBlob(result);
+    if (result.startsWith('/') || /^https?:\/\//.test(result)) return urlToBlob(result);
     return dataUrlToBlob(`data:image/png;base64,${result}`);
   }, [activeLayer, editableLayer, generator, maskMode]);
 
@@ -1172,22 +1168,13 @@ export function MapEditor() {
         >
           <DialogHeader>
             <DialogTitle>地图拼接设置</DialogTitle>
-            <DialogDescription>本地模式无需配置；外部模式通过工作台服务端连接器安全调用。</DialogDescription>
+            <DialogDescription>整体扩图通过工作台服务端连接器调用图片 API。</DialogDescription>
           </DialogHeader>
           <div className="map-stitcher-dialog-form">
-            <Label htmlFor="generator-mode">扩图方式</Label>
-            <Select value={generator.mode} onValueChange={(value) => setGenerator((current) => ({ ...current, mode: value as GeneratorMode }))}>
-              <SelectTrigger id="generator-mode" className="dialog-select"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="local">本地镜像补全</SelectItem><SelectItem value="external">外部图片 API</SelectItem></SelectContent>
-            </Select>
-            {generator.mode === 'external' && (
-              <>
-                <Label>服务连接</Label>
-                <div className="map-stitcher-server-status">
-                  API 地址与令牌由工作台服务端环境变量统一管理，不会发送到浏览器。
-                </div>
-              </>
-            )}
+            <Label>服务连接</Label>
+            <div className="map-stitcher-server-status">
+              整体扩图使用新版地图拼接工具中启用的图片 API。密钥由服务端保管。
+            </div>
             <Label htmlFor="prompt">生成提示词</Label>
             <textarea id="prompt" rows={3} value={generator.prompt} onChange={(event) => setGenerator((current) => ({ ...current, prompt: event.target.value }))} />
             <div className="switch-row"><span>隐藏所有预览边框</span><Switch aria-label="隐藏所有预览边框" checked={hidePreviewBorders} onCheckedChange={setHidePreviewBorders} /></div>
@@ -1207,7 +1194,7 @@ export function MapEditor() {
           </DialogHeader>
           <ol className="map-stitcher-help-steps">
             <li><span>1</span><div><strong>导入中心地图</strong><p>支持 PNG、JPG、JFIF、WebP，单张不超过 30 MB。一次选择多图会自动填入首圈卡片。</p></div></li>
-            <li><span>2</span><div><strong>生成或上传邻接图</strong><p>点击空卡片，可下载带透明区的重叠模板、调用本地/外部扩图，或手动上传结果。</p></div></li>
+            <li><span>2</span><div><strong>生成或上传邻接图</strong><p>点击空卡片，可下载带透明区的重叠模板、调用图片 API 扩图，或手动上传结果。</p></div></li>
             <li><span>3</span><div><strong>当前图层区域绘制</strong><p>先在右侧选择地表、物体或遮挡层，再打开区域绘制；编辑器只会修改当前图层。碰撞层使用独立的矩形区域编辑器。</p></div></li>
             <li><span>4</span><div><strong>保存与交付</strong><p>导出拼接 PNG、带图层 PSD、可恢复状态包；Godot 包会包含分层 Sprite2D 与 StaticBody2D 碰撞节点。</p></div></li>
           </ol>

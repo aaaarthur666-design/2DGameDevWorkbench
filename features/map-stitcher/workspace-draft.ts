@@ -1,3 +1,4 @@
+import { readAdditionalPrompt } from './generation-request';
 import {
   readWorkspaceDraft,
   listWorkItems,
@@ -11,12 +12,13 @@ export type MapWorkspaceDraft = {
   version: 1;
   id: string;
   snapshot: FrameRoninEditorSnapshot;
-  pending: Pick<GenerationJob, 'tileKey' | 'layer'>[];
+  pending: Pick<GenerationJob, 'tileKey' | 'layer' | 'request'>[];
 };
 
 export async function loadMapWorkspace(
   id?: string,
 ): Promise<MapWorkspaceDraft | undefined> {
+  if (id === 'new') return;
   const items = await listWorkItems();
   const item = id
     ? items.find(
@@ -53,7 +55,11 @@ export async function loadMapWorkspace(
         created.push(asset.url);
         images[layer] = asset;
       }
-      snapshot.tiles.push({ ...tile, images });
+      snapshot.tiles.push({
+        ...tile,
+        images,
+        additionalPrompt: readAdditionalPrompt(tile.additionalPrompt),
+      });
     }
     return { ...draft, snapshot };
   } catch (error) {

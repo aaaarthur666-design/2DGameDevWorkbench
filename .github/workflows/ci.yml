@@ -29,6 +29,7 @@ jobs:
       - run: npm run test:http
       - run: npm run test:interactable
       - run: npm run test:interactable-http
+      - run: npm run test:scene-composer
       - run: npm run test:map-stitcher
       - run: npm run test:frontend
       - run: npm run test:dev-supervisor
@@ -62,3 +63,26 @@ jobs:
         working-directory: .
         env:
           WORKBENCH_TEST_PYTHON: python
+
+  desktop-services:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run sprite-pipeline:setup
+      - run: npm run sprite-pipeline:setup
+      - run: npm run test:desktop-services
+      - run: npm run test:dev-supervisor
+      - run: npm run test:frontend
+      - run: npm run test:agent-acceptance

@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { MapGenerationPrompt } from './map-generation-prompt';
 import {
   Eye,
   EyeOff,
@@ -31,12 +32,15 @@ import type { MapEditorController } from '../use-map-editor-controller';
 export function MapInspector({
   c,
   onUpload,
+  onSettings,
 }: {
   c: MapEditorController;
   onUpload: () => void;
+  onSettings: () => void;
 }) {
   return (
     <aside
+      id="map-inspector"
       className={`map-inspector ${c.panelOpen ? 'open' : ''}`}
       aria-label="地图属性面板"
     >
@@ -70,11 +74,11 @@ export function MapInspector({
       <div className="map-inspector-body" role="tabpanel">
         <fieldset className="map-inspector-fields" disabled={c.busy}>
           {c.panel === 'tile' ? (
-            <TilePanel c={c} onUpload={onUpload} />
+            <TilePanel c={c} onUpload={onUpload} onSettings={onSettings} />
           ) : c.panel === 'region' ? (
             <RegionPanel c={c} />
           ) : (
-            <QueuePanel c={c} />
+            <QueuePanel c={c} onSettings={onSettings} />
           )}
         </fieldset>
       </div>
@@ -85,9 +89,11 @@ export function MapInspector({
 function TilePanel({
   c,
   onUpload,
+  onSettings,
 }: {
   c: MapEditorController;
   onUpload: () => void;
+  onSettings: () => void;
 }) {
   const tile = c.selectedTile;
   const editable = isEditableMapLayer(c.activeMapLayer);
@@ -206,9 +212,11 @@ function TilePanel({
                 像素精修
               </Button>
             </div>
+            {c.activeMapLayer === 'overall' && <MapGenerationPrompt key={tile.key} c={c} onSettings={onSettings} />}
             <Button
               className="map-full-width"
               disabled={
+                (c.activeMapLayer === 'overall' && Boolean(c.generationUnavailable)) ||
                 !editable ||
                 locked ||
                 !readyToGenerate ||
@@ -287,7 +295,7 @@ function TilePanel({
                             'overall-copy': '已确认独立地表',
                             'alpha-reference': '由透明物件派生',
                             'matte-extraction': '黑白参考提取',
-                            'local-fill': '本地镜像补全',
+                            'local-fill': '旧版本地补全',
                             'api-generated': 'API 生成',
                             'pixel-edited': '已精修',
                           }[tile.imageOrigins[layer]!]
@@ -608,7 +616,7 @@ function RegionPanel({ c }: { c: MapEditorController }) {
   );
 }
 
-function QueuePanel({ c }: { c: MapEditorController }) {
+function QueuePanel({ c, onSettings }: { c: MapEditorController; onSettings: () => void }) {
   const [limit, setLimit] = useState(8);
   const active = c.queueState.jobs.some(
     (job) => job.status === 'running' || job.status === 'pending',
@@ -620,9 +628,13 @@ function QueuePanel({ c }: { c: MapEditorController }) {
         <p className="map-muted">
           {c.api.settings.active
             ? '使用已激活的图片 API 扩展整体层。'
-            : '整体扩图使用本地镜像补全。'}{' '}
+            : '启用并配置图片 API 后才能生成整体图片。'}{' '}
           物件提取在本地处理黑白参考。
         </p>
+        {c.generationUnavailable && <div className="map-drawing-hint">
+          <p>{c.generationUnavailable}</p>
+          <Button size="sm" variant="outline" onClick={onSettings}>打开 API 设置</Button>
+        </div>}
         <div className="map-field-pair">
           <label>
             同时生成
@@ -659,7 +671,7 @@ function QueuePanel({ c }: { c: MapEditorController }) {
         </div>
         <Button
           className="map-full-width"
-          disabled={!c.sourceAsset || active || c.imageLocks.overall}
+          disabled={!c.sourceAsset || active || c.imageLocks.overall || Boolean(c.generationUnavailable)}
           onClick={() => c.perform(() => c.startAutomatic(limit))}
         >
           自动扩展并生成，最多 {limit} 块
@@ -667,7 +679,7 @@ function QueuePanel({ c }: { c: MapEditorController }) {
         <Button
           variant="outline"
           className="map-full-width"
-          disabled={!c.sourceAsset || c.imageLocks.overall}
+          disabled={!c.sourceAsset || c.imageLocks.overall || Boolean(c.generationUnavailable)}
           onClick={() => c.perform(() => c.enqueue('overall', true))}
         >
           生成所有空整体卡片
@@ -786,6 +798,10 @@ function QueuePanel({ c }: { c: MapEditorController }) {
                   }
                 </span>
               </div>
+              {job.request && <details className="map-job-prompt">
+                <summary>查看任务提示词 · {c.api.settings.providers.find((p) => p.id === job.request?.provider)?.name ?? job.request.provider}</summary>
+                <pre>{job.request.prompt}</pre>
+              </details>}
               {job.error && <p>{job.error}</p>}
             </li>
           ))}

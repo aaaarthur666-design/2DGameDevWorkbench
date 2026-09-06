@@ -3,7 +3,7 @@
 ## 1. 环境要求
 
 - Node.js 22.13.0 或更高版本；CI 使用 22.13.0。
-- npm，以及能够执行 PowerShell 的 Windows 环境（用于本地 SpritePipeline 辅助脚本）。
+- npm；Windows 与 macOS 使用相同的 Node.js 初始化和启动命令，不依赖 PowerShell。
 - 仅在开发或验证 SpritePipeline 时需要 Python 3.11+ 及其锁定依赖；CI 使用 Python 3.12。
 - 外部地图图像生成是可选能力；本地拼接、交互物导出和工作台壳层不要求 API key。
 
@@ -112,6 +112,7 @@ npm run workbench -- doctor --json
 | MCP、CLI 或共享运行时 | 上述检查，加 `npm run test:mcp` |
 | 工作台壳层、路由、任务聚合 | `npm run test:workbench-shell`、`npm run lint`、`npm run typecheck`、`npm run build` |
 | 原图生成与移送 | `npm run test:reference-art`、SpritePipeline Python 测试，以及清单 / Runtime / 壳层对应检查 |
+| 场景组装 | `npm run test:scene-composer`、`npm run test:workbench-shell`、`npm run test:http`、lint、typecheck、build；可选 Godot 导入检查见 [场景组装](scene-composer.md) |
 | 地图拼接 | `npm run test:map-stitcher`，再按 UI 影响运行前端检查 |
 | 交互物编辑器或 schema | schema 改动先运行 `npm run schema:interactable` 并检查 manifest diff；再运行 `npm run test:interactable`、`npm run test:interactable-http`；兼容配置另跑 `npm run test:interactable-copyworms` |
 | SpritePipeline 总控 | `npm run test:dev-supervisor` |
@@ -146,3 +147,21 @@ CI 会运行 doctor、MCP、适配器、HTTP、交互物、地图、Sprite 总�
 Agent 接口或序列帧自动化变更后，运行 `npm run test:agent-acceptance`，使用隔离真实服务与 fixture 完成 MCP 全流程。详见 [验收说明](agent-phase1-acceptance.md)。
 
 WorkBuddy 前端启动或就绪探测修改后，运行 `npm run test:frontend` 与 `npm run test:mcp`；内部浏览器的人工验收见 [Agent 客户端接入](agent-clients.md#workbuddy-首次对话自动打开)。
+
+## Windows / macOS 本机服务初始化
+
+在仓库根目录依次运行：
+
+```sh
+npm ci
+npm run sprite-pipeline:setup
+npm run dev
+```
+
+初始化通过 Node.js 查找 Python 3.11+，在 Tools/SpritePipeline/.venv 创建本机虚拟环境并安装 requirements.lock，然后执行 pip check 和服务依赖导入检查。重复运行会复用环境并补齐依赖；不会修改系统 Python。Windows 依次查找 py -3、python、python3 和已有的 Codex Python，macOS 查找 python3、python。也可在初始化前通过 SPRITE_PIPELINE_PYTHON 指定解释器的完整路径（不要附加命令参数）。
+
+虚拟环境不能跨操作系统复制。迁移仓库时重新运行初始化；检测到不完整或旧系统的 .venv 时会明确报错，需先将旧目录移走。安装中断后可重新执行相同命令。
+
+npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健康服务会被复用，端口冲突会报错；远程服务配置继续按原规则处理。npm run sprite-pipeline 单独启动 UI，npm run sprite-pipeline:api 单独启动 API，两者使用相同的本机服务地址配置，默认监听 127.0.0.1:7860，不能同时占用该端口。npm run dev:interactable 可在无需 Python 的情况下启动地图、交互物和场景工具。
+
+初始化需要访问 Python 包仓库。依赖安装失败时不会报告就绪，请按错误检查网络或包仓库配置后重试。旧 PowerShell 入口保留为 Node.js 启动器的兼容包装。

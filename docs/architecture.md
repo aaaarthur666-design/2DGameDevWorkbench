@@ -141,3 +141,7 @@ Web 工作台提供生产台、场景台、专业工具和高级配置。它负�
 ## 11. 扩展原则
 
 新增能力时，应先实现独立适配器和清单条目，再让 MCP、CLI 与 Web 自动消费。若需要外部 API，应把认证、重试、错误归一化和输出验证留在服务端适配器；浏览器只获得完成任务所需的非敏感状态。完整步骤见 [开发与验证](development.md#新增或修改能力)。
+
+## 场景组装的网页边界
+
+场景组装在 Manifest 的 `editorModules` 注册网页入口，复用模块导航而不加入 `capabilities` 可执行契约。网页编辑和源包保存在浏览器，私有导出路由通过 loopback Runtime Bridge 复用交互物生成器并装配地图、物件及碰撞。导出结果写入 `outputs/scene-export-<id>/`，记录写入 `work/scene-exports/`；这些记录与 Agent 任务区分。素材没有自动同步或场景内行为编辑。详见[场景组装](scene-composer.md)。

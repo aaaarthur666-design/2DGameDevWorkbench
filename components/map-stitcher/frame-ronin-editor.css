@@ -742,3 +742,312 @@ output.map-drawing-hint {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Compact, canvas-first workspace. Menus absorb overflow; bars never wrap. */
+.map-workspace .map-project-bar {
+  height: 44px;
+  padding: 5px 12px;
+  align-items: center;
+  flex-direction: row;
+  gap: 12px;
+}
+.map-workspace .map-project-title {
+  min-width: 0;
+  flex: 1;
+  gap: 8px;
+}
+.map-workspace .map-project-title h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+.map-project-title > span {
+  flex-shrink: 0;
+}
+.map-workspace .map-project-actions,
+.map-workspace .map-view-options,
+.map-workspace .map-primary-views {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.map-workspace .map-project-actions button {
+  min-height: 0;
+  height: 32px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.map-workbench-mark {
+  color: #88dcd7;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+.map-workspace .map-draft-control {
+  color: #a1b5c5;
+}
+.map-workspace .map-draft-control span {
+  font-size: 12px;
+}
+.map-workspace .map-draft-control[data-error='true'] {
+  color: #f1b978;
+}
+.map-workspace .map-view-bar {
+  height: 40px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  padding: 5px 12px;
+  gap: 8px;
+}
+.map-workspace .map-view-bar button {
+  height: 28px;
+  min-height: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.map-workspace .map-view-menu-trigger span {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-workspace .map-primary-views .map-view-menu-trigger {
+  border-left: 1px solid var(--map-line);
+  border-radius: 0;
+}
+.map-workspace .map-work-area {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+}
+.map-panel-group {
+  width: 100%;
+  height: 100%;
+}
+.map-canvas-panel,
+.map-canvas-container,
+.map-inspector-panel,
+.map-workspace .map-canvas,
+.map-workspace .map-inspector.open {
+  height: 100%;
+}
+.map-workspace .map-inspector.open {
+  position: static;
+  width: 100%;
+  box-shadow: none;
+  border-left: 0;
+}
+.map-workspace .map-panel-handle {
+  width: 8px;
+  background: #111923;
+  border-inline: 1px solid #26303d;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 15;
+}
+.map-panel-handle > div {
+  background: #50647d;
+  width: 2px;
+  height: 30px;
+}
+.map-workspace .map-panel-handle:hover,
+.map-workspace .map-panel-handle:focus-visible,
+.map-workspace .map-panel-handle[data-separator='active'] {
+  background: #315569;
+  border-color: #7ddbd5;
+}
+.map-workspace .map-panel-handle:focus-visible {
+  outline-offset: -2px;
+}
+.map-inspector-tabs {
+  flex-shrink: 0;
+}
+.map-inspector-body {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.map-inspector-drawer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+}
+.map-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: #0005;
+}
+.map-workspace .map-inspector-drawer .map-inspector.open {
+  position: relative;
+  width: min(340px, 90%);
+  border-left: 1px solid var(--map-line);
+  box-shadow: -12px 0 30px #0006;
+}
+.map-workspace .map-status-bar {
+  height: 28px;
+  min-height: 28px;
+  overflow: hidden;
+  padding: 0 12px;
+  gap: 12px;
+  font-size: 12px;
+}
+.map-workspace .map-status-bar > span {
+  display: block;
+}
+.map-workspace .map-selection-status {
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-workspace .map-status-hint {
+  display: block;
+  min-width: 24px;
+  height: 26px;
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-status-hint:hover {
+  color: #e6faff;
+}
+.map-task-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #a8bdcf;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.map-task-summary[data-attention='true'] {
+  color: #f1b978;
+}
+.map-task-summary:hover {
+  background: #243345;
+  border-radius: 4px;
+}
+.map-compact-menu,
+.map-hint-detail {
+  width: max-content;
+  min-width: 210px;
+  max-width: min(420px, calc(100vw - 16px));
+  background: #141c27;
+  color: #e5eaf2;
+  border: 1px solid #354156;
+  font:
+    14px/1.5 Inter,
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
+}
+.map-compact-menu [role^='menuitem'] {
+  min-height: 34px;
+  padding: 6px 12px;
+}
+.map-compact-menu [data-highlighted] {
+  background: #2a3b50;
+}
+.map-compact-menu .map-project-overflow-action {
+  display: none;
+}
+.map-hint-detail {
+  padding: 12px;
+  width: min(420px, calc(100vw - 16px));
+  overflow-wrap: anywhere;
+}
+.map-hint-detail p {
+  margin: 0;
+}
+.map-hint-detail p + p {
+  margin-top: 8px;
+  color: #9aa6b8;
+}
+.map-workspace[data-focus-mode='true'] .map-project-bar,
+.map-workspace[data-focus-mode='true'] .map-status-bar {
+  display: none;
+}
+@media (max-width: 1050px) {
+  .map-workspace .map-draft-control span {
+    display: none;
+  }
+  .map-workspace .map-project-wide-action {
+    display: none;
+  }
+  .map-compact-menu .map-project-overflow-action {
+    display: flex;
+  }
+}
+@media (max-width: 680px) {
+  .map-workspace .map-view-wide {
+    display: none;
+  }
+  .map-workspace .map-project-bar,
+  .map-workspace .map-view-bar {
+    padding-inline: 6px;
+    gap: 4px;
+  }
+  .map-workspace .map-tool-label {
+    display: none;
+  }
+  .map-workspace .map-project-title > span {
+    display: none;
+  }
+  .map-workspace .map-view-menu-trigger span {
+    max-width: 72px;
+  }
+  .map-workspace .map-view-bar button {
+    padding-inline: 6px;
+  }
+  .map-workspace .map-status-bar {
+    gap: 6px;
+    padding-inline: 6px;
+  }
+  .map-workspace .map-mode-status {
+    display: none;
+  }
+  .map-workspace .map-selection-status {
+    max-width: 24%;
+  }
+  .map-task-summary {
+    max-width: 48%;
+    overflow: hidden;
+  }
+  .map-task-summary span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@media (max-width: 430px) {
+  .map-workspace .map-focus-label {
+    display: none;
+  }
+  .map-workspace .map-view-options {
+    gap: 1px;
+  }
+}
+
+/* Tile-specific generation requirements stay within the resizable inspector. */
+.map-workspace .map-generation-prompt { display: grid; gap: 6px; min-width: 0; }
+.map-workspace .map-generation-prompt textarea,
+.map-prompt-dialog textarea { width: 100%; min-height: 82px; resize: vertical; padding: 10px; border: 1px solid var(--map-border, #303746); border-radius: 8px; background: var(--map-input, #111720); color: inherit; font: inherit; line-height: 1.5; }
+.map-workspace .map-prompt-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
+.map-workspace .map-prompt-actions .map-muted { white-space: nowrap; }
+.map-prompt-dialog { max-width: min(720px, calc(100vw - 32px)); }
+.map-prompt-dialog textarea { max-height: 60dvh; }
+.map-workspace .map-job-prompt { min-width: 0; font-size: 12px; }
+.map-workspace .map-job-prompt summary { cursor: pointer; overflow-wrap: anywhere; }
+.map-workspace .map-job-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; font: inherit; }

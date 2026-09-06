@@ -123,7 +123,7 @@ try {
         .filter((m) => m.productionLine === 'scene')
         .map((m) => m.id)
         .sort(),
-      ['interactable-editor', 'map-stitcher'],
+      ['interactable-editor', 'map-stitcher', 'scene-composer'],
     );
   });
   test('prepared and unconfigured tasks never appear completed or running', () => {

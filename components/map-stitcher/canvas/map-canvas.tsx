@@ -254,6 +254,9 @@ export function MapCanvas({
     });
   };
   const fitOnRequest = useEffectEvent(fit);
+  // The stage is anchored at 50% / 50% of this persistent canvas. Resizing the
+  // inspector or toggling focus mode keeps pan/zoom and the center map point;
+  // fitting is an explicit command, never a ResizeObserver side effect.
   useEffect(() => {
     const frame = requestAnimationFrame(() => fitOnRequest());
     return () => cancelAnimationFrame(frame);

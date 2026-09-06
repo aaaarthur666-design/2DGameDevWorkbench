@@ -196,38 +196,26 @@ export async function createGenerationTemplate(
   return canvas;
 }
 
-export async function generateLocalLayerFill(
+/** All image layers share one output frame; editor placeholders never extend it. */
+export function stitchedMapFrame(
   tiles: FrameRoninTile[],
-  target: FrameRoninTile,
-  layer: MapImageLayer,
   sourceWidth: number,
   sourceHeight: number,
 ) {
-  const canvas = await createGenerationTemplate(
-    tiles,
-    target,
-    layer,
-    sourceWidth,
-    sourceHeight,
+  const included = tiles.filter(
+    (tile) => !tile.hidden && Object.values(tile.images).some(Boolean),
   );
-  const context = context2d(canvas);
-  const nearest = tiles
-    .filter(
-      (tile) => tile.key !== target.key && !tile.hidden && tile.images[layer],
-    )
-    .sort((a, b) => tileDistance(a, target) - tileDistance(b, target))[0];
-  if (!nearest?.images[layer])
-    throw new Error('当前图层没有可用于本地补全的相邻图片');
-  const image = await loadImage(nearest.images[layer].url);
-  context.save();
-  context.globalCompositeOperation = 'destination-over';
-  const flipX = nearest.x < target.x;
-  const flipY = nearest.y < target.y;
-  context.translate(flipX ? canvas.width : 0, flipY ? canvas.height : 0);
-  context.scale(flipX ? -1 : 1, flipY ? -1 : 1);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  context.restore();
-  return canvasToBlob(canvas);
+  if (!included.length) throw new Error('地图中没有可导出的可见图像卡片。');
+  const bounds = frameRoninBounds(included);
+  const originX = Math.floor(bounds.minX * sourceWidth);
+  const originY = Math.floor(bounds.minY * sourceHeight);
+  const width = Math.max(1, Math.ceil(bounds.maxX * sourceWidth) - originX);
+  const height = Math.max(1, Math.ceil(bounds.maxY * sourceHeight) - originY);
+  if (width > 30000 || height > 30000 || width * height > 64_000_000)
+    throw new Error(
+      `合成画布为 ${width} × ${height} 像素，超过 6400 万像素或 30000 像素边长，请减少输出范围。`,
+    );
+  return { tiles: included, bounds, originX, originY, width, height };
 }
 
 export async function renderStitchedMap(
@@ -237,22 +225,20 @@ export async function renderStitchedMap(
   sourceWidth: number,
   sourceHeight: number,
 ): Promise<RenderedMap> {
-  if (!tiles.length) throw new Error('地图中没有可导出的卡片');
-  const bounds = frameRoninBounds(tiles);
-  const originX = Math.floor(bounds.minX * sourceWidth);
-  const originY = Math.floor(bounds.minY * sourceHeight);
-  const width = Math.max(1, Math.ceil(bounds.maxX * sourceWidth) - originX);
-  const height = Math.max(1, Math.ceil(bounds.maxY * sourceHeight) - originY);
-  if (width > 30000 || height > 30000 || width * height > 64_000_000)
-    throw new Error(
-      '合成画布超过 6400 万像素或 30000 像素边长，请减少输出范围。',
-    );
+  const {
+    tiles: included,
+    bounds,
+    originX,
+    originY,
+    width,
+    height,
+  } = stitchedMapFrame(tiles, sourceWidth, sourceHeight);
   const canvas = createCanvas(width, height);
   const context = context2d(canvas);
 
   if (layer === 'top') {
     const overall = await renderStitchedMap(
-      tiles,
+      included,
       'overall',
       shapes,
       sourceWidth,
@@ -264,7 +250,9 @@ export async function renderStitchedMap(
     for (const shape of shapes.filter(
       (candidate) => candidate.layer === 'top',
     )) {
-      const tile = tiles.find((candidate) => candidate.key === shape.tileKey);
+      const tile = included.find(
+        (candidate) => candidate.key === shape.tileKey,
+      );
       if (!tile || tile.hidden) continue;
       maskContext.beginPath();
       appendWorldRegionPath(
@@ -283,8 +271,7 @@ export async function renderStitchedMap(
     return { canvas, bounds, originX, originY, width, height };
   }
 
-  for (const tile of tiles) {
-    if (tile.hidden) continue;
+  for (const tile of included) {
     const tileCanvas = await renderFrameRoninTile(
       tile,
       layer,
@@ -376,13 +363,6 @@ function applyFeather(
 
 function canvasHasPixels(canvas: HTMLCanvasElement) {
   return canvas.width > 0 && canvas.height > 0;
-}
-
-function tileDistance(a: FrameRoninTile, b: FrameRoninTile) {
-  return Math.hypot(
-    a.x + a.w / 2 - b.x - b.w / 2,
-    a.y + a.h / 2 - b.y - b.h / 2,
-  );
 }
 
 function createCanvas(width: number, height: number) {

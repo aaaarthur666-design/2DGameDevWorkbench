@@ -1,4 +1,12 @@
 'use client';
+import {
+  captureGenerationRequest,
+  composeGenerationPrompt,
+  generationUnavailableReason,
+  readAdditionalPrompt,
+  type GenerationRequest,
+} from '@/features/map-stitcher/generation-request';
+import { useMapLayout } from './use-map-layout';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from '@/components/ui/toast';
 import {
@@ -61,7 +69,6 @@ import {
 import {
   createGenerationTemplate,
   deriveObjectFromMattes,
-  generateLocalLayerFill,
   renderStitchedMap,
 } from '@/features/map-stitcher/layer-engine';
 import {
@@ -122,7 +129,8 @@ export function useMapEditorController() {
   const [regionTool, setRegionTool] = useState<RegionTool>('select');
   const [session, setSession] = useState(0);
   const [panel, setPanel] = useState<'tile' | 'region' | 'queue'>('tile');
-  const [panelOpen, setPanelOpen] = useState(true);
+  const layout = useMapLayout();
+  const { setPanelOpen } = layout;
   const [preferences, setPreferences, preferencesRef] = useLiveState({
     ...DEFAULT_EDITOR_PREFERENCES,
   });
@@ -165,6 +173,7 @@ export function useMapEditorController() {
   } | null>(null);
   const [queueState, setQueueState] = useState<QueueSnapshot>(initialQueue);
   const automaticRemaining = useRef(0);
+  const automaticRequest = useRef<GenerationRequest | null>(null);
   const [queue] = useState(
     () =>
       new GenerationQueue({
@@ -264,6 +273,7 @@ export function useMapEditorController() {
   };
   const cancelQueue = () => {
     automaticRemaining.current = 0;
+    automaticRequest.current = null;
     queue.cancel();
   };
   const invalidate = (resetMode = true) => {
@@ -468,6 +478,34 @@ export function useMapEditorController() {
   const resetDocument = (next: MapDocument) => {
     history.reset(next);
     publish();
+  };
+  const newProject = () => {
+    invalidate();
+    queue.reset();
+    resetDocument({ tiles: [], shapes: [] });
+    historySelections.current = new WeakMap();
+    setWorkspaceId('');
+    setSelection({ kind: 'none' });
+    setActiveMapLayer('overall');
+    setActiveRegionLayer('collision');
+    setRegionTool('select');
+    setPanel('tile');
+    setPreferences({ ...DEFAULT_EDITOR_PREFERENCES });
+    setImageLocks({ ...DEFAULT_IMAGE_LOCKS });
+    setRegionLocks({ ...DEFAULT_REGION_LOCKS });
+    setRegionVisibility({ ...DEFAULT_REGION_VISIBILITY });
+    setHorizontalOverlap(15);
+    setVerticalOverlap(15);
+    setExpandSplit(4);
+    setPan({ x: 0, y: 0 });
+    setZoom(1);
+    setPanMode(false);
+    setHideCards(false);
+    setHideBorders(false);
+    setExportPreview(false);
+    setPrompt(DEFAULT_OVERALL_PROMPT);
+    setFitRequest((value) => value + 1);
+    setHint('已新建空白项目。导入中心地图图片即可开始。');
   };
   const importImages = async (files: File[]) => {
     if (!files.length) return;
@@ -736,7 +774,7 @@ export function useMapEditorController() {
     if (!selectedKey || !isEditableMapLayer(activeMapLayer)) return;
     if (selectedKey === CENTER_KEY && activeMapLayer === 'overall')
       throw new Error(
-        '中心整体图用于地图坐标，不能单独删除。可通过导入地图新建项目。',
+        '中心整体图用于地图坐标，不能单独删除。可通过顶部“新建项目”清空地图。',
       );
     applyAssets(
       [{ ticket: imageTicket(selectedKey, activeMapLayer) }],
@@ -852,16 +890,30 @@ export function useMapEditorController() {
     regionVisibility,
     editorPreferences: preferences,
   });
-  const restoreWorkspaceSnapshot = (loaded: FrameRoninEditorSnapshot, id: string) => {
+  const restoreWorkspaceSnapshot = (
+    loaded: FrameRoninEditorSnapshot,
+    id: string,
+  ) => {
     invalidate();
     resetDocument(loaded);
     setWorkspaceId(id);
-    setSelection(loaded.selectedKey ? { kind: 'tile', tileKey: loaded.selectedKey } : { kind: 'none' });
+    setSelection(
+      loaded.selectedKey
+        ? { kind: 'tile', tileKey: loaded.selectedKey }
+        : { kind: 'none' },
+    );
     setActiveMapLayer(loaded.activeMapLayer);
-    setPan(loaded.pan); setZoom(loaded.zoom); setPrompt(loaded.overallPrompt);
-    setHorizontalOverlap(loaded.horizontalOverlapPercent); setVerticalOverlap(loaded.verticalOverlapPercent);
-    setExpandSplit(loaded.expandSplit); setHideCards(loaded.hidePreviewCards); setHideBorders(loaded.hidePreviewBorders);
-    setImageLocks(loaded.imageLocks); setRegionLocks(loaded.regionLocks); setRegionVisibility(loaded.regionVisibility);
+    setPan(loaded.pan);
+    setZoom(loaded.zoom);
+    setPrompt(loaded.overallPrompt);
+    setHorizontalOverlap(loaded.horizontalOverlapPercent);
+    setVerticalOverlap(loaded.verticalOverlapPercent);
+    setExpandSplit(loaded.expandSplit);
+    setHideCards(loaded.hidePreviewCards);
+    setHideBorders(loaded.hidePreviewBorders);
+    setImageLocks(loaded.imageLocks);
+    setRegionLocks(loaded.regionLocks);
+    setRegionVisibility(loaded.regionVisibility);
     setPreferences(readEditorPreferences(loaded.editorPreferences));
     setExportPreview(false);
     setHint('已恢复本机地图草稿，原始图片、图层和区域都已载入。');
@@ -870,6 +922,7 @@ export function useMapEditorController() {
     tileKey: string,
     layer: MapImageLayer,
     signal = new AbortController().signal,
+    capturedRequest?: GenerationRequest,
   ) => {
     const ticket = imageTicket(tileKey, layer);
     const current = history.document;
@@ -889,18 +942,19 @@ export function useMapEditorController() {
       if (!tile.images.object)
         throw new Error('生成黑白参考需要先上传透明物件。');
       blob = await createMatteReference(tile.images.object, layer);
-    } else if (!api.settingsRef.current.active) {
-      blob = await generateLocalLayerFill(
-        current.tiles,
-        tile,
-        'overall',
-        source.width,
-        source.height,
-      );
     } else {
-      const settings = api.settingsRef.current;
-      if (!settings.provider || !promptRef.current.trim())
-        throw new Error('请配置图片 API 和整体层提示词。');
+      const request =
+        capturedRequest ??
+        captureGenerationRequest(
+          api.settingsRef.current,
+          promptRef.current,
+          tile.additionalPrompt,
+        );
+      const unavailable = generationUnavailableReason(
+        api.settingsRef.current,
+        request.provider,
+      );
+      if (unavailable) throw new Error(unavailable);
       const template = await createGenerationTemplate(
         current.tiles,
         tile,
@@ -914,9 +968,9 @@ export function useMapEditorController() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           operation: 'generate-layer',
-          provider: settings.provider,
+          provider: request.provider,
           image: template.toDataURL('image/png'),
-          prompt: upgradeLegacyOverallPrompt(promptRef.current),
+          prompt: request.prompt,
           tile: { key: tile.key, x: tile.x, y: tile.y, w: tile.w, h: tile.h },
           layer: 'overall',
           mask_mode: 'white',
@@ -948,9 +1002,7 @@ export function useMapEditorController() {
           ? 'matte-extraction'
           : layer === 'black' || layer === 'white'
             ? 'alpha-reference'
-            : api.settingsRef.current.active
-              ? 'api-generated'
-              : 'local-fill';
+            : 'api-generated';
     applyAssets(
       [{ ticket, asset, origin, surfaceIsDraft: layer === 'surface' }],
       layer === 'surface'
@@ -1016,13 +1068,37 @@ export function useMapEditorController() {
       )
       .slice(0, automaticRemaining.current);
     automaticRemaining.current -= targets.length;
-    queue.add(targets.map((tile) => ({ tileKey: tile.key, layer: 'overall' })));
+    const captured = automaticRequest.current;
+    if (!captured) return;
+    queue.add(
+      targets.map((tile) => ({
+        tileKey: tile.key,
+        layer: 'overall',
+        request: {
+          provider: captured.provider,
+          prompt: composeGenerationPrompt(
+            captured.prompt,
+            tile.additionalPrompt,
+          ),
+        },
+      })),
+    );
   };
   useEffect(() => {
     queue.configure({
       concurrency: () => preferencesRef.current.concurrency,
-      run: (job, signal) => generateLayer(job.tileKey, job.layer, signal),
+      run: (job, signal) =>
+        generateLayer(job.tileKey, job.layer, signal, job.request),
       canStart: (job, active) => {
+        if (job.layer === 'overall') {
+          if (!job.request)
+            return '旧任务没有提示词快照，请取消后重新加入生成队列。';
+          const reason = generationUnavailableReason(
+            api.settingsRef.current,
+            job.request.provider,
+          );
+          if (reason) return reason;
+        }
         if (imageLocksRef.current[job.layer])
           return `${IMAGE_VIEW_LABELS[job.layer]}已锁定，队列暂停。`;
         const source = history.document.tiles.find(
@@ -1065,7 +1141,20 @@ export function useMapEditorController() {
     if (!targets.length)
       throw new Error('没有符合条件的目标卡片。物件提取需要黑白参考。');
     for (const tile of targets) imageTicket(tile.key, layer);
-    queue.add(targets.map((tile) => ({ tileKey: tile.key, layer })));
+    queue.add(
+      targets.map((tile) => ({
+        tileKey: tile.key,
+        layer,
+        request:
+          layer === 'overall'
+            ? captureGenerationRequest(
+                api.settingsRef.current,
+                promptRef.current,
+                tile.additionalPrompt,
+              )
+            : undefined,
+      })),
+    );
     setPanel('queue');
     setPanelOpen(true);
   };
@@ -1080,6 +1169,10 @@ export function useMapEditorController() {
         )
     )
       throw new Error('请先完成或取消现有生成队列。');
+    automaticRequest.current = captureGenerationRequest(
+      api.settingsRef.current,
+      promptRef.current,
+    );
     queue.clear();
     automaticRemaining.current = Math.max(1, Math.min(64, Math.round(limit)));
     expand(selectedKey ?? CENTER_KEY);
@@ -1087,6 +1180,24 @@ export function useMapEditorController() {
     setPanel('queue');
     setPanelOpen(true);
   };
+  const updateTilePrompt = (tileKey: string, value: string) => {
+    const additionalPrompt = readAdditionalPrompt(value);
+    const current = history.document;
+    const tile = current.tiles.find((item) => item.key === tileKey);
+    if (!tile || (tile.additionalPrompt ?? '') === additionalPrompt) return;
+    commit(
+      {
+        ...current,
+        tiles: current.tiles.map((item) =>
+          item.key === tileKey ? { ...item, additionalPrompt } : item,
+        ),
+      },
+      '修改地图块额外提示词',
+    );
+  };
+  const generationUnavailable =
+    generationUnavailableReason(api.settings) ||
+    (!prompt.trim() ? '请填写整体层基础提示词。' : null);
   const createExportArtifact = async (
     format: MapExportFormat,
     layer: MapDisplayLayer = mapLayerRef.current,
@@ -1128,10 +1239,28 @@ export function useMapEditorController() {
       setBusy(false);
     }
   };
-  const exportArtifact = async (format: MapExportFormat, layer?: MapDisplayLayer) => {
+  const exportArtifact = async (
+    format: MapExportFormat,
+    layer?: MapDisplayLayer,
+  ) => {
     const result = await createExportArtifact(format, layer);
-    window.dispatchEvent(new CustomEvent('workbench:map-export', { detail: { id: workspaceId, format } }));
+    window.dispatchEvent(
+      new CustomEvent('workbench:map-export', {
+        detail: { id: workspaceId, format },
+      }),
+    );
     return result;
+  };
+  const composeScene = async () => {
+    if (busy) throw new Error('请等待当前地图操作完成。');
+    setBusy(true);
+    try {
+      const { startSceneFromMap } =
+        await import('@/features/scene-composer/browser');
+      return await startSceneFromMap(snapshot());
+    } finally {
+      setBusy(false);
+    }
   };
   useEffect(() => {
     // Strict Mode and Fast Refresh re-run effects without discarding the document.
@@ -1149,6 +1278,7 @@ export function useMapEditorController() {
   return {
     workspaceId,
     getWorkspaceSnapshot: snapshot,
+    composeScene,
     restoreWorkspaceSnapshot,
     document,
     tiles,
@@ -1170,8 +1300,7 @@ export function useMapEditorController() {
     resetSession,
     panel,
     setPanel,
-    panelOpen,
-    setPanelOpen,
+    ...layout,
     preferences,
     setPreferences,
     imageLocks,
@@ -1202,6 +1331,8 @@ export function useMapEditorController() {
     setExportPreview,
     prompt,
     setPrompt,
+    updateTilePrompt,
+    generationUnavailable,
     api,
     hint,
     setHint,
@@ -1212,6 +1343,7 @@ export function useMapEditorController() {
     applyFineEdit,
     perform,
     report,
+    newProject,
     importImages,
     openProject,
     uploadToLayer,

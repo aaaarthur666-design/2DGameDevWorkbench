@@ -118,6 +118,7 @@ export interface FrameRoninTile {
   imageOrigins?: Partial<Record<MapImageLayer, ImageOrigin>>;
   /** A full overall copy is not yet a separated surface, even after pixel edits. */
   surfaceIsDraft?: boolean;
+  additionalPrompt?: string;
   feather: Feather;
   hidden: boolean;
 }
@@ -173,6 +174,7 @@ export interface PixelworkMapStateV2 {
   drawShapes: RegionShape[];
   /** Workbench-only UI preferences; ignored safely by FrameRonin readers. */
   workbench?: {
+    tileAdditionalPrompts?: Record<string, string>;
     tileImageOrigins?: Record<
       string,
       Partial<Record<MapImageLayer, ImageOrigin>>
