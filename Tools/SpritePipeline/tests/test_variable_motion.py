@@ -1,3 +1,4 @@
+from vision_test_fixtures import observed
 import base64
 import io
 import json
@@ -19,7 +20,7 @@ def test_actual_frames_sent_once_in_order_with_correct_labels(setup, monkeypatch
     s, _, f = setup
     monkeypatch.setenv('SPRITE_PIPELINE_VISION_PROVIDER', provider)
     paths = f.write_sequence(f.root/'variable-vision', shifts=tuple(i % 4 for i in range(count)))
-    report = {**PASS, 'verdict': 'uncertain'} if count == 1 else {**FAIL, 'issues': [{**FAIL['issues'][0], 'frames': [count]}]}
+    report = observed({**PASS, 'verdict': 'uncertain'} if count == 1 else PASS,count)
     response = ({'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(report)}}]}
                 if provider == 'hunyuan' else {'status': 'completed', 'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': json.dumps(report)}]}]})
     with patch.object(VisionReviewer, 'key', return_value='test-only-key'), patch('sprite_pipeline.vision_review.httpx.Client') as factory:
@@ -27,7 +28,7 @@ def test_actual_frames_sent_once_in_order_with_correct_labels(setup, monkeypatch
         client.post.return_value.status_code = 200
         client.post.return_value.json.return_value = response
         result = VisionReviewer(s.settings).review(paths, 'attack', f.reference_path)
-        body = client.post.call_args.kwargs['json']
+        body = client.post.call_args_list[0].kwargs['json']
         content = body['messages' if provider == 'hunyuan' else 'input'][0]['content']
         labels = [part['text'] for part in content if part['type'] in {'text', 'input_text'} and part['text'].startswith('Frame ')]
         assert labels == [f'Frame {i+1}/{count}' for i in range(count)]
@@ -47,14 +48,15 @@ def test_actual_frames_sent_once_in_order_with_correct_labels(setup, monkeypatch
         bounds = schema['$defs']['MotionIssue']['properties']['frames']['items']
         assert bounds['minimum'] == 1 and bounds['maximum'] == count
         assert result['frame_count'] == count
-        assert client.post.call_count == 1
+        assert client.post.call_count == 2
+        assert result['verdict'] == 'uncertain'
 
 
 @pytest.mark.parametrize('count', [1, 8, 17, 64])
 def test_response_cannot_reference_nonexistent_frame(setup, count):
     s, _, f = setup
     paths = f.write_sequence(f.root/'bounds', shifts=tuple(i%4 for i in range(count)))
-    report = {**FAIL, 'issues': [{**FAIL['issues'][0], 'frames': [count+1]}]}
+    report = observed({**FAIL, 'issues': [{**FAIL['issues'][0], 'frames': [count+1]}]},count)
     with patch.object(VisionReviewer, 'key', return_value='test-only-key'), patch('sprite_pipeline.vision_review.httpx.Client') as factory:
         client = factory.return_value.__enter__.return_value
         client.post.return_value.status_code = 200
@@ -93,28 +95,30 @@ def test_default_generation_reviews_all_returned_frames(setup, count, action):
 def test_nondefault_request_count_keeps_attack_policy(setup):
     s, _, f = setup
     job = s.create_job(GenerationRequest(character_id=f.character_id, action_id='attack', provider='pixellab', frame_count=8, loop=False))
-    assert job.motion_control['maximum_extra_generations'] == 2
+    assert job.motion_control['maximum_extra_generations'] == 0
 
 
-def test_seventeenth_frame_auto_repair_preserves_every_other_frame(setup):
+def test_seventeenth_frame_manual_repair_preserves_every_other_frame(setup):
     s, p, _ = setup
     p.frame_count = 17
     p.edit_shifts = (1,2,3,1)
     failure = {**FAIL, 'issues': [{**FAIL['issues'][0], 'frames': [17]}]}
     with patch.object(VisionReviewer, 'review', side_effect=[failure, PASS]) as review:
         result = s.generate_job(create(setup).job_id)
-    assert result.motion_control['state'] == 'passed', result.motion_control
+        control=MotionCorrection(s)
+        attempt=control.manual(result.job_id,1,16,result.candidates[0].frames[16].sha256,phase="recover",wait=True)
+        result=control.adopt(result.job_id,attempt["id"],manual=True)
     candidate = result.candidates[0]
     assert len(candidate.frames) == 17 and len(p.requests) == 2
     assert [len(call.args[0]) for call in review.call_args_list] == [17,17]
-    assert result.motion_control['attempts'][0]['context'] == [13,14,15,16]
+    assert result.motion_control['attempts'][0]['context'] == [15,16,16,-1]
     assert candidate.frames[16].active_path.startswith('motion/')
     assert all(not frame.active_path.startswith('motion/') for frame in candidate.frames[:16])
     assert all(s.store.resolve_job_path(result.job_id,frame.raw_path).is_file() for frame in candidate.frames)
 
 
 @pytest.mark.parametrize('count', [8, 17])
-def test_variable_frame_budget_remains_two_after_restart(setup, count):
+def test_variable_frame_failed_check_never_regenerates_on_refresh(setup, count):
     s, p, _ = setup
     p.frame_count = count
     failure = {**FAIL, 'issues': [{**FAIL['issues'][0], 'frames': [count]}]}
@@ -122,12 +126,12 @@ def test_variable_frame_budget_remains_two_after_restart(setup, count):
         result = s.generate_job(create(setup).job_id)
         for _ in range(3):
             s.generate_job(result.job_id)
-        assert review.call_count == 3
+        assert review.call_count == 1
     assert result.motion_control['state'] == 'needs_repair'
-    assert len(p.requests) == 3 and len(result.motion_control['attempts']) == 2
+    assert len(p.requests) == 1 and len(result.motion_control['attempts']) == 0
     with pytest.raises(ConflictError, match='检查已完成'):
         MotionCorrection(s).resume(result.job_id)
-    assert len(s.get_job(result.job_id).motion_control['attempts']) == 2
+    assert len(s.get_job(result.job_id).motion_control['attempts']) == 0
 
 
 @pytest.mark.parametrize('count', [1, 2, 3, 8, 17])
@@ -141,9 +145,11 @@ def test_manual_edge_repair_keeps_actual_length_and_context_padding(setup, count
         c = job.candidates[0]
         target = count-1 if end else 0
         control = MotionCorrection(s)
-        attempt = control.manual(job.job_id,1,target,c.frames[target].sha256,wait=True)
+        attempt = control.manual(job.job_id,1,target,c.frames[target].sha256,phase="recover" if end else "prepare",wait=True)
         assert len(attempt['context']) == 4
-        assert all(0 <= i < count for i in attempt['context'])
+        assert attempt['context'][-1] == -1
+        assert all(0 <= i < count for i in attempt['context'][:3])
+        assert p.requests[-1].edit_frames[3] == (s.store.job_dir(job.job_id)/'input/reference.png').read_bytes()
         assert len(p.requests[-1].edit_frames) == 4
         adopted = control.adopt(job.job_id,attempt['id'],manual=True)
     frames = adopted.candidates[0].frames
@@ -159,6 +165,8 @@ def old_seventeen_frame_job(setup):
         result = s.generate_job(create(setup).job_id)
     with s.store.locked_job(result.job_id) as saved:
         saved.motion_control['reviews'] = {'initial-1': {'state':'checking'}}
+        saved.candidates[0].motion_review=None
+        saved.touch('motion_automation_stopped',message='视觉检查需要完整的 16 帧动作')
     return s.get_job(result.job_id)
 
 
@@ -181,7 +189,7 @@ def test_explicit_resume_legacy_unsent_check_reuses_original_generation(setup):
     assert result.motion_control['state'] == 'passed'
     assert len(p.requests) == 1 and review.call_count == 1
     assert before == [frame.sha256 for frame in result.candidates[0].frames]
-    assert result.motion_control['maximum_extra_generations'] == 2
+    assert result.motion_control['maximum_extra_generations'] == 0
 
 
 def test_sent_timeout_is_recorded_and_cannot_be_resumed(setup):

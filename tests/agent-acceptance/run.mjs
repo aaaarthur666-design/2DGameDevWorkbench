@@ -1,5 +1,6 @@
 import '../helpers/runtime-workspace.mjs';
 import assert from 'node:assert/strict';
+import JSZip from 'jszip';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile, access, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -95,6 +96,11 @@ try {
   const listed = value(await call('workbench_list_capabilities'));
   assert(listed.capabilities.some((c) => c.id === 'reference-art'));
   assert.equal(listed.conversationGuidance.createsTask, false);
+  const engineering = listed.conversationGuidance.engineering;
+  assert.equal(engineering.mode, 'external-agent');
+  assert.equal(engineering.createsTask, false);
+  await access(path.join(root, engineering.skill));
+  await access(path.join(root, engineering.guide));
   assert.match(listed.conversationGuidance.text, /AskUserQuestion/);
   const description = value(
     await call('workbench_describe_capability', {
@@ -154,6 +160,24 @@ try {
   );
   assert(result.outputsVerified);
   const candidate = result.result.candidates[0].candidateIndex;
+  const beforeInspect = value(await call('workbench_list_tasks', {query:jobId}));
+  const native = value(await call('workbench_get_result', {jobId, candidateIndex:candidate}));
+  assert.equal(new URL(native.presentation.viewUrl).searchParams.get('job'),jobId);
+  assert.equal(new URL(native.presentation.viewUrl).searchParams.get('candidate'),String(candidate));
+  assert.equal(native.presentation.browserOpened,false);
+  assert.equal(native.presentation.state,'attention_required');
+  const exact = await call('workbench_get_result',{taskId:initial.taskId,candidateIndex:candidate});
+  assert(!exact.content[0].text.includes('orderedFrames'));
+  assert(exact.structuredContent.result.orderedFrames.length);
+  const detailed = await call('workbench_get_result',{taskId:initial.taskId,detail:true});
+  assert(JSON.parse(detailed.content[0].text).result.orderedFrames.length);
+  await call('workbench_get_result',{jobId,candidateIndex:999},true);
+  await call('workbench_get_result',{taskId:initial.taskId,jobId},true);
+  await client.close(); client = await connect();
+  await call('workbench_get_result',{jobId,candidateIndex:candidate});
+  assert.deepEqual(value(await call('workbench_list_tasks',{query:jobId})),beforeInspect);
+  report.checks.push('precise native/task candidate links, compact and full results, reconnect/read-only inspection creates no tasks');
+
   assert(result.result.orderedFrames.length > 0);
   const image = await call('workbench_read_artifact', {
     taskId: initial.taskId,
@@ -218,9 +242,16 @@ try {
   assert(
     delivery.outputsVerified &&
       delivery.result.spriteSheet &&
+      delivery.result.godotPackage &&
       delivery.result.preview,
   );
   for (const item of delivery.artifacts) await access(item.absolutePath);
+  const godotZip = await JSZip.loadAsync(await readFile(path.join(root, delivery.result.godotPackage)), { checkCRC32: true });
+  const godotFrames = Object.values(godotZip.files).find((file) => file.name.endsWith('/sprite_frames.tres'));
+  assert(godotFrames);
+  assert.match(await godotFrames.async('string'), /gd_resource type="SpriteFrames"/);
+  assert(Object.values(godotZip.files).some((file) => file.name.endsWith('/animated_sprite.tscn')));
+  assert(!godotZip.file('project.godot'));
   const gif = await call('workbench_read_artifact', {
     taskId: exported.taskId,
     artifactPath: delivery.result.preview,

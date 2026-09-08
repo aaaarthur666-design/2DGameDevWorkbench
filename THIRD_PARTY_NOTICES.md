@@ -5,7 +5,7 @@ This current-maintenance file records provenance and the license status of incor
 ## NativeFramesGeneration / SpritePipeline
 
 - Upstream: <https://github.com/flxBurnOut/NativeFramesGeneration.git>
-- Synchronized through upstream commit `e4df6f2de215f01db2e28ce1e175894186bb44f8` (repair workflow and operator UI update, 2026-09-05), retaining the workbench job navigation, frame/export artifact endpoints, and their integration coverage under `Tools/SpritePipeline/`.
+- Synchronized through upstream commit `4f7f4cc4bee625d75c53570887ddf184dbe380ba` (attack sequence review, reference canvas and animation player, synchronized 2026-09-08), retaining the workbench job navigation, frame/export artifact endpoints, and their integration coverage under `Tools/SpritePipeline/`.
 - License: MIT License, Copyright (c) 2026 flxBurnOut.
 - Authorization confirmed by the copyright holder on 2026-09-04. The integrated copy includes its license at `Tools/SpritePipeline/LICENSE`; the upstream repository also carries the MIT license.
 - Distribution status: **resolved under the MIT License**.
@@ -32,6 +32,14 @@ JavaScript and Python dependencies retain their own licenses and notices. Exact 
 
 ## External API services
 
-Optional map layer generation can call Google Gemini (`gemini-3.1-flash-image`) or OpenAI Images (`gpt-image-2`). Those services and their model outputs are not incorporated source dependencies; use is subject to the account owner's provider terms, configuration, usage limits, and content rights. No provider credential is distributed with this repository.
+Optional map original-image and layer generation can call Google Gemini (`gemini-3.1-flash-image`), OpenAI Images (`gpt-image-2`) or Tencent TokenHub Hunyuan Image 3.0 (`hy-image-v3`). Those services and their model outputs are not incorporated source dependencies; use is subject to the account owner's provider terms, configuration, usage limits, and content rights. No provider credential is distributed with this repository.
 
 SpritePipeline can use providers configured within that component. Its provider-specific behavior and terms are documented by the upstream component and service; the workbench does not redistribute provider credentials.
+
+## CopyWorms engineering reference
+
+- Reference revision: `bb1581d12c9626e294e403a01db5f3cffb229cd8` of <https://github.com/flxBurnOut/copyWorms>.
+- `.agents/skills/forge-game-engineering/` documents the project's actual architecture and asset contracts. Its small visual adapter and map mount helper adapt `PlayerModule/Formal/Player_Warrior.gd` playback/facing and `LevelModule/Formal/Level_02_SceneBuilder.gd` map re-entry behavior. It does not package game art, full player controllers, global managers or Pixelwork/plugin runtime code.
+- The inspected game README states learning and competition use; this notice does not imply an MIT grant for that game or its third-party components. Any future source extraction must preserve provenance and applicable terms.
+
+The workbench-integrated SpritePipeline additionally includes a local Godot SpriteFrames package exporter (`processing/godot_export.py`) and its UI/API/artifact integration. These changes are local integration work beyond the recorded upstream synchronization baseline; they do not imply that the independent upstream repository has been updated.

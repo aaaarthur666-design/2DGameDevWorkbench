@@ -9,7 +9,7 @@
 | 在可视画布中布图、画区域、修图和导出 | Web 地图编辑器 | 仅原图生成和整体层扩图需要 |
 | 从提示词生成地图中心原图 | Web `generate-origin` | 沿用地图生成设置 |
 | 确定性拼接已有图片并生成状态/引擎包 | 本地适配器 `compose` | 不需要 |
-| 填充透明模板的整体图层 | Web `generate-layer` | 需要已配置 Gemini 或 OpenAI Images |
+| 填充透明模板的整体图层 | Web `generate-layer` | 需要已配置 Gemini、OpenAI Images 或混元 |
 
 地图为人工编辑流程，不向 MCP Agent 开放自动执行。
 
@@ -114,7 +114,7 @@ OpenAI 原图使用 `/v1/images/generations`，扩图继续使用 `/v1/images/ed
 
 “打开状态 / Godot”支持 Pixelwork v1/v2、SceneMaker v5、新 Godot ZIP，以及旧 Godot 合成包。新包优先恢复完整编辑源；旧合成包只能恢复为一个地图块，并明确提示原卡片布局和羽化前素材无法恢复。帮助窗口也能打开带 JSON 清单和图片的完整资源文件夹。
 
-仓库 Agent 新生成的 Godot 包也嵌入同批次 Pixelwork 源状态。更早的 Agent 包只有合成图片和场景时，加载器恢复图片并提示区域数据不足；要继续完整编辑，应打开同批次的 `pixelwork-state.zip`。
+底层 compose 适配器生成的 Godot 包也嵌入同批次 Pixelwork 源状态；该接口不开放 Agent 地图自动制作。更早的 Agent 包只有合成图片和场景时，加载器恢复图片并提示区域数据不足；要继续完整编辑，应打开同批次的 `pixelwork-state.zip`。
 
 SceneMaker 的 ground 映射到 surface，整体图由旧视觉层合成，矩形碰撞转换为像素坐标；旧 foreground 烘焙入整体图，不猜测顶层区域。编辑器不会反向解析用户任意修改过的 Godot 场景脚本。
 
@@ -124,11 +124,11 @@ SceneMaker 的 ground 映射到 surface，整体图由旧视觉层合成，矩�
 
 外部生成后，服务端按模板尺寸回收结果，并逐像素保留模板中 Alpha 大于 0 的内容（含半透明边缘）；只填充完全透明处。明显不匹配的返回宽高比会报错，避免拉伸。此保护不保证新生成内容在视觉上完全无缝。
 
-生成设置只保留已有连接器实际支持的参数：服务选择、密钥、是否激活，以及唯一整体层提示词。Host 和 Model 由 Manifest 定义。密钥仅保存在 Runtime Bridge 进程内存或服务端环境变量中，页面只接收“已配置”状态，状态包和日志不包含密钥。
+生成设置只保留已有连接器实际支持的参数：服务选择、密钥、是否激活，以及唯一整体层提示词。Host 和 Model 由 Manifest 定义。密钥保存在本机受保护的持久配置或服务端环境变量中，页面只接收“已配置”状态，状态包和日志不包含密钥。
 
 地图属于手动前端工作流，不向 MCP / Agent CLI 开放发现或执行。前端通过 `workbench/manifest.json` 和共享 Runtime 调用本地 `compose`、原图 `generate-origin` 和整体层 `generate-layer` 适配器；生产产物写入 `outputs/<task-id>/`。具体输入见 [连接器契约](connector-contract.md)。
 
-页面 WebMCP 另提供七个操作入口：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入工作台共享的 runtime task ledger。
+页面 WebMCP 另提供七个操作入口，但不能用于绕过 Agent 手动地图边界：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入工作台共享的 runtime task ledger。
 
 ## 验证
 
@@ -154,7 +154,7 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 
 每次任务写入 `generation-diagnostics.json`，包含模板、请求、返回尺寸、实际发送的提示词和处理阶段。API 返回图片后立即保存原始字节为 `provider-response.png`（其他格式按实际扩展名；无法解码为 `.bin`）。合成失败时这两个文件仍列入失败任务产物；不会产生或冒充 `generated-layer.png`。上游未返回图片时只保留诊断文件。尺寸异常不自动发起额外付费重试。
 
-更新服务端适配器后，已经运行的 Runtime Bridge 需重启才能加载新代码；界面填写的密钥只存在该进程内存，重启后需重新填写（环境变量配置的密钥不受影响）。
+更新服务端适配器后，已经运行的 Runtime Bridge 需重启才能加载新代码；界面保存的密钥会从本机受保护配置恢复，无需重新填写。
 
 ## 新建空白项目
 
@@ -188,6 +188,6 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 - 这是参考图生图适配，接缝和内容衔接仍须人工检查，不宣称混元具备专用像素级扩图能力。关闭自动提示词改写，尽量保持用户约束。
 - API 返回临时图片地址，服务端立即下载转存到任务产物。下载不携带 API Key，不允许重定向；只接受腾讯云图片域名（测试环境可使用显式配置的本机服务）。API 或下载失败不会自动再次生成。
 
-官方资料：[生图调用指南](https://cloud.tencent.com/document/product/1823/135745)、[API 与地域](https://cloud.tencent.com/document/product/1823/130078)、[旧版迁移](https://cloud.tencent.com/document/product/1823/135600)、[模型价格](https://cloud.tencent.com/document/product/1823/130055)。截至 2026-09-06，官方参考费用为 0.2 元 / 张，以控制台当前额度和账单为准。
+官方资料：[生图调用指南](https://cloud.tencent.com/document/product/1823/135745)、[API 与地域](https://cloud.tencent.com/document/product/1823/130078)、[旧版迁移](https://cloud.tencent.com/document/product/1823/135600)、[模型价格](https://cloud.tencent.com/document/product/1823/130055)。计费以控制台当前额度和账单为准，不把历史价格作为长期操作规则。
 
 手动验收：生成一张方形原图，预览后“用作中心图”；选择一个相邻空卡片生成整体层，检查已有区域像素保持、过渡自然；导出并重新打开草稿。换回原有模型后也应能继续使用。自动回归使用隔离模拟服务，不消耗真实额度。

@@ -4,7 +4,7 @@
 
 ## 已实现
 
-原有五个工具继续保留，第一阶段新增六个工具；后续增加前端启动工具，当前共 12 个（以 manifest 为准）：
+本页保留第一阶段环境、生成、审核和恢复的验收流程。当前 MCP 为 16 个工具，完整名单见 [Agent 客户端接入](agent-clients.md)；下表仅列本页涉及的工具：
 
 | 工具 | 用途 |
 | --- | --- |
@@ -34,7 +34,7 @@ npm run test:agent-acceptance
 
 ### 0. 加载本次更新
 
-停止旧工作台后重新运行 `npm run dev`，并在 WorkBuddy 中重新连接 `2d-game-workbench` MCP。新会话应看到上述 12 个工具。重开聊天不一定重启 MCP 进程；若仍看到旧工具，应重新连接 server。
+停止旧工作台后重新运行 `npm run dev`，并在 WorkBuddy 中重新连接 `2d-game-workbench` MCP。新会话应看到清单声明的 16 个工具。重开聊天不一定重启 MCP 进程；若仍看到旧工具，应重新连接 server。
 
 项目 Python 依赖已安装时，后续服务离线可由 Agent 调用启动工具；首次缺依赖仍需要 `npm run sprite-pipeline:setup`。连接器安装打包属于后续阶段。仓库当前 `.mcp.json`/`.codex/config.toml` 不等于已经替你配置了 WorkBuddy 客户端。
 

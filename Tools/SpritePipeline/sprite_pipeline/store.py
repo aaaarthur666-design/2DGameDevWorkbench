@@ -19,7 +19,7 @@ from .settings import HarnessSettings
 
 
 _JOB_ID = re.compile(r"^[0-9]{8}_[a-z0-9_]+_[0-9]{3}$")
-_JOB_SUMMARY_SCHEMA_VERSION = 1
+_JOB_SUMMARY_SCHEMA_VERSION = 2
 _JOB_SUMMARY_MAX_BYTES = 128 * 1024
 
 
@@ -224,6 +224,24 @@ class JobStore:
             "motion_state": (job.motion_control or {}).get("state"),
             "motion_message": (job.motion_control or {}).get("message"),
             "execution_only": job.request.motion_repair is not None,
+            # Materials only: execution-only candidates stay in task history.
+            "artworks": [
+                {
+                    "candidate_index": candidate.candidate_index,
+                    "status": candidate.status.value,
+                    "frame_count": len(candidate.frames),
+                    "first_frame": candidate.frames[0].active_path,
+                    "preview": f"previews/{candidate.candidate_id}.preview.gif",
+                    "qa_algorithm_version": candidate.qa_algorithm_version,
+                    "qa_ready": bool(candidate.qa_completed_at and candidate.qa_input_sha256 and not candidate.error),
+                    "hard_failure_count": len(candidate.hard_failures),
+                    "repair_frame_count": sum(f.review_status.value == "repair_requested" for f in candidate.frames),
+                    "modified": any(f.manual_edit_versions or f.repair_attempts for f in candidate.frames),
+                    "exported": bool(job.export and job.export.candidate_index == candidate.candidate_index),
+                    "diagnostic_only": candidate.diagnostic_only,
+                }
+                for candidate in job.candidates if candidate.frames and job.request.attack_segment is None
+            ],
         }
 
     def _write_summary(self, job: JobRecord) -> None:

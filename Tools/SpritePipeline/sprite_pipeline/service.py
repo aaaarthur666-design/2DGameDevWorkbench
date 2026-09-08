@@ -444,19 +444,25 @@ class SpritePipelineService:
             action.generation_frame_count,
         )
         controlled = action.action_id in {"attack", "attack_in_air"} and not action.loop
-        extra_units = 2 * self._pixellab_generation_units(character.cell_width, character.cell_height, 4) if controlled else 0
+        from .attack_sequence import segment_counts
+        counts=segment_counts(action)
+        if counts:
+            per_candidate=sum(self._pixellab_generation_units(character.cell_width,character.cell_height,n) for n in counts)
         return {
+            "planned_generation_submissions_per_candidate":len(counts) or 1,
+            "planned_generation_submissions":(len(counts) or 1)*candidate_count,
+            "segment_frame_counts":counts,
             "provider": "pixellab",
-            "maximum_extra_generations": 2 if controlled else 0,
-            "maximum_visual_reviews": candidate_count + 2 if controlled else 0,
+            "maximum_extra_generations": 0,
+            "maximum_visual_reviews": 2*candidate_count if controlled else 0,
             "visual_review_billed_separately": controlled,
             "cell_width": character.cell_width,
             "cell_height": character.cell_height,
             "provider_frame_count": action.generation_frame_count,
             "candidate_count": candidate_count,
             "generation_units_per_candidate": per_candidate,
-            "maximum_generation_units": per_candidate * candidate_count + extra_units,
-            "formula": "ceil(width * height * frame_count / 65536)",
+            "maximum_generation_units": per_candidate * candidate_count,
+            "formula": "sum(ceil(width * height * segment_frame_count / 65536))" if counts else "ceil(width * height * frame_count / 65536)",
         }
 
     def get_job(self, job_id: str) -> JobRecord:
@@ -596,6 +602,8 @@ class SpritePipelineService:
             )
             from .motion_correction import default_policy
             job.motion_control = default_policy(request, action)
+            from .attack_sequence import initialize
+            initialize(job)
             job.touch("job_created", provider=request.provider, candidate_count=request.candidate_count)
             self.store.save(job)
             return job
@@ -815,6 +823,9 @@ class SpritePipelineService:
         provider = get_provider(job.request.provider, self.settings)
         self.reconcile_saved_results(job_id)
         job = self.store.load(job_id)
+        if any(c.attack_sequence for c in job.candidates):
+            from .attack_sequence import FixedAttackGeneration
+            return FixedAttackGeneration(self).advance(job_id,provider,wait=wait,candidate_index=candidate_index)
         if candidate_index is not None:
             targets = [self._candidate(job, candidate_index).candidate_index]
         else:
@@ -892,8 +903,9 @@ class SpritePipelineService:
         job_id: str,
         candidate_index: int,
         provider: Any,
+        *, phase_frame_count: int | None = None,
     ) -> None:
-        """Check and durably record quota immediately before a paid POST."""
+        """Check and durably record quota immediately before each planned paid POST."""
 
         if provider.name != "pixellab" or getattr(provider, "get_balance", None) is None:
             return
@@ -914,6 +926,12 @@ class SpritePipelineService:
             job.character.cell_height,
             job.action.generation_frame_count,
         )
+        if phase_frame_count is not None:
+            units_per_candidate = self._pixellab_generation_units(job.character.cell_width,job.character.cell_height,phase_frame_count)
+            if job.generation_requested_at is None:
+                # Existing jobs retain their reserved stage counts after rhythm defaults change.
+                stages=self._candidate(job,candidate_index).attack_sequence['stages']
+                units_per_candidate = sum(self._pixellab_generation_units(job.character.cell_width,job.character.cell_height,r['frame_count']) for r in stages)
         required_units = units_per_candidate * candidates_to_reserve
         with self.store.locked_job(job_id) as quota_job:
             if quota_job.quota_before is None:
@@ -1015,6 +1033,9 @@ class SpritePipelineService:
             )
 
         provider = get_provider("pixellab", self.settings)
+        if candidate.attack_sequence:
+            from .attack_sequence import FixedAttackGeneration
+            return FixedAttackGeneration(self).recover(job_id,candidate_index,provider)
         provider_job_id = candidate.provider_job_id
         with self.store.locked_job(job_id) as job:
             current = self._candidate(job, candidate_index)
@@ -3168,6 +3189,7 @@ class SpritePipelineService:
                 "preview": export_dir / f"{stem}.preview.gif",
                 "recipe": export_dir / f"{stem}.recipe.json",
                 "qa": export_dir / f"{stem}.qa.json",
+                "godot": export_dir / f"{stem}.godot.zip",
             }
             existing = [str(path) for path in destinations.values() if path.exists()]
             if existing and not options.overwrite:
@@ -3259,6 +3281,15 @@ class SpritePipelineService:
                     for frame in candidate.frames
                 ],
             }
+            from .processing.godot_export import build_godot_package
+
+            staged_godot = staging / destinations["godot"].name
+            recipe["godot"] = build_godot_package(
+                staged_sheet, staged_godot, recipe,
+                anchor_x=job.character.anchor.x,
+                ground_y=job.character.anchor.ground_y,
+                facing=job.character.facing,
+            )
             staged_recipe = staging / destinations["recipe"].name
             staged_qa = staging / destinations["qa"].name
             atomic_write_json(staged_recipe, recipe)
@@ -3273,6 +3304,7 @@ class SpritePipelineService:
                     (staged_sheet, destinations["sheet"]),
                     (staged_preview, destinations["preview"]),
                     (staged_qa, destinations["qa"]),
+                    (staged_godot, destinations["godot"]),
                     (staged_recipe, destinations["recipe"]),
                 )
             )
@@ -3284,6 +3316,8 @@ class SpritePipelineService:
                 preview_path=self.settings.record_path(destinations["preview"]),
                 recipe_path=self.settings.record_path(destinations["recipe"]),
                 qa_path=self.settings.record_path(destinations["qa"]),
+                godot_package_path=self.settings.record_path(destinations["godot"]),
+                godot_sha256=recipe["godot"]["package_sha256"],
                 sha256=sha256_file(destinations["sheet"]),
             )
             job.status = JobStatus.exported
@@ -3392,7 +3426,7 @@ class SpritePipelineService:
     ) -> None:
         from .motion_correction import active as motion_active
         if motion_active(job) and operation not in {"motion reservation", "motion adoption"}:
-            raise ConflictError("自动检查和补做正在进行，请等待完成再修改")
+            raise ConflictError("视觉检查正在进行，请等待完成再修改")
         if candidate.status in {
             CandidateStatus.approved,
             CandidateStatus.rejected,

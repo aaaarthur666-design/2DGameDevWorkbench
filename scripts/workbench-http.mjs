@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import {
+  readAssetPreview,
+  buildAssetArchive,
+} from '../lib/workbench/asset-catalog.mjs';
 
 import { createReadStream } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
@@ -48,9 +52,52 @@ const server = http.createServer(async (request, response) => {
       });
       return;
     }
-    if (request.method === 'POST' && url.pathname === '/v1/scene-composer/export') {
-      try { sendJson(response, 200, await exportSceneRequest(request, repositoryRoot)); }
-      catch (error) { sendJson(response, 400, { error: error.message }); }
+    if (request.method === 'POST' && url.pathname === '/v1/assets/download') {
+      try {
+        const archive = await buildAssetArchive(
+          await loadManifest(),
+          await readJsonBody(request),
+        );
+        response.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="${archive.filename}"`,
+          'Content-Length': archive.bytes.length,
+          'X-Asset-Count': archive.assetCount,
+          'X-Asset-File-Count': archive.fileCount,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        response.end(archive.bytes);
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/assets/preview') {
+      const assetId = url.searchParams.get('assetId');
+      if (!assetId || assetId.length > 500) throw new Error('Invalid assetId.');
+      const preview = await readAssetPreview(await loadManifest(), assetId);
+      response.writeHead(200, {
+        'Content-Type': preview.mime,
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      response.end(preview.bytes);
+      return;
+    }
+    if (
+      request.method === 'POST' &&
+      url.pathname === '/v1/scene-composer/export'
+    ) {
+      try {
+        sendJson(
+          response,
+          200,
+          await exportSceneRequest(request, repositoryRoot),
+        );
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+      }
       return;
     }
     if (request.method === 'POST' && url.pathname.startsWith('/v1/agent/')) {

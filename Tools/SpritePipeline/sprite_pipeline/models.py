@@ -42,6 +42,7 @@ class CharacterPreset(StrictModel):
     cell_width: int
     cell_height: int
     facing: Literal["left", "right"] = "right"
+    weapon_hand: Literal["reference", "left", "right", "both"] = "reference"
     reference_frame: str = Field(min_length=1, max_length=260)
     master: str | None = Field(default=None, max_length=260)
     palette: str | None = Field(default=None, max_length=260)
@@ -73,6 +74,7 @@ class CharacterPreset(StrictModel):
 
 class ActionPreset(StrictModel):
     schema_version: Literal[1] = 1
+    generation_strategy: Literal["single", "two_stage_attack", "three_stage_attack", "reference_anchored_attack"] = "single"
     action_id: str
     display_name: str | None = Field(default=None, max_length=200)
     # Project playback frame count. This can be odd even when a model provider
@@ -270,6 +272,7 @@ class FrameRecord(StrictModel):
     # provider credits. Keep their counter separate from the deliberately
     # bounded external/AI replacement attempts above.
     manual_edit_versions: int = Field(default=0, ge=0)
+    motion_tags: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CandidateStatus(str, Enum):
@@ -301,7 +304,7 @@ class CandidateRecord(StrictModel):
     last_polled_at: datetime | None = None
     provider_completed_at: datetime | None = None
     result_saved_at: datetime | None = None
-    submission_attempts: int = Field(default=0, ge=0, le=1)
+    submission_attempts: int = Field(default=0, ge=0, le=3)
     raw_request_path: str | None = None
     raw_response_path: str | None = None
     result_manifest_path: str | None = None
@@ -313,6 +316,7 @@ class CandidateRecord(StrictModel):
     qa_input_sha256: str | None = None
     qa_algorithm_version: str | None = None
     motion_review: dict[str, Any] | None = None
+    attack_sequence: dict[str, Any] | None = None
     # Defaults keep job.json files written by earlier harness versions readable.
     qa_issue_baseline: QAIssueBaseline | None = None
     qa_change_summary: QAChangeSummary | None = None
@@ -339,6 +343,8 @@ class ExportRecord(StrictModel):
     preview_path: str
     recipe_path: str
     qa_path: str
+    godot_package_path: str | None = None
+    godot_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

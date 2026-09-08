@@ -6,7 +6,7 @@
   <title>精确像素修补画布</title>
   <link rel="stylesheet" href="/pixel-editor-assets/theme-tokens.css">
   <script src="/pixel-editor-assets/theme.js"></script>
-  <link rel="stylesheet" href="/pixel-editor-assets/pixel_editor.css?v=6">
+  <link rel="stylesheet" href="/pixel-editor-assets/pixel_editor.css?v=8">
 </head>
 <body>
   <main class="editor" id="editor">
@@ -133,8 +133,8 @@
           <p class="helper-text">方向键只会把选区移动整数像素；触碰外框时会停止，不会偷偷裁掉内容。</p>
         </div>
 
-        <div class="inspector__block">
-          <h2>精确规则</h2>
+        <details class="inspector__block">
+          <summary>精确规则</summary>
           <ul>
             <li>一格就是 PNG 的一个原始像素</li>
             <li>铅笔直接替换 RGBA，不做抗锯齿</li>
@@ -143,16 +143,16 @@
             <li>网格、选区和洋葱皮不会写进 PNG</li>
             <li>填充只匹配四向连通且 RGBA 完全相同的像素</li>
           </ul>
-        </div>
+        </details>
 
-        <div class="inspector__block shortcuts">
-          <h2>快捷操作</h2>
+        <details class="inspector__block shortcuts">
+          <summary>快捷操作</summary>
           <p><kbd>B</kbd> 铅笔　<kbd>E</kbd> 橡皮　<kbd>I</kbd> 吸管</p>
           <p><kbd>F</kbd> 填充　<kbd>M</kbd> 框选　<kbd>G</kbd> 网格</p>
           <p><kbd>方向键</kbd> 移动选区　<kbd>Delete</kbd> 清空框内</p>
           <p><kbd>Alt</kbd> 临时吸管　<kbd>Esc</kbd> 取消框选</p>
           <p><kbd>Space</kbd> + 拖动平移　滚轮缩放</p>
-        </div>
+        </details>
       </aside>
     </section>
 
@@ -162,8 +162,23 @@
         <button type="button" id="resetButton" class="button--quiet" disabled>放弃本次修改</button>
       </div>
       <button type="button" id="saveButton" class="button--primary" disabled>保存为手工修补版本并重新检查</button>
+      <button type="button" id="transferButton" class="button--primary" hidden disabled>作为新原图送到生成页 →</button>
     </footer>
   </main>
+  <script>
+    // Keep the save/transfer actions reachable when tools wrap or help expands.
+    (() => {
+      const editor = document.getElementById("editor");
+      const reportHeight = () => window.requestAnimationFrame(() => {
+        const height = Math.ceil(editor.getBoundingClientRect().height) + 2;
+        if (height >= 400 && window.parent !== window) {
+          window.parent.postMessage({type: "sprite-pixel-editor-layout", height}, window.location.origin);
+        }
+      });
+      if ("ResizeObserver" in window) new ResizeObserver(reportHeight).observe(editor);
+      window.addEventListener("load", reportHeight);
+    })();
+  </script>
   <script>
     (() => {
       const loading = document.querySelector("#loading");
@@ -232,6 +247,6 @@
       armWatchdog();
     })();
   </script>
-  <script type="module" src="/pixel-editor-assets/pixel_editor.js?v=6"></script>
+  <script type="module" src="/pixel-editor-assets/pixel_editor.js?v=7"></script>
 </body>
 </html>

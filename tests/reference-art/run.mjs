@@ -6,6 +6,7 @@ import { readFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import {
+  agentRequest,
   loadManifest,
   findCapability,
   prepareTask,
@@ -216,6 +217,13 @@ try {
   assert.equal(unknown.status, 400);
   const restored = await fetch(`${base}/v1/tasks/${task.id}`);
   assert.equal((await restored.json()).task.status, 'completed');
+  const presentation = await agentRequest(manifest, 'result', {taskId:task.id});
+  assert.equal(presentation.viewPath, `/tools/reference-art?task=${task.id}`);
+  assert.equal(presentation.presentation.preview.kind,'image');
+  const presented = await fetch(`${base}/v1/agent/result`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskId:task.id})});
+  assert.equal(presented.status,200);
+  assert.deepEqual((await presented.json()).presentation,presentation.presentation);
+
   const download = await fetch(
     `${base}/v1/artifacts?path=${encodeURIComponent(png)}`,
   );

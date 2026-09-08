@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "generation_strategy": "reference_anchored_attack",
   "action_id": "attack",
   "display_name": "地面攻击",
   "frame_count": 16,
@@ -10,13 +11,15 @@
   "manifest_action_name": "attack",
   "sheet_columns": 4,
   "sheet_rows": 4,
-  "critical_frame_indices": [6],
+  "critical_frame_indices": [
+    5
+  ],
   "centroid_shift_px": 13,
-  "action_description": "One 16-frame non-looping grounded chop: 1 unchanged; 2-4 sword overhead/shoulder; 5-7 charge, held at 7; 8-10 the only forward vertical high-to-low strike; 11-13 follow through low; 14-16 recovery only.",
+  "action_description": "ONE grounded vertical chop: 37.5% raise into a brief shoulder-back charge; 37.5% a fast high-to-low cut and decelerating follow-through; final 25% recover. Rear foot planted; lead foot lunges then returns.",
   "locked_constraints": [
     "exactly one attack total: one wind-up, strike/contact, follow-through, recovery",
     "after contact: no wind-up/swing; no repeat, second hit, combo, or loop",
     "vertical chop only; no horizontal slash, thrust, spin, or projectile",
-    "blade behind shoulder until strike; fixed grip/shape"
+    "charge only: blade behind shoulder; same grip/shape"
   ]
 }

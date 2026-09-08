@@ -11,7 +11,7 @@ import {
   stampSquareRgba,
   threeWayMergeRgba,
   translateSelectionRgba,
-} from "/pixel-editor-assets/pixel_editor_core.js?v=6";
+} from "/pixel-editor-assets/pixel_editor_core.js?v=7";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -61,6 +61,7 @@ const elements = {
   dirtyIndicator: $("#dirtyIndicator"),
   resetButton: $("#resetButton"),
   saveButton: $("#saveButton"),
+  transferButton: $("#transferButton"),
   recovery: $("#recovery"),
   restoreDraft: $("#restoreDraft"),
   downloadDraft: $("#downloadDraft"),
@@ -71,9 +72,18 @@ const elements = {
 window.__spritePixelEditorBoot?.markStarted?.();
 
 const query = new URLSearchParams(window.location.search);
-const jobId = query.get("job_id") || "";
-const candidateIndex = Number.parseInt(query.get("candidate") || "", 10);
-const frameIndex = Number.parseInt(query.get("frame") || "", 10);
+const referenceEditId = query.get("reference_edit") || "";
+const isReference = Boolean(referenceEditId);
+// Reference drafts have a separate identity, including in duplicated tabs.
+const jobId = isReference ? `reference-${referenceEditId}` : query.get("job_id") || "";
+const candidateIndex = isReference ? 0 : Number.parseInt(query.get("candidate") || "", 10);
+const frameIndex = isReference ? 0 : Number.parseInt(query.get("frame") || "", 10);
+if (isReference) {
+  document.title = "原图像素画布";
+  elements.saveButton.textContent = "保存原图修改副本";
+  elements.transferButton.hidden = false;
+  document.querySelector(".onion-controls").hidden = true;
+}
 const zoomLevels = [1, 2, 4, 8, 12, 16, 24, 32];
 const maxHistory = 100;
 const maxHistoryChangedPixels = 65_536;
@@ -157,6 +167,7 @@ const state = {
 };
 
 const sessionUrl = () =>
+  isReference ? `/v1/reference-edits/${encodeURIComponent(referenceEditId)}/pixel-edit` :
   `/v1/jobs/${encodeURIComponent(jobId)}/candidates/${candidateIndex}/frames/${frameIndex}/pixel-edit`;
 const legacyDraftKey = () => `sprite-pixel-draft:${jobId}:${candidateIndex}:${frameIndex}`;
 // Every page load owns a unique key. sessionStorage can be cloned when a tab is
@@ -998,6 +1009,7 @@ function updateDirtyState() {
   elements.redoButton.disabled = state.redoStack.length === 0 || state.saving;
   elements.resetButton.disabled = !state.dirty || state.saving;
   elements.saveButton.disabled = !state.dirty || !state.canEdit || state.saving || Boolean(state.draftCandidate);
+  elements.transferButton.disabled = !isReference || !state.loaded || state.dirty || state.saving || Boolean(state.draftCandidate) || state.manualVersions < 1;
   elements.dirtyIndicator.textContent = state.dirty
     ? "有 " + summary.count + " 个未保存像素修改"
     : "尚未修改";
@@ -1226,7 +1238,7 @@ async function saveVersion() {
   const submittedPixels = new Uint8ClampedArray(state.pixels);
   state.saving = true;
   updateDirtyState();
-  setMessage("正在无损编码并核对每一个 RGBA 像素，随后会重新运行序列检查……", "info");
+  setMessage(isReference ? "正在保存原图修改副本并核对像素……" : "正在无损编码并核对每一个 RGBA 像素，随后会重新运行序列检查……", "info");
   try {
     const response = await window.fetch(sessionUrl(), {
       method: "POST",
@@ -1249,11 +1261,13 @@ async function saveVersion() {
     state.basePixels = submittedPixels;
     state.undoStack = [];
     state.redoStack = [];
-    state.canEdit = false;
+    state.canEdit = isReference;
     discardDraft();
     elements.versionLabel.textContent = `手工版本 v${state.manualVersions}`;
     const qa = edit.qa || {};
-    if (qa.ok === false) {
+    if (isReference) {
+      setMessage("原图修改副本已保存。可以继续修改，或点击“作为新原图送到生成页”。", "ok");
+    } else if (qa.ok === false) {
       setMessage(
         "手工修补版本已安全保存，但自动复查没有完成。外层页面会刷新并保留该版本，可在那里重新运行检查。",
         "error",
@@ -1273,7 +1287,7 @@ async function saveVersion() {
         "ok",
       );
     }
-    window.parent.postMessage(
+    if (!isReference) window.parent.postMessage(
       {
         type: "sprite-pixel-editor-saved",
         jobId,
@@ -1397,6 +1411,28 @@ function decodeNeighbor(neighbor, expectedLength) {
   };
 }
 
+async function transferReference() {
+  if (!isReference || elements.transferButton.disabled) return;
+  state.saving = true;
+  updateDirtyState();
+  try {
+    const response = await window.fetch(`/v1/reference-edits/${encodeURIComponent(referenceEditId)}/transfer`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_sha256: state.baseSha256 }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(describeApiError(payload, "移送原图失败"));
+    setMessage("修改版原图已保存到作品库，正在送到生成页。", "ok");
+    if (window.parent === window) {
+      window.location.assign(`/?canvas_character=${encodeURIComponent(payload.data.character_id)}`);
+    } else {
+      window.parent.postMessage({ type: "sprite-reference-transferred", characterId: payload.data.character_id }, window.location.origin);
+    }
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : "移送失败，请重试。", "error");
+  } finally { state.saving = false; updateDirtyState(); }
+}
+
 async function loadSession() {
   if (state.loadingSession) return;
   if (!jobId || !Number.isInteger(candidateIndex) || !Number.isInteger(frameIndex)) {
@@ -1474,7 +1510,7 @@ async function loadSession() {
         ? "与前一帧相同，避免重复叠色"
         : "青色：第 " + (state.neighbors.next.frameIndex + 1) + " 帧")
       : "当前帧没有后一帧";
-    elements.frameLabel.textContent =
+    elements.frameLabel.textContent = isReference ? "原图 · " + session.display_name :
       "候选 " + candidateIndex + " · 第 " + (frameIndex + 1) + "/" + state.frameCount + " 帧";
     elements.sizeLabel.textContent = `${state.width}×${state.height} RGBA`;
     elements.versionLabel.textContent = state.manualVersions
@@ -1486,7 +1522,9 @@ async function loadSession() {
     loadDraftCandidate();
     updateDirtyState();
     const missingReferences = Object.keys(state.neighborWarnings).length;
-    if (state.canEdit) {
+    if (isReference) {
+      setMessage("原图副本已载入。修改后保存，再送到生成页作为新原图。", "ok");
+    } else if (state.canEdit) {
       setMessage(
         "画布已按 PNG 原始像素载入。洋红色是前一帧，青色是后一帧；所有参考层都不会写入最终图片。" +
           (missingReferences ? "有 " + missingReferences + " 张相邻参考帧暂时不可用，但不影响修补当前帧。" : ""),
@@ -1658,6 +1696,7 @@ elements.clearSelectionPixels.addEventListener("click", clearSelectedPixels);
 elements.cancelSelection.addEventListener("click", cancelSelection);
 elements.resetButton.addEventListener("click", resetDraft);
 elements.saveButton.addEventListener("click", saveVersion);
+elements.transferButton.addEventListener("click", transferReference);
 elements.zoomOut.addEventListener("click", () => changeZoom(-1));
 elements.zoomOne.addEventListener("click", () => setZoom(1));
 elements.zoomIn.addEventListener("click", () => changeZoom(1));

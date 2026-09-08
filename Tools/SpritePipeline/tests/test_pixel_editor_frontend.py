@@ -29,7 +29,7 @@ def test_pixel_editor_core_node_suite() -> None:
 
 
 def test_outer_ui_contains_trusted_pixel_editor_refresh_bridge() -> None:
-    from sprite_pipeline.ui import PIXEL_EDITOR_BRIDGE_JS, REPLAY_ANIMATION_JS
+    from sprite_pipeline.ui import PIXEL_EDITOR_BRIDGE_JS
 
     source = (PROJECT_ROOT / "sprite_pipeline" / "ui.py").read_text(encoding="utf-8")
     assert 'event.origin !== window.location.origin' in PIXEL_EDITOR_BRIDGE_JS
@@ -39,8 +39,8 @@ def test_outer_ui_contains_trusted_pixel_editor_refresh_bridge() -> None:
     assert 'clickButton("refresh-repair-button")' in PIXEL_EDITOR_BRIDGE_JS
     assert 'clickButton("refresh-review-button")' in PIXEL_EDITOR_BRIDGE_JS
     assert 'sandbox="allow-scripts allow-same-origin allow-downloads allow-modals"' in source
-    assert 'document.getElementById("animation-preview")' in REPLAY_ANIMATION_JS
-    assert 'searchParams.set("_sprite_replay"' in REPLAY_ANIMATION_JS
+    assert "sprite-reference-transferred" in PIXEL_EDITOR_BRIDGE_JS
+    assert "reference-editor-frame" in PIXEL_EDITOR_BRIDGE_JS
 
 
 def test_external_repair_upload_is_bound_to_and_cleared_with_frame_context() -> None:
@@ -116,30 +116,31 @@ def test_repair_ui_has_full_timeline_navigation_and_context_preservation() -> No
 def test_default_ui_flow_has_ordered_next_steps_and_replay() -> None:
     source = UI_SOURCE.read_text(encoding="utf-8")
     tab_markers = [
-        'with gr.Tab("1 · 生成", id="generate"):',
+        'with gr.Tab("作品库", id="assets") as library_tab:',
+        'with gr.Tab("1 · 生成", id="generate", elem_id="generation-tab"):',
         'with gr.Tab("2 · 播放检查", id="review"):',
         'with gr.Tab("3 · 逐帧修补", id="repair"):',
         'with gr.Tab("4 · 导出", id="export"):',
-        'with gr.Tab("资产库", id="assets"):',
     ]
     positions = [source.index(marker) for marker in tab_markers]
 
     assert positions == sorted(positions)
     assert "下一步：导入角色原图与提示词" in source
     assert "进入 2 · 播放检查" in source
-    assert "▶ 从头播放一次" in source
+    assert "_animation_player_embed" in source
+    assert "从头播放" in (PROJECT_ROOT / "sprite_pipeline/static/animation_player.html").read_text(encoding="utf-8")
     assert "有标记问题：进入逐帧修补" in source
     assert "全部可用：采用并进入导出" in source
-    assert "导出 PNG Sprite Sheet" in source
+    assert "导出 PNG + Godot 包" in source
     assert "outputs=[review_action_status, workflow_tabs, *review_outputs, export_job, *export_outputs]" in source
 
 
 def test_saved_assets_is_separate_and_startup_catalog_stays_lazy() -> None:
     source = UI_SOURCE.read_text(encoding="utf-8")
-    generate_section = source.split('with gr.Tab("1 · 生成", id="generate"):', 1)[1].split(
+    generate_section = source.split('with gr.Tab("1 · 生成", id="generate", elem_id="generation-tab"):', 1)[1].split(
         'with gr.Tab("2 · 播放检查", id="review"):', 1
     )[0]
-    assets_section = source.split('with gr.Tab("资产库", id="assets"):', 1)[1].split(
+    assets_section = source.split('with gr.Tab("作品库", id="assets") as library_tab:', 1)[1].split(
         'with gr.Tab("设置", id="settings"):', 1
     )[0]
     job_choices_source = source.split("def job_choices(", 1)[1].split(
@@ -147,8 +148,8 @@ def test_saved_assets_is_separate_and_startup_catalog_stays_lazy() -> None:
     )[0]
 
     assert "任务安全中心" not in generate_section
-    assert "主流程外" in assets_section
-    assert "一个任务一个文件夹" in assets_section
+    assert "作品详情与执行记录" in assets_section
+    assert "失败、重试、未生成和测试记录" in assets_section
     assert "打开所选任务" in assets_section
     assert "在播放检查中打开" in assets_section
     assert "打开待修补帧" in assets_section
@@ -166,7 +167,7 @@ def test_saved_assets_is_separate_and_startup_catalog_stays_lazy() -> None:
     assert "initial_repair = repair_projection(None)" in source
     assert "initial_export = export_projection(None)" in source
     timer_wiring = source.split("task_timer.tick(", 1)[1].split(")\n", 1)[0]
-    assert "reload_saved_asset_catalog" in timer_wiring
+    assert "refresh_library" in timer_wiring
     assert "task_center_projection" not in timer_wiring
 
 
@@ -263,9 +264,9 @@ def test_pixel_editor_loading_has_timeout_retry_and_boot_failure_fallback() -> N
     assert 'id="retryLoadButton"' in html
     assert "__spritePixelEditorBoot" in html
     assert "像素画布启动超时" in html
-    assert 'pixel_editor.css?v=6' in html
-    assert 'pixel_editor.js?v=6' in html
-    assert 'pixel_editor_core.js?v=6' in script
+    assert 'pixel_editor.css?v=8' in html
+    assert 'pixel_editor.js?v=7' in html
+    assert 'pixel_editor_core.js?v=7' in script
     assert "sessionLoadTimeoutMs = 8_000" in script
     assert "maxSessionLoadAttempts = 2" in script
     assert "new AbortController()" in script

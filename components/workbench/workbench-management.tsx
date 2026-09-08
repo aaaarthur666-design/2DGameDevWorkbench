@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useWorkbench } from './workbench-provider';
 import { ClearHistory } from './clear-history';
+import { TaskResultCard } from './task-result-card';
 import { workStateLabels, operationLabel } from '@/lib/workbench/work-items';
 
 type Tab = 'services' | 'records' | 'data';
@@ -20,6 +21,7 @@ export function WorkbenchManagement() {
   const wb = useWorkbench();
   const [tab, setTab] = useState<Tab>('services');
   const [selected, setSelected] = useState('');
+  const [requestedTask, setRequestedTask] = useState('');
   const [filter, setFilter] = useState('all');
   const [health, setHealth] = useState<{
     uiReady?: boolean;
@@ -38,6 +40,7 @@ export function WorkbenchManagement() {
             : 'services',
       );
       setSelected(query.get('item') || query.get('task') || '');
+      setRequestedTask(query.get('task') || '');
     };
     read();
     window.addEventListener('popstate', read);
@@ -61,6 +64,7 @@ export function WorkbenchManagement() {
   const select = (next: Tab, id = '') => {
     setTab(next);
     setSelected(id);
+    setRequestedTask('');
     const query = new URLSearchParams({ tab: next });
     if (id) query.set('item', id);
     history.pushState(null, '', `/advanced?${query}`);
@@ -74,6 +78,7 @@ export function WorkbenchManagement() {
       )
     : visible[0];
   const tasks = wb.tasks.filter((task) => item?.taskIds?.includes(task.id));
+  const resultTaskId = requestedTask || tasks.at(-1)?.id;
   return (
     <main className="wb-page wb-advanced">
       <div className="wb-page-heading">
@@ -248,6 +253,7 @@ export function WorkbenchManagement() {
               </section>
               <section className="wb-task-detail" aria-label="制作详情">
                 <h2>{item?.title || '制作详情'}</h2>
+                {resultTaskId && <TaskResultCard key={resultTaskId} taskId={resultTaskId} />}
                 {item ? (
                   <>
                     <p>

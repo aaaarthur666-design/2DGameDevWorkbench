@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { createTestViteServer } from '../helpers/vite-server.mjs';
 
-const server = await createTestViteServer({ root: process.cwd(), configFile: false, appType: 'custom', logLevel: 'error', resolve: { alias: { '@': resolve(process.cwd()) } }, server: { middlewareMode: true } });
+const server = await createTestViteServer({ root: process.cwd(), configFile: false, appType: 'custom', logLevel: 'error', optimizeDeps: { noDiscovery: true, include: [] }, resolve: { alias: { '@': resolve(process.cwd()) } }, server: { middlewareMode: true } });
 try {
   const { themeBootstrap } = await server.ssrLoadModule('/lib/workbench/theme.ts');
   const bootstrap = (saved, light, blocked = false) => {

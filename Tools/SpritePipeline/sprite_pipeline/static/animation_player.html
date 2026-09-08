@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>动画播放检查</title>
+  <link rel="stylesheet" href="/pixel-editor-assets/animation_player.css?v=2">
+</head>
+<body>
+  <main>
+    <div class="stage"><canvas id="animationCanvas" aria-label="当前动画画面"></canvas></div>
+    <p id="status" role="status">正在读取当前版本的全部画面……</p>
+    <fieldset id="controls" disabled>
+      <div class="row">
+        <button type="button" id="play">暂停</button>
+        <button type="button" id="restart">从头播放</button>
+        <label>播放方式 <select id="mode"><option value="once">单次播放</option><option value="loop">循环播放</option><option value="pingpong">往返循环</option></select></label>
+      </div>
+      <div class="row">
+        <label>播放 FPS <input id="fps" type="number" min="0.1" max="60" step="0.1" value="8"></label>
+        <div class="speeds" role="group" aria-label="播放速度">
+          <button type="button" data-speed="0.5">慢放</button><button type="button" data-speed="1">正常</button><button type="button" data-speed="2">快放</button>
+        </div>
+        <span id="frameLabel">—</span>
+      </div>
+    </fieldset>
+    <p class="hint" id="hint">播放设置只影响这里的预览。</p>
+    <button type="button" id="retry" hidden>重新读取动画</button>
+  </main>
+  <script type="module" src="/pixel-editor-assets/animation_player.js?v=1"></script>
+</body>
+</html>

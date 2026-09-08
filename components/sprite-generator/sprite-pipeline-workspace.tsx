@@ -53,12 +53,17 @@ export function SpritePipelineWorkspace({
   const { spriteItems } = useWorkbench();
   const [entryJob, setEntryJob] = useState('');
   const [entryCharacter, setEntryCharacter] = useState('');
+  const [entryCandidate, setEntryCandidate] = useState('');
   const [activeJob, setActiveJob] = useState('');
   const [parentOrigin, setParentOrigin] = useState('');
   const embedded = new URL(pipelineUrl);
   embedded.searchParams.set('workbench_embedded', '1');
-  if (entryJob) embedded.searchParams.set('workbench_job', entryJob);
-  else if (entryCharacter) embedded.searchParams.set('workbench_character', entryCharacter);
+  if (entryJob) {
+    embedded.searchParams.set('workbench_job', entryJob);
+    if (entryCandidate)
+      embedded.searchParams.set('workbench_candidate', entryCandidate);
+  } else if (entryCharacter)
+    embedded.searchParams.set('workbench_character', entryCharacter);
   if (parentOrigin) embedded.searchParams.set('workbench_origin', parentOrigin);
   if (initialTheme) embedded.searchParams.set('workbench_theme', initialTheme);
   const embeddedUrl = embedded.toString();
@@ -76,20 +81,45 @@ export function SpritePipelineWorkspace({
     return () => window.removeEventListener('message', onReady);
   }, [theme, pipelineUrl]);
   useEffect(() => {
-    const job = new URLSearchParams(location.search).get('job') || '';
+    const params = new URLSearchParams(location.search);
+    const job = params.get('job') || '';
     // oxlint-disable-next-line react/react-compiler -- Hydrate the browser-only deep link after server rendering.
-    setEntryJob(job); setActiveJob(job); setParentOrigin(location.origin); setInitialTheme(getTheme());
-    setEntryCharacter(new URLSearchParams(location.search).get('character') || '');
+    setEntryJob(job);
+    setActiveJob(job);
+    setParentOrigin(location.origin);
+    setEntryCharacter(params.get('character') || '');
+    setEntryCandidate(params.get('candidate') || '');
+    setInitialTheme(getTheme());
     const receive = (event: MessageEvent) => {
-      if (event.origin !== new URL(pipelineUrl).origin || event.source !== iframe.current?.contentWindow) return;
-      if (event.data?.type === 'workbench:sprite-job' && typeof event.data.jobId === 'string' && event.data.jobId.length <= 200) setActiveJob(event.data.jobId);
+      if (
+        event.origin !== new URL(pipelineUrl).origin ||
+        event.source !== iframe.current?.contentWindow
+      )
+        return;
+      if (
+        event.data?.type === 'workbench:sprite-job' &&
+        typeof event.data.jobId === 'string' &&
+        event.data.jobId.length <= 200
+      )
+        setActiveJob(event.data.jobId);
     };
     window.addEventListener('message', receive);
-    return () => { window.removeEventListener('message', receive); removeEditorSession('sprite-generator'); };
+    return () => {
+      window.removeEventListener('message', receive);
+      removeEditorSession('sprite-generator');
+    };
   }, [pipelineUrl]);
-  const activeItem = spriteItems.find(item => item.id === `sprite:${activeJob}`);
+  const activeItem = spriteItems.find(
+    (item) => item.id === `sprite:${activeJob}`,
+  );
   useEffect(() => {
-    publishEditorSession({ capabilityId: 'sprite-generator', items: activeItem ? [activeItem] : [], dirty: false, busy: false, save: async () => {} });
+    publishEditorSession({
+      capabilityId: 'sprite-generator',
+      items: activeItem ? [activeItem] : [],
+      dirty: false,
+      busy: false,
+      save: async () => {},
+    });
   }, [activeItem]);
 
   const checkConnection = useCallback(async () => {
@@ -108,14 +138,20 @@ export function SpritePipelineWorkspace({
         uiError?: string;
         error?: string;
       } | null;
-      if (!response.ok || payload?.ok !== true || typeof payload.version !== 'string') {
+      if (
+        !response.ok ||
+        payload?.ok !== true ||
+        typeof payload.version !== 'string'
+      ) {
         throw new Error(payload?.error || '序列帧服务未就绪。');
       }
       setPipelineVersion(payload.version);
       setConnectionMessage(payload.uiError || '');
       setStatus(payload.uiReady === true ? 'ready' : 'api-only');
     } catch (error) {
-      setConnectionMessage(error instanceof Error ? error.message : '序列帧服务未就绪。');
+      setConnectionMessage(
+        error instanceof Error ? error.message : '序列帧服务未就绪。',
+      );
       setPipelineVersion(null);
       setStatus('offline');
     } finally {
@@ -158,7 +194,9 @@ export function SpritePipelineWorkspace({
             ? '正在连接'
             : status === 'ready'
               ? `本地管线已连接${pipelineVersion ? ` · v${pipelineVersion}` : ''}`
-              : status === 'api-only' ? '接口已连接，界面未就绪' : '本地管线未启动'}
+              : status === 'api-only'
+                ? '接口已连接，界面未就绪'
+                : '本地管线未启动'}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -211,8 +249,8 @@ export function SpritePipelineWorkspace({
                 {connectionMessage && <p role="alert" className="mt-2 text-sm text-[var(--theme-warning)]">{connectionMessage}</p>}
                 <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
                   完整的生成、播放检查、逐帧修补和 Sprite Sheet
-                  导出界面由本项目内置的 Python
-                  管线提供。正常情况下它会随 Workbench 自动启动；首次使用只需安装一次依赖。
+                  导出界面由本项目内置的 Python 管线提供。正常情况下它会随
+                  Workbench 自动启动；首次使用只需安装一次依赖。
                 </p>
               </div>
             </div>

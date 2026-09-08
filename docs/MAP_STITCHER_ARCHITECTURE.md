@@ -19,11 +19,11 @@
 | `editor-selectors.ts` | 区域范围、资源就绪、缓存身份、内存估算和快捷键目标过滤 |
 | `generation-queue.ts` | 并发调度、内存 / 锁暂停、取消、重试 |
 | `region-engine.ts` | 规范几何、合法性、命中、SVG 与世界坐标 |
-| `layer-engine.ts` | 真实黑白参考提取、Mask、扣除、羽化、拼接和本地补全 |
+| `layer-engine.ts` | 真实黑白参考提取、Mask、扣除、羽化与拼接 |
 | `map-production.ts` | 分层就绪判定、实际导出合成、全部 PNG、透明物件参考派生 |
 | `state-package.ts`、`godot-import.ts` | Pixelwork 源状态、SceneMaker 迁移与 Godot 恢复 |
 | `engine-export.ts`、`psd-export.ts` | Godot 与 PSD 资源 |
-| `lib/workbench/adapters/map-stitcher.mjs` | 仓库 Agent 的本地 compose 与外部整体扩图协议转换 |
+| `lib/workbench/adapters/map-stitcher.mjs` | 前端共享 Runtime 的 compose、generate-origin 与 generate-layer 协议转换 |
 
 ## 状态和动作
 
@@ -45,7 +45,7 @@
 
 ## 生产与持久化
 
-整体生成通过已有服务端代理或本地镜像补全。前端不新增连接器不支持的语义分层参数。地表副本标为草稿；物件来自上传或真实黑白参考；透明物件可反向派生黑白参考。只有完整且非草稿的素材才启用分层合成。
+中心原图和整体扩图通过已有服务端代理请求所选图片 API；本地镜像补全已移除，旧来源值只兼容读取。前端不新增连接器不支持的语义分层参数。地表副本标为草稿；物件来自上传或真实黑白参考；透明物件可反向派生黑白参考。只有完整且非草稿的素材才启用分层合成。
 
 队列限制并发为 1–4，自动扩展总数为 1–64。内存保护在调度前检查图片 / 历史与临时画布估算；暂停、取消和失败重试有独立状态。取消的 AbortSignal 和文档凭据共同阻止旧结果提交。
 
@@ -55,6 +55,6 @@ PNG 导出预览与 Godot 默认可见图层共享就绪判定。图片拼接、
 
 ## Workbench 接入
 
-模块能力只登记在 `workbench/manifest.json`。仓库 MCP、CLI 与 Web 通过共享 Runtime / adapter 保持相同连接器契约；页面七个 WebMCP 工具是对当前浏览器文档的操作入口，共用控制器，不另建编辑模型。服务端密钥不进入客户端、任务记录、日志或编辑状态。
+模块能力只登记在 `workbench/manifest.json`。前端通过共享 Runtime / adapter 执行地图操作；MCP 发现和执行排除该能力，Agent 不得改走 CLI、HTTP 或浏览器工具绕过手动边界；页面七个 WebMCP 工具是对当前浏览器文档的操作入口，共用控制器，不另建编辑模型。服务端密钥不进入客户端、任务记录、日志或编辑状态。
 
 测试和使用方式见 [用户文档](map-stitcher.md) 与 [开发指南](development.md)。[修复验收](MAP_STITCHER_REPAIR_VERIFICATION.md) 是历史快照，只用于追溯该轮修复。

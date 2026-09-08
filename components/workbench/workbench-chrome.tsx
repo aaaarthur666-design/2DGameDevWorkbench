@@ -22,6 +22,7 @@ import {
 import { useWorkbench } from './workbench-provider';
 import { workStateLabels, type WorkItem } from '@/lib/workbench/work-items';
 import { ModuleIcon } from './module-icon';
+import manifest from '@/workbench/manifest.json';
 import { WorkbenchBrand } from './workbench-brand';
 import { ThemeToggle } from './theme-toggle';
 
@@ -99,6 +100,16 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
               {l.name}
             </a>
           ))}
+          <a
+            href={manifest.agentAssets.assetCatalog.route}
+            aria-current={
+              wb.pathname === manifest.agentAssets.assetCatalog.route
+                ? 'page'
+                : undefined
+            }
+          >
+            资产库
+          </a>
         </nav>
         <div className="wb-header-actions">
           <ThemeToggle />
