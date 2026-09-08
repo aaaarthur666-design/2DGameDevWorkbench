@@ -33,4 +33,6 @@ For game architecture and scripting after art is ready, route to `agentAssets.en
 
 ## Delivery evidence
 
+The inventory includes saved full-scene exports as kind=scene, one asset per exportId with its sceneId/revision and original source/Godot ZIPs. Browser drafts remain excluded. History archiving hides operations only; assets and their provenance stay readable. Search all unarchived tasks with offset/snapshot pagination until nextOffset is null instead of stopping at 200 records.
+
 Use asset inventory for actual artworks and execution history for operations. A manifest is a description, while ZIP download delivers existing textures/frames/packages. Current approved sprite exports can include a single-action Godot SpriteFrames pack; retain candidate identity and frame timing, and preserve other clips during engineering integration. An old missing package is not created by a read. Task completion, review approval, export and engine playback are separate facts. Refer human procedures to `docs/operations-manual.md`.

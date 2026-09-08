@@ -5,6 +5,8 @@ import path from 'node:path';
 import { loadManifest, repositoryRoot, archiveTaskHistory, listTasks, readTask } from '../../lib/workbench/runtime.mjs';
 
 const manifest = await loadManifest();
+assert(manifest.workspace.taskDirectory.startsWith('work/test-runs/'), 'History tests must never archive production tasks');
+assert(manifest.workspace.outputDirectory.startsWith('outputs/test-runs/'));
 const directory = path.join(repositoryRoot, manifest.workspace.taskDirectory);
 await mkdir(directory, { recursive: true });
 const save = (id, status) => writeFile(path.join(directory, `${id}.json`), JSON.stringify({ id, status, updatedAt: new Date().toISOString() }));

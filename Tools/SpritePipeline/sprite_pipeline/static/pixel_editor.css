@@ -45,7 +45,7 @@ button,
 select,
 input[type="color"],
 input[type="number"] {
-  border: 1px solid var(--line);
+  border: 1px solid var(--theme-control-border);
   border-radius: 9px;
   background: light-dark(var(--theme-light-panel), rgba(255, 255, 255, 0.055));
   color: var(--text);

@@ -7,6 +7,7 @@
   const embedded = query.get('workbench_embedded') === '1';
   root.classList.toggle('workbench-embedded', embedded);
   const valid = value => value === 'light' || value === 'dark';
+  const frameSelector = '.pixel-editor-frame, .animation-player-frame';
   let parentOrigin = location.origin;
   try {
     const configured = new URL(query.get('workbench_origin') || location.origin);
@@ -29,7 +30,7 @@
     root.classList.toggle('dark', theme === 'dark');
     document.body?.classList.toggle('dark', theme === 'dark');
     document.querySelectorAll('.gradio-container, gradio-app').forEach(node => node.classList.toggle('dark', theme === 'dark'));
-    document.querySelectorAll('.pixel-editor-frame').forEach(syncFrame);
+    document.querySelectorAll(frameSelector).forEach(syncFrame);
     const button = document.getElementById('sprite-theme-toggle');
     if (button) {
       button.textContent = theme === 'dark' ? '☀ 浅色模式' : '☾ 深色模式';
@@ -43,7 +44,7 @@
       apply(event.data.theme);
     }
     if (event.origin === location.origin && event.data?.type === 'workbench:theme-ready') {
-      const frame = [...document.querySelectorAll('.pixel-editor-frame')].find(node => node.contentWindow === event.source);
+      const frame = [...document.querySelectorAll(frameSelector)].find(node => node.contentWindow === event.source);
       if (frame) syncFrame(frame);
     }
   });
@@ -70,6 +71,6 @@
   else ready();
   // Gradio and repair frames may be mounted long after the document is ready.
   new MutationObserver(records => {
-    if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches?.('.pixel-editor-frame, .gradio-container, gradio-app, #sprite-theme-toggle') || node.querySelector?.('.pixel-editor-frame, .gradio-container, gradio-app, #sprite-theme-toggle'))))) apply(theme);
+    if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches?.(`${frameSelector}, .gradio-container, gradio-app, #sprite-theme-toggle`) || node.querySelector?.(`${frameSelector}, .gradio-container, gradio-app, #sprite-theme-toggle`))))) apply(theme);
   }).observe(root, { childList: true, subtree: true });
 })();

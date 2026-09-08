@@ -48,3 +48,26 @@ def test_fixture_and_empty_jobs_do_not_become_assets():
         diagnostic = service.create_job(fixture.create_request('fixture'))
         service.generate_job(diagnostic.job_id)
         assert not [a for a in AssetCatalog(service).list()['assets'] if a.get('jobId') in [empty.job_id, diagnostic.job_id]]
+
+
+def test_archiving_history_preserves_artwork_details_and_downloads(tmp_path):
+    fixture = TemporaryHarness(tmp_path)
+    service = SpritePipelineService(tmp_path)
+    job = service.create_job(fixture.create_request('import'))
+    fixture.write_sequence(fixture.root / 'inputs')
+    service.ingest_candidate(job.job_id, 1, fixture.root / 'inputs')
+    client = TestClient(create_api(service=service))
+    asset_id = f'animation:{job.job_id}:1'
+    before = client.get('/v1/artworks/' + asset_id).json()['data']['asset']
+    frame = client.get('/v1/artworks/file', params={'asset_id': asset_id, 'key': 'frame-1'}).content
+    job_bytes = service.get_job(job.job_id).model_dump_json()
+    assert service.archive_history()['count'] == 1
+    assert service.list_jobs() == []
+    # Reopen the service, as after a restart. The execution list stays empty,
+    # while the very same candidate, creation time, revision and bytes remain readable.
+    reopened = SpritePipelineService(tmp_path)
+    assert reopened.list_jobs() == []
+    catalog = AssetCatalog(reopened)
+    assert catalog.detail(asset_id) == before
+    assert catalog.file(asset_id, 'frame-1').read_bytes() == frame
+    assert reopened.get_job(job.job_id).model_dump_json() == job_bytes

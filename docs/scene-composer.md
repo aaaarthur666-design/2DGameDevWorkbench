@@ -62,6 +62,8 @@
 
 本机产物在 `outputs/scene-export-<id>/`，包含 `scene-godot.zip` 和 `scene-source.zip`；导出记录在 `work/scene-exports/`。它们是本地网页导出记录，不冒充 MCP/CLI 生产任务。
 
+成功导出后会被资产库的“完整场景”分类收录。每次导出保留独立版本，可查看名称、版本和实例数量，下载原始源包及 Godot 包；旧导出记录也能读取。归档制作历史不会移除这些资产。仅在浏览器保存或下载源文件不会自动加入资产库，浏览器草稿仍需自行备份。目录路径由 manifest 的 `workspace.sceneExportDirectory` 和 `workspace.outputDirectory` 定义，测试使用隔离路径。
+
 ## 实现边界与验证
 
 入口注册于 Manifest 的 `editorModules`，不会进入 Agent 可执行能力列表。网页私有导出路由为 `/api/workbench/scene-composer/export`，代理至 loopback Runtime Bridge；未新增 MCP 或 WebMCP 操作。部署网页不能替代本机运行时。

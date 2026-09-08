@@ -3,6 +3,7 @@
 /* oxlint-disable next/no-html-link-for-pages -- Native links use the workbench draft guard. */
 import { useEffect, useState } from 'react';
 import manifest from '@/workbench/manifest.json';
+import { operationLabel } from '@/lib/workbench/work-items';
 
 type Asset = {
   id: string;
@@ -24,6 +25,13 @@ type Asset = {
   files?: { key: string; path: string; available: boolean; sha256?: string }[];
   readiness?: { issues: string[] };
   revision?: string;
+  sceneRevision?: number;
+  sceneId?: string;
+  exportId?: string;
+  instanceCount?: number;
+  materialCount?: number;
+  createdAt?: string;
+  history?: { taskId: string; operation: string; createdAt: string; status: string; viewPath: string }[];
 };
 type Catalog = {
   assets: Asset[];
@@ -37,6 +45,7 @@ const labels: Record<string, string> = {
   animation: '动画',
   map: '地图素材',
   interactable: '交互物',
+  scene: '完整场景',
 };
 const route = manifest.agentAssets.assetCatalog.route;
 export function AssetLibrary() {
@@ -134,7 +143,7 @@ export function AssetLibrary() {
           height: assetId ? 350 : 170,
           objectFit: 'contain',
           imageRendering: 'pixelated',
-          background: '#0d1019',
+          background: 'var(--wb-bg)',
           borderRadius: 12,
         }}
       />
@@ -142,7 +151,9 @@ export function AssetLibrary() {
       <div style={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
         {a.availability === 'missing'
           ? '文件暂不可读取'
-          : '交互逻辑 · 在编辑器查看'}
+          : a.kind === 'scene'
+            ? '完整场景 · 源包与 Godot 包'
+            : '交互逻辑 · 在编辑器查看'}
       </div>
     );
   }
@@ -195,7 +206,11 @@ export function AssetLibrary() {
               {labels[asset.kind]} · {asset.statusLabel}
               {asset.frameCount ? ` · ${asset.frameCount} 帧` : ''}
               {asset.width ? ` · ${asset.width} × ${asset.height}` : ''}
+              {asset.sceneRevision !== undefined ? ` · 场景版本 ${asset.sceneRevision}` : ''}
             </p>
+            {asset.kind === 'scene' && (
+              <p>包含 {asset.materialCount ?? '未知'} 件场景素材、{asset.instanceCount ?? '未知'} 个实例。下载并解压素材包后，可将 scene-source.zip 导入场景组装器继续编辑。</p>
+            )}
             {asset.readiness?.issues.map((message) => (
               <p className="wb-notice" key={message}>
                 {message}
@@ -217,6 +232,8 @@ export function AssetLibrary() {
             </div>
             <details style={{ marginTop: 20 }}>
               <summary>来源文件与版本</summary>
+              <p>创建时间：{asset.createdAt ? new Date(asset.createdAt).toLocaleString() : '未知'}</p>
+              {asset.exportId && <p>场景导出记录：{asset.exportId}</p>}
               <p>版本指纹：{asset.revision}</p>
               {asset.files?.map((f) => (
                 <p key={f.key}>
@@ -224,6 +241,16 @@ export function AssetLibrary() {
                   {f.available ? '已校验' : '缺失'}
                 </p>
               ))}
+              {!!asset.history?.length && (
+                <>
+                  <h3>制作与导出记录</h3>
+                  {asset.history.map((entry) => (
+                    <p key={entry.taskId}>
+                      <a href={entry.viewPath}>{operationLabel(entry.operation)} · {new Date(entry.createdAt).toLocaleString()}</a>
+                    </p>
+                  ))}
+                </>
+              )}
             </details>
           </section>
         ) : (
@@ -246,8 +273,9 @@ export function AssetLibrary() {
               placeholder="搜索角色、动作或作品名称"
               style={{
                 padding: '10px 14px',
-                background: '#121622',
-                border: '1px solid #303648',
+                background: 'var(--wb-panel)',
+                color: 'var(--wb-text)',
+                border: '1px solid var(--wb-line)',
                 borderRadius: 8,
                 minWidth: 250,
               }}
@@ -281,7 +309,7 @@ export function AssetLibrary() {
             </button>
           </form>
           <p className="wb-muted">
-            下载包含所选图片、动画帧及已有导出文件，按作品分别打包为 ZIP。
+            下载包含所选图片、动画帧及已有导出文件；完整场景包含源包和 Godot 包，按作品分别打包为 ZIP。
           </p>
           {catalog && (
             <>
@@ -303,8 +331,8 @@ export function AssetLibrary() {
                   <article
                     key={a.id}
                     style={{
-                      border: '1px solid #2a3040',
-                      background: '#11151f',
+                      border: '1px solid var(--wb-line)',
+                      background: 'var(--wb-panel)',
                       borderRadius: 14,
                       padding: 16,
                     }}
@@ -325,6 +353,7 @@ export function AssetLibrary() {
                         ? '文件缺失'
                         : a.statusLabel}
                       {a.frameCount ? ` · ${a.frameCount} 帧` : ''}
+                      {a.sceneRevision !== undefined ? ` · 场景版本 ${a.sceneRevision}` : ''}
                     </p>
                     <div className="wb-tool-links">
                       <label>

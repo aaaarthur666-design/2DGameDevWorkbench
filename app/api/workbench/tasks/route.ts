@@ -7,9 +7,13 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const limit = searchParams.get('limit') ?? '30';
   const refresh = searchParams.get('refresh') === 'true' ? 'true' : 'false';
+  const query = new URLSearchParams({ limit, refresh });
+  for (const key of ['offset', 'snapshot', 'query', 'capabilityId', 'status']) {
+    if (searchParams.has(key)) query.set(key, searchParams.get(key)!);
+  }
   try {
     const response = await fetchWorkbenchRuntime(
-      `/v1/tasks?limit=${encodeURIComponent(limit)}&refresh=${refresh}`,
+      `/v1/tasks?${query}`,
     );
     return forwardJson(response);
   } catch (error) {

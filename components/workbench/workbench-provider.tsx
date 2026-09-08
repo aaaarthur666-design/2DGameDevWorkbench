@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { workbenchModules, productionLines } from '@/lib/workbench/modules';
+import { readTaskHistory } from '@/lib/workbench/task-history';
 import {
   listWorkItems,
   subscribeWorkItems,
@@ -87,15 +88,16 @@ function useWorkbenchState() {
       return response.json() as Promise<{
         tasks?: StoredTask[];
         jobs?: SpriteJob[];
+        nextOffset?: number | null;
+        snapshot?: string;
       }>;
     };
     await Promise.allSettled([
       refreshLocal(),
-      request('/api/workbench/tasks?limit=200&refresh=true')
-        .then((data) => {
-          if (!Array.isArray(data.tasks)) throw new Error('任务响应无效');
+      readTaskHistory(request)
+        .then((tasks) => {
           if (mounted.current) {
-            setTasks(data.tasks);
+            setTasks(tasks);
             setRuntimeOnline(true);
           }
         })

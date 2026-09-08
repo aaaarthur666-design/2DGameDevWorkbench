@@ -60,6 +60,7 @@
 - “最新一次三个候选动画里的第二个”：按 kind=animation、candidateCount=3、candidateIndex=2、sortBy=createdAt、limit=1 查询，再 get_asset 打开返回的准确链接。名称搜索只传名称关键词，不传整句指令。
 - 多条执行可能属于同一资产；按稳定 assetId 与来源关联整理，不按任务数计作品数、不按相同像素盲目合并独立角色。交接用明确 assetIds 调 get_asset_manifest，保留 SHA-256、候选和源文件路径；普通回复只展示类别数量和需要处理的项。
 - 盘点与清单不等于复制素材或生成游戏代码。浏览器草稿、浏览器下载和外部工程不在服务端目录；coverage 不完整时说明具体范围，不能宣称素材不存在。地图仍由用户在前端制作。
+- 完整场景使用 kind=scene，读取已完成的网页导出，每个 exportId 保留独立版本和源包/Godot 包。浏览器草稿不自动收录。归档只隐藏执行历史，资产仍可读；追溯可用资产详情中的 history。list_tasks 也支持 offset、snapshot，搜索覆盖全部未归档记录，带回 nextOffset 直到 null。
 
 ## 游戏工程与已就绪资产
 
