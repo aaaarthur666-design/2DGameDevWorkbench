@@ -5,7 +5,7 @@ import binascii
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,6 +17,7 @@ from .errors import (
     ProviderConfigurationError,
     ValidationHarnessError,
 )
+from .motion_constraints import Phase
 from .models import ExportOptions, FrameReviewRequest, GenerationRequest
 from .service import QA_ALGORITHM_VERSION, SpritePipelineService
 
@@ -47,6 +48,7 @@ class AttackAcceptBody(_Body):
 class MotionRepairBody(_Body):
     base_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     note: str = Field(default="", max_length=500)
+    phase: Phase | Literal["auto"] = "auto"
     retry: bool = False
     wait: bool = False
 
@@ -133,6 +135,9 @@ def create_api(
     from .reference_art import create_reference_router
 
     app.include_router(create_reference_router(service))
+    from .canvas_api import create_canvas_router
+
+    app.include_router(create_canvas_router(service))
     static_dir = Path(__file__).resolve().parent / "static"
 
     class _NoStoreStaticFiles(StaticFiles):
@@ -210,7 +215,7 @@ def create_api(
     @app.post("/jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/ai-repair")
     def motion_repair(job_id: str, candidate_index: int, frame_index: int, body: MotionRepairBody):
         from .motion_correction import MotionCorrection
-        return MotionCorrection(service).manual(job_id,candidate_index,frame_index,body.base_sha256,body.note,retry=body.retry,wait=body.wait)
+        return MotionCorrection(service).manual(job_id,candidate_index,frame_index,body.base_sha256,body.note,phase=body.phase,retry=body.retry,wait=body.wait)
 
     @app.post("/jobs/{job_id}/motion-review/resume")
     def resume_motion_review(job_id: str):

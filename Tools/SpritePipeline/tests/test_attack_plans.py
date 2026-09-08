@@ -76,6 +76,7 @@ def test_five_segments_assemble_exact_16_and_preserve_anchors(setup):
     assert all(r.frame_count==4 and r.last_frame and len(r.prompt)<=500 for r in provider.requests)
     assert plans.assemble(plan['plan_id'])['output_job_id']==job.job_id
     assert len(service.list_jobs())==6
+    assert sum(len(row['artworks']) for row in service.list_jobs())==1
 
 
 def test_double_click_restart_and_create_are_idempotent(setup):

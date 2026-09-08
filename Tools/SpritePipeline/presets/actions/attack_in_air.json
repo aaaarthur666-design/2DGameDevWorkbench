@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "generation_strategy": "three_stage_attack",
   "action_id": "attack_in_air",
   "display_name": "空中攻击",
   "frame_count": 16,
@@ -11,7 +12,7 @@
   "sheet_columns": 4,
   "sheet_rows": 4,
   "centroid_shift_px": 25,
-  "action_description": "A 16-frame airborne sword attack on one continuous flight arc. Keep frame 1 unchanged; frames 2-4 prepare, frames 5-8 swing, frames 9-10 reach full extension, frames 11-13 follow through, and frames 14-16 recover without an abrupt position jump.",
+  "action_description": "ONE airborne sword attack on a continuous flight arc. About 25% draw back and prepare; 50% one decisive swing, full extension and follow-through; final 25% recover in the air. Accelerate through contact, then decelerate. No extra jump or second strike.",
   "locked_constraints": [
     "maintain one continuous airborne root trajectory",
     "one strike only; fixed sword length/grip",

@@ -155,7 +155,7 @@
       "id": "sprite-generator",
       "name": "2D 序列帧生成",
       "shortName": "序列帧",
-      "description": "从角色设定或动作描述出发生成动画帧。地面攻击与空中攻击默认进行视觉检查；整个任务最多额外补做两次，仍有问题进入逐帧修补。视觉检查默认使用混元 HY Vision 2.0（TokenHub），可选 OpenAI，使用单独配置的 API 并另行计费。",
+      "description": "从角色设定或动作描述出发生成动画帧。地面攻击与空中攻击默认进行视觉检查并给问题帧添加提醒，不自动重新生成。逐帧修补由人决定，使用明确的攻击阶段与前后帧约束，每帧最多请求两次并人工采用。视觉检查默认使用混元 HY Vision 2.0（TokenHub），可选 OpenAI，使用单独配置的 API 并另行计费。",
       "category": "production",
       "workflow": "workbench/workflows/sprite-production.json",
       "ui": {

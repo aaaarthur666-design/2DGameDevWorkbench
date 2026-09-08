@@ -1,6 +1,7 @@
 """Bounded, structured visual review. Never retries a potentially billed request."""
 from __future__ import annotations
 import base64
+import hashlib
 import io
 import json
 import os
@@ -8,7 +9,8 @@ from pathlib import Path
 from typing import Literal
 import httpx
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from .motion_constraints import Phase
 from .credential_store import CredentialStore
 from .errors import ValidationHarnessError
 from .jsonio import atomic_write_json, read_json
@@ -27,10 +29,14 @@ PROVIDERS = {
 
 class MotionIssue(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    code: Literal["early_swing", "weapon_flip", "second_windup", "extra_strike", "body_discontinuity", "identity_drift", "other"]
+    code: Literal["early_swing", "weapon_flip", "second_windup", "extra_strike", "body_discontinuity", "identity_drift", "weapon_deformation", "hand_swap", "incomplete_action", "other"]
     frames: list[int] = Field(min_length=1, max_length=MAX_REVIEW_FRAMES)
     description: str = Field(max_length=500)
     correction: str = Field(max_length=500)
+    evidence_status: Literal["unverified", "confirmed"] = "unverified"
+    evidence_confidence: float = Field(default=0, ge=0, le=1)
+    phase: Phase = "unknown"
+    phase_confidence: float = Field(default=0, ge=0, le=1)
 
 class MotionReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -47,18 +53,24 @@ class MotionReview(BaseModel):
             raise ValueError("failing review needs localized evidence")
         return self
 
+from .vision_sequence import FramePose
+
+from .vision_grip import ReferenceGrip, GRIP_REVIEW_INSTRUCTION, assess_grip
+
+class ObservedReview(MotionReview):
+    reference_grip: ReferenceGrip = "occluded"
+    observations: list[FramePose] = Field(min_length=1, max_length=MAX_REVIEW_FRAMES)
+
+
 def contract(action_id: str, frame_count: int = 16) -> str:
-    common = "Exactly ONE attack. Maintain facing, grip, weapon length and blade orientation continuously. No early strike, teleporting blade, repeated windup or second strike. "
-    if frame_count != 16:
-        phases = ("prepare, ONE swing, extend, follow through, recover along ONE continuous airborne arc; no extra jump or landing reset."
-                  if action_id == "attack_in_air" else
-                  "raise blade BEHIND shoulder, charge with blade still behind, ONE forward high-to-low strike, follow through, recover. Feet remain grounded; charge holds are allowed.")
-        return (common + f"Inspect ALL {frame_count} actual frames in order. Frame 1 is the original pose. Phase order: "
-                + phases + " Phase boundaries depend on the visible motion, not fixed frame numbers. Never drop, duplicate or force frames into a 16-frame layout. "
-                + ("A single frame cannot prove temporal continuity: verdict must be uncertain." if frame_count == 1 else ""))
-    if action_id == "attack_in_air":
-        return common + "Frames 1-4 prepare; 5-8 one continuous swing; 9-10 extend; 11-13 follow through; 14-16 recover. The body follows one continuous airborne arc, no extra jump or landing reset."
-    return common + "Frame 1 original pose; 2-4 raise weapon BEHIND shoulder; 5-7 charge with blade still behind; 8-10 the ONLY forward strike; 11-13 follow through; 14-16 recover. Charge holds may repeat. Feet remain grounded."
+    phases = ("prepare, one airborne swing, extend, follow through, recover; no extra attack cycle."
+              if action_id == "attack_in_air" else
+              "prepare, raise blade behind shoulder, charge, one forward high-to-low strike, follow through, recover. Holds are allowed.")
+    return (f"Inspect all {frame_count} actual frames in order, without forcing fixed phase boundaries. "
+            "Blade orientation and apparent length naturally change with motion and perspective. "
+            "Judge physical continuity relative to the grip, not identical screen-space direction. "
+            "Only clear contradictions count as defects. Phase order: " + phases
+            + (" A single frame cannot establish temporal continuity; verdict must be uncertain." if frame_count==1 else ""))
 
 class VisionReviewer:
     def __init__(self, settings):
@@ -116,31 +128,23 @@ class VisionReviewer:
         except Exception:
             raise ValidationHarnessError("视觉检查参考图或动画帧无法读取；尚未发送请求") from None
 
-    def review(self, paths: list[Path], action_id: str, reference: Path, *, on_request=None) -> dict:
-        self.validate_inputs(paths, reference)
-        frame_count = len(paths)
-        provider = self.provider
+    def _send(self, content, schema_type, provider, key, frame_count, on_request):
         info = PROVIDERS[provider]
-        key = self.key()
-        if not key:
-            raise ValidationHarnessError("请在设置中保存视觉检查 API Key；自动补做已暂停")
-        content = [{"type":"input_text", "text":
-            f"Review this ordered {frame_count}-frame pixel-art attack against the contract. "
-            "Inspect every adjacent transition, blade tip relative to grip/shoulder, and whole-sequence timing. "
-            "Distinguish occlusion from real reversal. Never infer success from the prompt. "
-            "If pixels cannot establish continuity, verdict uncertain. Identify only actual faulty frames (1-based). "
-            "Give concise Chinese evidence and English edit instructions. No aesthetic nitpicks. " + contract(action_id, frame_count)}]
-        for label, path in [("Character reference (not animation frame)", reference), *[(f"Frame {i+1}/{frame_count}", p) for i,p in enumerate(paths)]]:
-            with Image.open(path) as original:
-                rgba=original.convert("RGBA")
-                backdrop=Image.new("RGBA", rgba.size, (70,70,70,255))
-                backdrop.alpha_composite(rgba)
-                canvas=backdrop.convert("RGB").resize((512,512), Image.Resampling.NEAREST)
-                stream=io.BytesIO(); canvas.save(stream, format="PNG")
-            content.extend([{"type":"input_text", "text":label}, {"type":"input_image", "detail":"high", "image_url":"data:image/png;base64,"+base64.b64encode(stream.getvalue()).decode("ascii")}])
-        schema = MotionReview.model_json_schema()
-        schema["$defs"]["MotionIssue"]["properties"]["frames"]["items"].update(minimum=1, maximum=frame_count)
-        body = {"model":MODEL, "store":False, "reasoning":{"effort":"high"}, "max_output_tokens":6000,
+        schema = schema_type.model_json_schema()
+        def strict(value):
+            if isinstance(value, dict):
+                value.pop("default", None)
+                if value.get("type") == "object" and "properties" in value:
+                    value["required"] = list(value["properties"])
+                for child in value.values(): strict(child)
+            elif isinstance(value, list):
+                for child in value: strict(child)
+        strict(schema)
+        for definition in schema.get("$defs",{}).values():
+            properties=definition.get("properties",{})
+            if "frame" in properties: properties["frame"].update(minimum=1, maximum=frame_count)
+            if "frames" in properties: properties["frames"]["items"].update(minimum=1, maximum=frame_count)
+        body = {"model":info["model"], "store":False, "reasoning":{"effort":"high"}, "max_output_tokens":6000,
             "input":[{"role":"user", "content":content}],
             "text":{"format":{"type":"json_schema", "name":"attack_motion_review", "strict":True, "schema":schema}}}
         if provider == "hunyuan":
@@ -155,8 +159,7 @@ class VisionReviewer:
                   "messages":[{"role":"user","content":chat_content}],"response_format":{"type":"json_object"}}
         try:
             with httpx.Client(timeout=180, follow_redirects=False) as client:
-                if on_request is not None:
-                    on_request()
+                if on_request is not None: on_request()
                 response=client.post(info["endpoint"], headers={"Authorization":"Bearer "+key}, json=body)
             if response.status_code != 200:
                 raise ValidationHarnessError(f"视觉检查请求失败（HTTP {response.status_code}）；未自动重试")
@@ -173,14 +176,121 @@ class VisionReviewer:
                 if data.get("status") != "completed":
                     raise ValueError("incomplete visual review")
                 output="".join(part.get("text", "") for item in data.get("output", []) if item.get("type")=="message" for part in item.get("content", []) if part.get("type")=="output_text")
-            result=MotionReview.model_validate_json(output)
-            if any(i < 1 or i > frame_count for issue in result.issues for i in issue.frames):
-                raise ValueError("invalid frame index")
-            if frame_count == 1 and result.verdict == "pass":
-                raise ValueError("one frame cannot establish continuous motion")
-            return {**result.model_dump(), "frame_count":frame_count, "provider":provider, "model":info["model"], "usage":data.get("usage", {}), "response_id":data.get("id")}
+            parsed=schema_type.model_validate_json(output)
+            response_model=data.get("model")
+            if response_model is not None and response_model != info["model"]:
+                raise ValidationHarnessError("视觉服务回传的模型与请求不一致；未采纳结论")
+            return parsed,{"requested_model":info["model"], "response_model":response_model,
+                           "response_id":data.get("id"),"usage":data.get("usage",{})}
         except ValidationHarnessError:
             raise
+        except ValidationError as exc:
+            # Record schema error categories, never provider text, request bodies or secrets.
+            errors=exc.errors(include_input=False)
+            categories=sorted({item["type"] for item in errors})
+            known={"phase","stage","code","status","verdict","grip_height","blade_tip","observations","frame","frames"}
+            fields=sorted({part for item in errors for part in item["loc"] if part in known})
+            raise ValidationHarnessError("视觉检查未取得有效结论；结构化字段无效（"+", ".join(categories+fields)+"），未自动重试") from None
         except Exception:
-            # Never persist provider response bodies or headers containing secrets.
-            raise ValidationHarnessError("视觉检查未取得有效结论；已停止自动补做，不会自动重试") from None
+            raise ValidationHarnessError("视觉检查未取得有效结论；请人工检查，不会自动重新生成") from None
+
+    def review(self, paths: list[Path], action_id: str, reference: Path, *, on_request=None, weapon_hand="reference", handoff_frame=None, handoff_frames=None, facing="right") -> dict:
+        from .vision_evidence import (REVIEW_PROTOCOL_VERSION, Verification, raster, image_part,
+                                      verified_issues)
+        from .vision_sequence import SequenceVerification, sequence_content, assess_sequence, facing_instruction
+        self.validate_inputs(paths, reference)
+        count=len(paths); provider=self.provider; key=self.key()
+        if not key:
+            raise ValidationHarnessError("请在设置中保存视觉检查 API Key；视觉检查已暂停")
+        content=[{"type":"input_text","text":
+            f"Review this ordered {count}-frame pixel-art attack. FIRST record the actually visible pose of EVERY frame in observations. "
+            "grip_height is hand/grip relative to shoulder/head; blade_tip is relative to the character, front means facing direction. "
+            "Describe concrete hand/blade/body positions in Chinese, not a predicted stage name. Occluded means not visible; never fill in a desired pose. "
+            "A low sword idle is not a charge. Then compare every frame to Character reference: "
+            "look for newly invented cape/scarf/costume parts, armor/body recoloring, changed helmet, body proportions or weapon design. "
+            "Distinguish detached motion effects from persistent body/outfit changes. Then inspect adjacent transitions and whole-sequence timing. "
+            "Frame labels are 1-based; the reference is NOT an animation frame. "
+            "Do not invent a defect because the contract mentions it. Rotation, foreshortening, occlusion and a trailing cloth/effect "
+            "do not alone establish weapon flipping or a second attack. Describe only clearly visible differences; uncertain when unclear. "
+            "For each tentative issue use evidence_status=unverified and evidence_confidence=0; a separate pass must verify it. "
+            "Identify intended phase with confidence, unknown if unsure; never infer phase from a fixed frame number. "
+            "Give concise Chinese observations and English corrections. " + contract(action_id,count)}]
+        content.append({"type":"input_text","text":facing_instruction(facing)})
+        from .grip_contract import grip_rule
+        content.append({"type":"input_text","text":GRIP_REVIEW_INSTRUCTION + grip_rule(weapon_hand)})
+        for label,path in [("Character reference (not animation frame)",reference),*[(f"Frame {i+1}/{count}",p) for i,p in enumerate(paths)]]:
+            content.extend([{"type":"input_text","text":label},image_part(raster(path,512))])
+        initial,meta=self._send(content,ObservedReview,provider,key,count,on_request)
+        if [p.frame for p in initial.observations] != list(range(1,count+1)):
+            raise ValidationHarnessError("视觉检查未取得有效结论；逐帧姿势记录不完整或顺序错误")
+        if any(i<1 or i>count for issue in initial.issues for i in issue.frames):
+            raise ValidationHarnessError("视觉检查未取得有效结论；帧号超出实际范围")
+        if count==1 and initial.verdict=='pass':
+            raise ValidationHarnessError("视觉检查未取得有效结论；单帧不能证明动作连续性")
+        report={**initial.model_dump(),"frame_count":count,"provider":provider,"model":meta['requested_model'],
+                "review_protocol_version":REVIEW_PROTOCOL_VERSION, **meta,
+                "request_count":1,"requests":[{"stage":"initial",**meta}],
+                "input_sha256":{"reference":hashlib.sha256(reference.read_bytes()).hexdigest(),
+                                "frames":[hashlib.sha256(path.read_bytes()).hexdigest() for path in paths]}}
+        # Every verdict, including a clean initial pass, requires a full action audit.
+        hypotheses=[{**issue.model_dump(),'evidence_status':'unverified','evidence_confidence':0} for issue in initial.issues]
+        report['initial_review']={**initial.model_dump(),'issues':hypotheses}
+        # Missing phases are judged against the full sequence, never a local pair.
+        local_hypotheses=[issue for issue in hypotheses if issue['code'] not in {'incomplete_action','hand_swap'}]
+        report['local_hypotheses']=local_hypotheses
+        report.update(verdict='uncertain',confidence=0,issues=[],summary='动作完整性尚未完成核验。')
+        verification,included=sequence_content(paths,reference,local_hypotheses,action_id,handoff_frame=handoff_frame,handoff_frames=handoff_frames,facing=facing)
+        verification.append({"type":"input_text","text":grip_rule(weapon_hand)})
+        report["weapon_hand_expected"]=weapon_hand
+        report["facing"]=facing
+        report['request_count']=2
+        try:
+            decisions,check_meta=self._send(verification,SequenceVerification,provider,key,count,on_request)
+            report['requests'].append({'stage':'verification',**check_meta})
+            confirmed,audit=verified_issues(local_hypotheses,decisions,included,paths)
+            hand_ok,hand_issues,hand_audit=assess_grip(decisions.hand_continuity,initial.observations,initial.reference_grip,count)
+            report['hand_continuity']=hand_audit
+            from .vision_appearance import assess_appearance
+            appearance_ok,appearance_issues,appearance_audit=assess_appearance(decisions.appearance_continuity,paths,reference)
+            report['appearance_continuity']=appearance_audit
+            try:
+                complete,missing,stages=assess_sequence(decisions,initial.observations,action_id,count)
+            except ValueError:
+                complete,missing,stages=False,[],[]
+                report['action_evidence_error']='动作阶段证据无效；已保留独立验证的持刀手结论。'
+            report['verification']=audit
+            report['action_completeness']={'complete':complete,'stages':stages}
+            report['recovery_evidence']=decisions.recovery_evidence.model_dump() if decisions.recovery_evidence else None
+            confirmed.extend(missing)
+            confirmed.extend(hand_issues)
+            for issue in appearance_issues:
+                if not any(i['code']==issue['code'] and sorted(i['frames'])==issue['frames'] for i in confirmed):
+                    confirmed.append(issue)
+            report['issues']=confirmed
+            if confirmed:
+                report['confidence']=min(i['evidence_confidence'] for i in confirmed)
+                report['verdict']='fail'
+                report['summary']=f'检测到 {len(confirmed)} 项有帧证据的问题，已定位到逐帧修补。'
+            elif complete and hand_ok and appearance_ok and all(d.get('decision')=='dismissed' and d.get('confidence',0)>=.9 for d in audit):
+                report['verdict']='pass'
+                report['confidence']=min([s['confidence'] for s in stages]+[appearance_audit['confidence']])
+                report['summary']='动作完整性、持刀手、人物外形与武器形状已分别核验，未检出有证据支持的异常。'
+            else:
+                pending=[s for s in stages if s['status']!='present']
+                from .motion_constraints import PHASE_LABELS
+                detail='；'.join(f"{PHASE_LABELS[s['stage']]}（第 {', '.join(map(str,s['frames']))} 帧）：{s.get('evidence_note') or s['reason']}" for s in pending)
+                if not appearance_ok:
+                    detail+=('；' if detail else '')+appearance_audit.get('reason','人物外形或武器形状的独立核验仍缺少充分证据')
+                report['summary']=('尚未通过检查。'+detail if detail else '持刀手或局部疑点证据不足，尚未通过检查。')[:800]
+        except Exception:
+            report['verification_error']='完整性复核未完成或证据无效；未通过检查，不自动重试。'
+            if report['requests'][-1].get('stage')=='verification':
+                report['requests'][-1]['state']='invalid_evidence'
+            else:
+                report['requests'].append({'stage':'verification','requested_model':meta['requested_model'],'state':'failed_or_unknown'})
+        usage={}
+        for request in report['requests']:
+            for name,value in request.get('usage',{}).items():
+                if isinstance(value,(int,float)) and not isinstance(value,bool): usage[name]=usage.get(name,0)+value
+        report['usage']=usage
+        return report

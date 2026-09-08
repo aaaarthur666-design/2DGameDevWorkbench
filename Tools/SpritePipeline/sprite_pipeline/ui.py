@@ -3,6 +3,7 @@ import hashlib
 import math
 import re
 import uuid
+from functools import partial
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,9 @@ from urllib.parse import urlencode
 from PIL import Image
 
 from .errors import HarnessError, ProviderConfigurationError, ValidationHarnessError
-from .models import ExportOptions, FrameReviewRequest, GenerationRequest
+from .artwork_library import ArtworkLibrary, ACTION_LABELS, KIND_LABELS
+from .models import Anchor, CharacterPreset, ExportOptions, FrameReviewRequest, GenerationRequest
+from .reference_canvas import ReferenceCanvas
 from .project_profile import DREAMWEAVER_PROFILE, ProjectAction, project_action_choices
 from .service import QA_ALGORITHM_VERSION, SpritePipelineService
 from .sheet_inspection import build_grid_overlay, extract_character_reference_frame, inspect_sprite_sheet
@@ -34,6 +37,8 @@ BASE_UI_CSS = r"""
 .choice-cards,.static-choice,.workflow-tabs{caret-color:transparent!important}.choice-cards label,.choice-cards label *,.static-choice label,.static-choice label *,.workflow-tabs button,.workflow-tabs button *{cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;caret-color:transparent!important}.static-choice input[role="combobox"],.static-choice input[readonly]{cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;caret-color:transparent!important}.choice-cards>div>div{gap:9px!important}.choice-cards label{padding:11px 13px!important;border:1px solid var(--border)!important;border-radius:13px!important;background:rgba(255,255,255,.025)!important}.choice-cards label:hover{border-color:rgba(159,131,255,.72)!important;background:rgba(159,131,255,.09)!important}.choice-cards label:has(input:checked){border-color:var(--accent)!important;background:rgba(159,131,255,.14)!important}
 .primary-action button{min-height:48px;font-weight:750;border-radius:13px!important}.pixel-preview img,.frame-gallery img,.sheet-preview img{image-rendering:pixelated!important}
 .step-actions{padding:13px 15px;margin-top:14px;border:1px solid var(--border);border-radius:14px;background:rgba(159,131,255,.06)}.step-actions button{min-height:46px;font-weight:750}.replay-action button{min-height:42px}
+.internal-bridge{display:none!important}
+.animation-player-frame{display:block;width:100%;height:480px;border:0;border-radius:12px;background:#10192b}
 .pixel-editor-frame{display:block;width:100%;height:1160px;border:1px solid var(--border);border-radius:16px;background:#15131d}
 @media(max-width:760px){.flow-map{grid-template-columns:repeat(2,minmax(0,1fr))}.contract-grid,.safety-track{grid-template-columns:1fr}#sprite-hero{padding:21px 19px}}
 """
@@ -53,6 +58,31 @@ PIXEL_EDITOR_BRIDGE_JS = r"""
   };
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
+    if (event.data?.type === "sprite-pixel-editor-layout") {
+      const editorFrame = Array.from(document.querySelectorAll(".pixel-editor-frame"))
+        .find((frame) => frame.contentWindow === event.source);
+      const height = event.data.height;
+      if (!editorFrame || typeof height !== "number" || !Number.isFinite(height) || height < 400 || height > 6000) return;
+      editorFrame.style.height = `${Math.ceil(height)}px`;
+      return;
+    }
+    if (event.data?.type === "sprite-reference-transferred") {
+      const trusted = Array.from(document.querySelectorAll(".reference-editor-frame"))
+        .some((frame) => frame.contentWindow === event.source);
+      if (!trusted || !/^edited_[0-9a-f]{32}_v[0-9]+$/.test(event.data.characterId || "")) return;
+      const field = document.querySelector("#reference-transfer-character textarea, #reference-transfer-character input");
+      if (!field) return;
+      const prototype = field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, "value").set.call(field, event.data.characterId);
+      field.dispatchEvent(new Event("input", {bubbles: true}));
+      const sourceFrame = event.source;
+      window.setTimeout(() => {
+        if (Array.from(document.querySelectorAll(".reference-editor-frame")).some((frame) => frame.contentWindow === sourceFrame)) {
+          clickButton("reference-transfer-apply");
+        }
+      }, 80);
+      return;
+    }
     if (event.data?.type !== "sprite-pixel-editor-saved") return;
     const sourceFrame = event.source;
     const trustedFrame = Array.from(document.querySelectorAll(".pixel-editor-frame"))
@@ -72,20 +102,14 @@ PIXEL_EDITOR_BRIDGE_JS = r"""
 """
 
 
-REPLAY_ANIMATION_JS = r"""
-() => {
-  const root = document.getElementById("animation-preview");
-  const image = root?.querySelector("img");
-  if (!image?.src) return [];
-  const replayUrl = new URL(image.src, window.location.href);
-  replayUrl.searchParams.set("_sprite_replay", Date.now().toString());
-  image.src = "";
-  window.requestAnimationFrame(() => {
-    image.src = replayUrl.toString();
-  });
-  return [];
-}
-"""
+REFERENCE_CANVAS_SCROLL_JS = """() => {
+  window.requestAnimationFrame(() => document.getElementById("reference-canvas-panel")?.scrollIntoView({behavior: "smooth", block: "start"}));
+}"""
+
+
+LIBRARY_DETAIL_SCROLL_JS = """() => {
+  window.requestAnimationFrame(() => document.getElementById("artwork-detail")?.scrollIntoView({behavior: "smooth", block: "start"}));
+}"""
 
 
 JOB_STATUS_CN = {
@@ -318,6 +342,13 @@ def _pixel_editor_embed(
     )
 
 
+def _animation_player_embed(job_id: str, candidate: Any) -> str:
+    revision = hashlib.sha256("|".join(frame.sha256 for frame in candidate.frames).encode("ascii")).hexdigest()[:16]
+    query = urlencode({"job_id": job_id, "candidate": candidate.candidate_index, "revision": revision})
+    return (f'<iframe class="animation-player-frame" src="/animation-player?{_escape(query)}" '
+            'title="动画播放检查" sandbox="allow-scripts allow-same-origin"></iframe>')
+
+
 def build_ui(
     root: str | Path | None = None,
     *,
@@ -331,6 +362,7 @@ def build_ui(
 
     service = service or SpritePipelineService(root)
     profile = DREAMWEAVER_PROFILE
+    library = ArtworkLibrary(service)
     # Diagnostic jobs stay out of the production history until this browser
     # session explicitly launches one from the Example page.
     visible_diagnostic_jobs: set[str] = set()
@@ -421,14 +453,29 @@ def build_ui(
             profile.cell_height,
             action.provider_frame_count,
         )
+        from .attack_sequence import segment_counts, phase_timing
+        try:
+            preset, _ = service.presets.load_action(action_id)
+        except HarnessError:
+            # A partial preset installation must still render the library/settings.
+            counts = []
+        else:
+            counts = segment_counts(preset)
+        if counts:
+            per_candidate=sum(service._pixellab_generation_units(profile.cell_width,profile.cell_height,n) for n in counts)
         total = per_candidate * resolved
         if action_id in {"attack", "attack_in_air"}:
-            extra = 2 * service._pixellab_generation_units(profile.cell_width, profile.cell_height, 4)
             from .vision_review import VisionReviewer
             configured = VisionReviewer(service.settings).configured
-            return _notice("info" if configured else "warn", "已默认启用：攻击检查与有限补做",
-                f"先生成并检查，发现问题后最多额外补做 2 次（整个任务共用）。PixelLab 预计最多 {total + extra} 个额度；视觉检查另行计费，最多 {resolved + 2} 次。"
-                + ("仍有问题会标记到逐帧修补。" if configured else "请先在设置中配置 视觉检查 API Key。"))
+            timing=phase_timing(preset) if counts else {}
+            rhythm=(f"节奏目标：{'空中准备' if action_id=='attack_in_air' else '起势/蓄力'} {timing['preparation']} 帧 → 出刀/随挥 {timing['attack']} 帧 → 收招 {timing['recovery']} 帧；出刀先快后慢。" if timing else "")
+            anchor_note=("出刀与收招连续生成，原图同时作为收招终点和外形参考。一脚稳住，另一脚随劈砍小幅前弓步，收招时退回。" if counts and preset.generation_strategy=="reference_anchored_attack" else "")
+            return (_notice("info" if configured else "warn", f"本次预计最多 {total} 个 PixelLab 额度 · {resolved} 个候选",
+                f"已默认启用攻击检查与问题标记。视觉检查另行计费，每个候选最多两次，合计最多 {2*resolved} 次调用，不自动重试或补做。"
+                + ("在逐帧修补中由你决定是否请求 AI 重新生成。" if configured else "请先在设置中配置 视觉检查 API Key。"))
+                + '<details class="inline-details"><summary>查看攻击节奏与固定生成次数</summary><p>'
+                + _escape(rhythm + anchor_note + (f"每个候选分 {len(counts)} 段生成，共 {len(counts)*resolved} 次固定提交；每段仅生成一次。" if counts else "每个候选提交一次。"))
+                + '</p></details>')
         return _notice(
             "warn" if total > per_candidate else "info",
             f"本次最多消耗 {total} 个 generation 额度",
@@ -516,7 +563,11 @@ def build_ui(
             body += f" 模型生成 {action.provider_frame_count} 个连续源帧，Harness 保留为项目需要的 {action.frame_count} 帧。"
         if action.note:
             body += f" {action.note}"
-        return _notice("info", f"{action.display_name} → {action.filename}", body)
+        return (
+            '<details class="inline-details"><summary>动作规格与导出说明</summary>'
+            + _notice("info", f"{action.display_name} → {action.filename}", body)
+            + "</details>"
+        )
 
     def save_api_key(value: str) -> tuple[str, str, str, Any, Any]:
         try:
@@ -547,6 +598,8 @@ def build_ui(
         if uploaded is None:
             reference, _summary = character_projection(saved_character_id)
             if reference:
+                if saved_character_id and saved_character_id.startswith("edited_"):
+                    return reference, _notice("ok", "修改版已作为新的生成原图", "下次生成将使用上方这张修改后的原图。"), {}
                 return reference, _notice(
                     "info",
                     "当前使用已保存角色",
@@ -674,13 +727,11 @@ def build_ui(
         return result
 
     def saved_asset_choices() -> list[tuple[str, str]]:
-        choices: list[tuple[str, str]] = []
-        for row in service.list_jobs():
-            job_id = str(row.get("job_id", ""))
-            if row.get("execution_only") or row.get("status") == "invalid" or row.get("provider") == "fixture":
-                continue
-            choices.append((job_summary_label(row), job_id))
-        return choices
+        # Execution history deliberately includes empty, failed and test runs.
+        return [
+            (job_summary_label(row) if row.get("status") != "invalid" else f"记录无法读取 · {row['job_id']}", str(row["job_id"]))
+            for row in service.list_jobs()
+        ]
 
     def saved_asset_catalog_projection(job_id: str | None) -> str:
         if not job_id:
@@ -735,7 +786,7 @@ def build_ui(
 
                 remote = safety["provider_job_id"] or "尚未取得"
                 detail = (
-                    f"远端任务编号：{remote}；本地提交次数：{safety['submission_attempts']}/1。"
+                    f"远端任务编号：{remote}；本地提交次数：{safety['submission_attempts']}/{candidate.attack_sequence['maximum_submissions'] if candidate.attack_sequence else 1}。"
                 )
                 if saved:
                     integrity = "校验通过" if safety["result_integrity"] else "校验异常"
@@ -900,7 +951,7 @@ def build_ui(
                     gallery.append(
                         (
                             str(frame_path),
-                            f"第 {frame.index + 1} 帧 · {REVIEW_STATUS_CN.get(frame.review_status.value, frame.review_status.value)}",
+                            f"第 {frame.index + 1} 帧 · {REVIEW_STATUS_CN.get(frame.review_status.value, frame.review_status.value)}" + motion_tag_caption(frame),
                         )
                     )
             repairable = bool(
@@ -1002,6 +1053,43 @@ def build_ui(
         lines.append("\n自动检查无法替你判断角色身份、服装、武器和肢体是否符合美术要求。")
         return "\n".join(lines)
 
+    def motion_tag_caption(frame):
+        if frame.review_status.value=="approved":
+            return ""
+        labels=list(dict.fromkeys(("待核实 · " if t.get("evidence_status")!="confirmed" else "AI 提醒 · ")+t.get("label","视觉提醒") for t in frame.motion_tags))
+        stale=any(t.get("frame_sha256")!=frame.sha256 for t in frame.motion_tags)
+        return (" · 旧版提醒：" if stale else " · ⚠ ")+" / ".join(labels) if labels else ""
+
+    def motion_frame_html(job, candidate, frame_index, phase="auto"):
+        from .motion_correction import MotionCorrection
+        from .motion_constraints import phase_context, PHASE_LABELS
+        if job.action.action_id not in {"attack","attack_in_air"} or not candidate.frames:
+            return ""
+        frame=candidate.frames[frame_index]
+        paths=[service.store.resolve_job_path(job.job_id,f.active_path) for f in candidate.frames]
+        digest=MotionCorrection.digest(paths)
+        guidance=phase_context(job,candidate,frame_index,digest,phase)
+        tags=[]
+        for tag in frame.motion_tags:
+            stale=tag.get("review_digest")!=digest
+            label=("旧版提醒 · " if stale else "已人工确认 · " if frame.review_status.value=="approved" else "AI 复核意见 · " if tag.get("evidence_status")=="confirmed" else "未经复核 · ")+tag["label"]
+            stage=PHASE_LABELS.get(tag.get("phase"),"阶段待确认") if tag.get("evidence_status")=="confirmed" else "阶段待确认"
+            tags.append(f'<span class="qa-count warn">{_escape(stage)} · {_escape(label)}</span>')
+        previous=f"第 {guidance['previous_frame']+1} 帧" if guidance["previous_frame"] is not None else "无前帧（首帧）"
+        following=f"第 {guidance['next_frame']+1} 帧" if guidance["next_frame"] is not None else "无后帧（末帧）"
+        return '<div class="qa-counts">'+"".join(tags)+'</div>'+_notice(
+            "warn" if guidance["phase"]=="unknown" else "info",
+            f"当前帧阶段：{guidance['phase_label']} · {guidance['phase_source']}",
+            f"{guidance['constraint_cn']} {guidance['grip_constraint_cn']} 修补参考：{previous} → 当前帧 → {following}。只替换当前帧，原版和其他帧保留。")
+
+    def ai_repair_guidance(job_id, candidate_index, frame_index, phase):
+        try:
+            job=service.get_job(str(job_id))
+            candidate=service._candidate(job,int(candidate_index))
+            return motion_frame_html(job,candidate,int(frame_index),phase)
+        except Exception as exc:
+            return _notice("info","选择问题帧后显示阶段约束",_human_error(exc) if job_id and candidate_index is not None else "由你决定是否生成修补预览。")
+
     def selected_frame_html(job: Any, candidate: Any, frame_index: int) -> str:
         if not candidate.frames:
             return _notice("info", "还没有画面", "等待生成完成或先导入一张 Sheet。")
@@ -1014,7 +1102,7 @@ def build_ui(
             f"人工状态：{REVIEW_STATUS_CN.get(frame.review_status.value, frame.review_status.value)}；"
             f"自动提示 {issues} 项；手工像素版本 {frame.manual_edit_versions} 个；"
             f"上传替换 {frame.repair_attempts}/2 次。",
-        )
+        ) + motion_frame_html(job,candidate,frame_index)
 
     def motion_review_html(job, candidate):
         from .motion_correction import MotionCorrection
@@ -1031,11 +1119,46 @@ def build_ui(
             if not current:
                 return _notice("warn","当前版本尚未经过视觉检查","画面已修改；旧版本的检查结论不能用于当前版本。")
             verdict=report["verdict"]
-            title={"pass":"视觉检查已通过","fail":"视觉检查发现动作问题","uncertain":"视觉检查未能可靠判断"}[verdict]
+            legacy=report.get("review_protocol_version",0)<2
+            incomplete_legacy_pass=verdict=="pass" and report.get("review_protocol_version",0)<3
+            hand_legacy_pass=verdict=="pass" and 3<=report.get("review_protocol_version",0)<4
+            tail_legacy_pass=verdict=="pass" and report.get("review_protocol_version",0)==4
+            appearance_legacy_pass=verdict=="pass" and report.get("review_protocol_version",0)==5
+            title=("当前候选视觉检查未完成；不影响其他候选" if report.get("check_unavailable") else "旧版检查未独立核验人物与武器形态" if appearance_legacy_pass else "旧版检查尚未核实末尾收招" if tail_legacy_pass else "旧版检查未验证持刀手连续性" if hand_legacy_pass else "旧版检查未验证动作完整性" if incomplete_legacy_pass else "旧版 AI 意见：未经复核" if legacy else
+                   {"pass":"视觉检查通过：动作完整","fail":"视觉检查发现问题：已定位待修补帧","uncertain":"视觉检查未通过：部分证据不足"}[verdict])
             evidence="；".join(f"第 {', '.join(str(i) for i in issue['frames'])} 帧：{issue['description']}" for issue in report.get("issues",[]))
-            extra=f"；已使用自动补做 {sum(a['mode']=='auto' for a in state.get('attempts',[]))}/2 次"
-            return _notice("ok" if verdict=="pass" else "warn",title,
-                f"已检查全部 {report.get('frame_count',count)} 帧 · {report.get('model','已保存的视觉报告')}{extra}。{report['summary']} {evidence}")
+            model=report.get("requested_model",report.get("model","未记录"))
+            note=("这份旧报告只做过一次判断，可能误报；不作为自动阶段约束。" if legacy else
+                  f"本次 {report.get('request_count',1)} 次视觉调用，未自动重新生成。")
+            if report.get("review_protocol_version",0)<4:
+                note+=" 本报告尚未检查持刀手连续性。"
+            appearance=report.get("appearance_continuity",{})
+            if appearance:
+                labels={"consistent":"已核验","changed":"发现变化","uncertain":"证据不足"}
+                note+=" 人物外形："+labels.get(appearance.get("body_status"),"未完成")+"；武器形态："+labels.get(appearance.get("weapon_status"),"未完成")+"。"
+            hand_report=report.get("hand_continuity",{})
+            if hand_report:
+                note+=" 持刀手连续性："+{"consistent":"已核验","changed":"发现换手","uncertain":"连接证据不足"}.get(hand_report.get("status"),"未完成")+"。"
+            from .motion_constraints import PHASE_LABELS
+            stage_lines=[]
+            for item in report.get('action_completeness',{}).get('stages',[]):
+                label={"present":"已检出","missing":"缺失","uncertain":"证据不足"}[item['status']]
+                frame_text=', '.join(str(o['frame']) for o in item['observations'])
+                stage_lines.append(f"{PHASE_LABELS[item['stage']]}：{label}（第 {frame_text} 帧）。{item.get('evidence_note') or item['reason']}")
+            details='<details><summary>查看逐帧证据与调用记录</summary><p>'+_escape(report.get('summary','')+' '+evidence)+'</p>'
+            for item in report.get('observations',[]):
+                details+='<p>'+_escape(f"第 {item['frame']} 帧：{item['observation']}")+'</p>'
+            if incomplete_legacy_pass:
+                note="旧版只检查了异常，没有验证举刀、蓄力、挥击、收招是否实际发生；这份通过记录不能证明攻击完整。"
+            for record in report.get('requests',[]):
+                details+='<p>'+_escape(f"{record['stage']} · 请求 {record.get('requested_model','未记录')} · 回传 {record.get('response_model') or '服务未回传模型名'} · 响应 ID {record.get('response_id') or '未取得'}")+'</p>'
+            for decision in report.get('verification',[]):
+                details+='<p>'+_escape(f"初检意见 {decision['issue_index']+1} · {decision['decision']} · {decision.get('reason','')}")+'</p>'
+            details+='</details>'
+            sent_label="本候选共" if report.get("check_unavailable") else "已送检全部"
+            return _notice("info" if legacy or verdict!="fail" else "warn",title,
+                f"{sent_label} {report.get('frame_count',count)} 帧 · 请求模型 {model}。{note} 检出问题会标记待修补帧；选择修补时带入已确认的阶段与前后帧约束。"
+                + (" "+evidence if not legacy else ""))+"".join("<p>"+_escape(line)+"</p>" for line in stage_lines)+details
         record=state.get("reviews",{}).get(f"initial-{candidate.candidate_index}",{})
         legacy=MotionCorrection._legacy_unsent(job,f"initial-{candidate.candidate_index}",record)
         if state.get("state") in {"waiting","checking","repairing"}:
@@ -1055,12 +1178,7 @@ def build_ui(
         try:
             job=service.get_job(str(job_id))
             state=job.motion_control or {}
-            unfinished=[(key,r) for key,r in state.get("reviews",{}).items() if r.get("state")!="complete"]
-            unsent=all((r.get("state") in {"prepared","not_sent"} and r.get("request_started") is False)
-                       or MotionCorrection._legacy_unsent(job,key,r) for key,r in unfinished)
-            available=(state.get("state")=="needs_repair" and unsent
-                       and (bool(unfinished) or not any(c.motion_review for c in job.candidates))
-                       and bool(job.candidates) and all(c.frames and c.status.value not in {"approved","rejected","failed"} for c in job.candidates))
+            available=(state.get("state")=="needs_repair" and bool(MotionCorrection(service).unsent_candidates(job)))
             return gr.update(visible=available)
         except Exception:
             return gr.update(visible=False)
@@ -1071,7 +1189,7 @@ def build_ui(
             if not job_id:
                 raise ValidationHarnessError("请先选择动画")
             MotionCorrection(service).resume(str(job_id))
-            status=_notice("info","已继续视觉检查","复用已保存的全部帧。视觉检查按用量计费，自动补做仍累计最多两次；稍后刷新当前结果。")
+            status=_notice("info","已继续视觉检查","复用已保存的全部帧，只检查并标记问题，不自动重新生成。视觉检查按用量计费；稍后刷新当前结果。")
         except Exception as exc:
             status=_notice("error","未继续视觉检查",_human_error(exc))
         return status,*review_payload(job_id,candidate_index)
@@ -1102,7 +1220,7 @@ def build_ui(
             choices = candidate_choices(job)
             prefix = service.store.job_dir(job.job_id) / "previews" / candidate.candidate_id
             gallery = [
-                (str(service.store.resolve_job_path(job.job_id, frame.active_path)), f"第 {frame.index + 1} 帧 · {REVIEW_STATUS_CN.get(frame.review_status.value, frame.review_status.value)}")
+                (str(service.store.resolve_job_path(job.job_id, frame.active_path)), f"第 {frame.index + 1} 帧 · {REVIEW_STATUS_CN.get(frame.review_status.value, frame.review_status.value)}" + motion_tag_caption(frame))
                 for frame in candidate.frames
             ]
             qa_current = bool(
@@ -1169,7 +1287,7 @@ def build_ui(
             }
             return (
                 gr.update(choices=choices, value=selected, visible=len(choices) > 1),
-                str(prefix.with_suffix(".zoom.gif")) if qa_current and prefix.with_suffix(".zoom.gif").is_file() else None,
+                _animation_player_embed(job.job_id, candidate) if qa_current and candidate.frames else "",
                 gallery, summary,
                 issue_markdown(candidate) if qa_current else "### 自动检查明细\n\n当前版本尚未完成本机检查；旧版本问题已隐藏。",
                 {"ok": True, "job": job.model_dump(mode="json")}, 0,
@@ -1669,7 +1787,7 @@ def build_ui(
             for item in frames:
                 _state_key, icon, state_label = _repair_frame_state(candidate, item)
                 suffix = f" · {item.review_note}" if item.review_note else ""
-                caption = f"{icon} 第 {item.index + 1} 帧 · {state_label}{suffix}"
+                caption = f"{icon} 第 {item.index + 1} 帧 · {state_label}{suffix}" + motion_tag_caption(item)
                 frame_choices.append((caption, item.index))
                 timeline.append(
                     (
@@ -1735,7 +1853,7 @@ def build_ui(
                     f"只修改这一格；其他 {len(candidate.frames) - 1} 帧不变。"
                     f"当前还有 {len(problem_indices)} 帧待修补。{edit_guidance}"
                     f"手工像素版本 {frame.manual_edit_versions} 个；上传替换 {frame.repair_attempts}/2 次。",
-                ) + motion_review_html(job, candidate) + _repair_qa_change_html(candidate),
+                ) + motion_review_html(job, candidate) + motion_frame_html(job,candidate,selected_frame) + _repair_qa_change_html(candidate),
                 gr.update(interactive=can_replace), gr.update(value=frame.issue_type.value if frame.issue_type else "other"), gr.update(value=frame.review_note),
                 _pixel_editor_embed(job.job_id, selected_candidate, selected_frame), frame.sha256,
                 gr.update(value=None), {},
@@ -2046,7 +2164,7 @@ def build_ui(
         configured=reviewer.configured
         note=("可复用服务端 TOKENHUB_API_KEY；若密钥只填在地图页面，请在此保存一次。" if reviewer.provider=="hunyuan" else "使用独立的 OpenAI API Key。")
         return _notice("ok" if configured else "warn", "视觉检查已配置" if configured else "视觉检查待配置",
-            f"使用 {reviewer.info['label']} 检查连续 16 帧；图片发送给所选服务，按 API 用量计费。" + note)
+            f"请求模型 {reviewer.info['model']}，检查全部实际帧（1–64 帧）；初检加至多一次复核，按 API 用量计费。TokenHub Key 是访问凭据，不会自动选择 Image V3；Image V3 用于生图，本页使用图片理解模型。" + note)
 
     def select_vision_provider(provider):
         from .vision_review import VisionReviewer
@@ -2075,10 +2193,21 @@ def build_ui(
         message=report.get("summary") or "请求已保存；稍后点击刷新结果，不会再次生成。"
         return _notice("info", "修补预览：确认后再采用" if ready else "正在修补", message), str(path) if ready else None, token
 
-    def ai_repair_start(job_id, candidate_index, frame_index, base_sha256, retry=False):
+    def ai_repair_selection(job_id, candidate_index, frame_index, base_sha256):
+        # Clear a previous frame's error/preview when the selected context changes.
+        # Selection itself never reserves a generation or changes review status.
+        if not job_id or candidate_index is None or frame_index is None:
+            return _notice("info", "尚未选择修补帧", "在上方完整帧条中选择要修补的画面。"), None, {}
+        return _notice(
+            "info", f"已选中第 {int(frame_index) + 1} 帧",
+            "可直接生成修补预览，无需先标记待修补。请确认攻击阶段，只有点击生成按钮才会请求 AI。"
+            if base_sha256 else "正在加载当前帧版本，请稍候。",
+        ), None, {}
+
+    def ai_repair_start(job_id, candidate_index, frame_index, base_sha256, phase="auto", note="", retry=False):
         try:
             from .motion_correction import MotionCorrection
-            result=MotionCorrection(service).manual(str(job_id),int(candidate_index),int(frame_index),base_sha256,retry=retry,wait=False)
+            result=MotionCorrection(service).manual(str(job_id),int(candidate_index),int(frame_index),base_sha256,note,phase=phase,retry=retry,wait=False)
             return ai_repair_display(str(job_id),result)
         except Exception as exc:
             return _notice("error","AI 修补未完成",_human_error(exc)),None,{}
@@ -2381,17 +2510,94 @@ def build_ui(
         gr.HTML(
             '<div id="sprite-hero"><div class="product-row"><div class="product-copy">'
             '<span class="product-eyebrow">SPRITE PIPELINE</span><h1>像素角色动画工作台</h1>'
-            '<p>一次只处理眼前这一步。角色原图与提示词进入生成，结果依次经过播放检查、可选修补和确定性导出。</p>'
+            '<p>从作品继续创作。找到角色原图、预览动画、整理地图，再开始下一步。</p>'
             f'</div><span class="project-pill">{_escape(profile.project_name)} · {_escape(profile.character_name)}</span></div>'
-            '<div class="flow-map">'
+            '<details class="workflow-guide"><summary>查看制作流程</summary><div class="flow-map">'
             '<div class="flow-box"><span class="flow-number">1</span><div><b>导入并生成</b><small>原图、角色与动作</small></div></div>'
             '<div class="flow-box"><span class="flow-number">2</span><div><b>播放并检查</b><small>整段预览、逐帧判断</small></div></div>'
             '<div class="flow-box"><span class="flow-number">3</span><div><b>按需修补</b><small>只处理有问题的帧</small></div></div>'
             '<div class="flow-box"><span class="flow-number">4</span><div><b>确认并导出</b><small>固定 4×4 PNG Sheet</small></div></div>'
-            '</div></div>'
+            '</div></details></div>'
         )
         header_status = gr.HTML(header_status_html())
-        with gr.Tabs(elem_classes=["workflow-tabs"]) as workflow_tabs:
+        with gr.Tabs(selected="assets", elem_classes=["workflow-tabs"]) as workflow_tabs:
+            with gr.Tab("作品库", id="assets") as library_tab:
+                gr.HTML(_stage_header("作品库", "你的作品，接着做", "用画面找到素材，从当前状态继续创作。"))
+                with gr.Row(elem_classes=["library-toolbar"]):
+                    library_kind = gr.Radio([("全部", "all"), ("角色原图", "character"), ("动画", "animation"), ("地图", "map")], value="all", label="作品类型", elem_classes=["choice-cards"], scale=3)
+                    library_search = gr.Textbox(label="搜索作品", placeholder="搜索角色、动作或地图名称", scale=2)
+                with gr.Row():
+                    library_import_toggle = gr.Button("＋ 导入素材", variant="primary")
+                    library_generate = gr.Button("制作新动作 →")
+                    library_refresh = gr.Button("刷新作品")
+                    library_records = gr.Button("执行记录")
+                library_action_status = gr.HTML()
+                with gr.Accordion("导入素材", open=False) as library_import_panel:
+                    library_import_kind = gr.Radio([("角色原图", "character"), ("地图", "map")], value="character", label="素材类型")
+                    gr.Markdown("角色支持 128×128 透明 PNG 或每格 128×128、4 列的 Sheet；地图支持静态 PNG / JPEG / WebP。保存原图不会消耗生成额度。已有动画可从右侧入口导入。")
+                    library_import_file = gr.File(label="选择素材文件", file_types=[".png", ".jpg", ".jpeg", ".webp"], type="filepath")
+                    library_import_name = gr.Textbox(label="作品名称（可选）")
+                    with gr.Row():
+                        library_import_save = gr.Button("保存到作品库", variant="primary")
+                        library_import_animation = gr.Button("导入已有动画 Sheet →")
+                library_rows = gr.State(library.list_artworks())
+                library_page = gr.State(1)
+                with gr.Column(elem_classes=["artwork-grid"]) as library_grid:
+                    pass
+                with gr.Row(elem_classes=["library-pagination"]):
+                    library_previous = gr.Button("← 上一页")
+                    library_page_label = gr.Markdown()
+                    library_next = gr.Button("下一页 →")
+                with gr.Accordion("作品详情与执行记录", open=False, elem_id="artwork-detail") as library_detail_panel:
+                    library_detail_title = gr.HTML(_notice("info", "选择一件作品查看详情", "卡片上的按钮可以直接继续创作。全部执行记录也可在这里查找。"))
+                    library_detail_image = gr.Image(label="作品预览", interactive=False, type="filepath", height=300, visible=False, elem_classes=["pixel-preview"])
+                    library_download = gr.File(label="导出文件", file_count="multiple", interactive=False, visible=False)
+                    with gr.Group(elem_classes=["context-panel"]):
+                        gr.Markdown("失败、重试、未生成和测试记录保留在这里。选择记录后可查看结果和恢复信息。")
+                        with gr.Row():
+                            task_job = gr.Dropdown(initial_tasks, value=initial_task_job, label="执行记录", filterable=False, elem_classes=["static-choice"], scale=6)
+                            open_asset_button = gr.Button("打开所选任务", variant="primary", scale=1, elem_classes=["compact-action"])
+                            refresh_asset_catalog_button = gr.Button("刷新", scale=1, elem_classes=["compact-action"])
+                    asset_catalog_status = gr.HTML(initial_asset_catalog)
+                    with gr.Accordion("记录中的候选画面", open=False) as record_content_panel:
+                        asset_candidate = gr.Radio(
+                            initial_asset[0].get("choices", []),
+                            value=initial_asset[0].get("value"),
+                            visible=bool(initial_asset[0].get("visible", False)),
+                            label="该任务中的候选",
+                            elem_classes=["choice-cards"],
+                        )
+                        asset_summary = gr.HTML(initial_asset[1])
+                        with gr.Row():
+                            with gr.Column(elem_classes=["workspace-card"]):
+                                asset_animation_preview = gr.Image(initial_asset[2], label="动画预览", type="filepath", interactive=False, height=360, elem_classes=["pixel-preview"])
+                            with gr.Column(elem_classes=["workspace-card"]):
+                                asset_frame_gallery = gr.Gallery(initial_asset[3], label="逐帧画面", columns=4, rows=2, height=360, object_fit="contain", allow_preview=False, elem_classes=["frame-gallery"])
+                        with gr.Row(elem_classes=["step-actions"]):
+                            asset_review_button = gr.Button("在播放检查中打开", interactive=bool(initial_asset[4].get("interactive", False)))
+                            asset_repair_button = gr.Button("打开待修补帧", interactive=bool(initial_asset[5].get("interactive", False)))
+                        asset_action_status = gr.HTML()
+                    with gr.Accordion("任务保存与恢复（仅异常时使用）", open=False, elem_classes=["secondary-zone"]):
+                        gr.Markdown("只有打开任务后才读取完整安全记录。后台只会继续查询已经提交的任务，不会自动创建第二次生成。")
+                        refresh_task_button = gr.Button("安全刷新 / 继续取回已有结果")
+                        task_status = gr.HTML(initial_task[0])
+                        with gr.Accordion("任务完整记录（排错时再看）", open=False, elem_classes=["advanced-panel"]):
+                            task_details = gr.JSON(initial_task[1])
+                        with gr.Accordion("提交结果未知时的人工恢复", open=False, elem_classes=["advanced-panel"]):
+                            gr.Markdown("只有在 PixelLab 网页或其他记录中能找到此次生成的远端任务编号时才填写。此操作只绑定并查询已有任务，绝不会再次提交生成。")
+                            attach_candidate = gr.Dropdown(
+                                initial_task[2].get("choices", []),
+                                value=initial_task[2].get("value"),
+                                label="需要恢复的候选",
+                                interactive=bool(initial_task[2].get("interactive", False)),
+                                filterable=False,
+                                elem_classes=["static-choice"],
+                            )
+                            attach_provider_id = gr.Textbox(label="PixelLab 远端任务编号")
+                            attach_provider_button = gr.Button("绑定并只取回已有结果")
+                            attach_status = gr.HTML()
+
+
             with gr.Tab("开始", id="example"):
                 gr.HTML(
                     _stage_header("开始", "先认识三个输入与输出", "不需要先理解任务编号、候选编号或本机路径；主流程会自动传递当前结果。")
@@ -2410,8 +2616,8 @@ def build_ui(
                 with gr.Row(elem_classes=["step-actions"]):
                     example_next_button = gr.Button("下一步：导入角色原图与提示词 →", variant="primary")
 
-            with gr.Tab("1 · 生成", id="generate"):
-                gr.HTML(_stage_header("1", "导入角色并生成动作", "左边定义角色，右边定义动作；确认额度后，每个候选只提交一次。"))
+            with gr.Tab("1 · 生成", id="generate", elem_id="generation-tab"):
+                gr.HTML(_stage_header("1", "导入角色并生成动作", "左边定义角色，右边定义动作；确认额度后按固定次数生成；攻击会分段完成。"))
                 with gr.Row(elem_classes=["status-strip"]):
                     with gr.Column(scale=3):
                         ai_api_banner = gr.HTML(api_banner_html())
@@ -2420,21 +2626,23 @@ def build_ui(
                     with gr.Column(scale=1):
                         open_api_settings_button = gr.Button("API 设置", elem_classes=["compact-action"])
                         refresh_quota_button = gr.Button("刷新额度", elem_classes=["compact-action"])
-                with gr.Accordion("额度原始记录（仅排错时查看）", open=False, elem_classes=["advanced-panel"]):
-                    quota_details = gr.JSON(service.get_cached_balance() or {})
-                with gr.Row():
-                    with gr.Column(elem_classes=["workspace-card"]):
+                with gr.Row(elem_classes=["generation-workspace"]):
+                    with gr.Column(scale=5, min_width=360, elem_classes=["workspace-card", "reference-card"]):
                         gr.HTML(_card_heading("角色", "导入角色原型", "上传新原图；没有新原图时再展开已保存角色。"))
-                        generation_reference_file = gr.File(
-                            label="上传角色原型 PNG",
-                            file_count="single",
-                            file_types=[".png"],
-                            type="filepath",
-                        )
+                        with gr.Row(elem_classes=["reference-inputs"]):
+                            with gr.Column(min_width=150):
+                                generation_reference_file = gr.File(
+                                    label="上传角色原型 PNG",
+                                    file_count="single",
+                                    file_types=[".png"],
+                                    type="filepath",
+                                )
+                            with gr.Column(min_width=150):
+                                generation_reference_preview = gr.Image(initial_reference, label="实际送给模型的参考帧", type="pil", interactive=False, height=200, elem_classes=["pixel-preview"], elem_id="generation-reference-preview")
                         gr.Markdown("支持 **128×128 透明 PNG**，也支持 4 列、128×128/格的角色 Sheet；后者会自动取第一个非空格。")
-                        generation_reference_preview = gr.Image(initial_reference, label="实际送给模型的参考帧", type="pil", interactive=False, height=280, elem_classes=["pixel-preview"])
                         generation_reference_status = gr.HTML(_notice("info", "当前使用已保存角色", "上传新的角色原型 PNG 后，会改用上传图片。"))
                         generation_reference_state = gr.State({})
+                        edit_reference_button = gr.Button("在像素画布中修改原图", elem_id="edit-reference-button")
                         generation_character_name = gr.Textbox(label="角色名称（可选）", placeholder="例如：赛博剑士；留空时记为“新角色”")
                         generation_identity_prompt = gr.Textbox(
                             label="角色外观提示词（推荐填写）",
@@ -2443,8 +2651,8 @@ def build_ui(
                         )
                         with gr.Accordion("备用：使用已保存角色", open=False, elem_classes=["advanced-panel"]):
                             generate_character = gr.Dropdown(characters, value=initial_character, label="已保存角色", filterable=False, elem_classes=["static-choice"])
-                    with gr.Column(elem_classes=["workspace-card"]):
-                        gr.HTML(_card_heading("动作", "选择并描述动作", "动作模板负责硬约束；补充提示词只描述本次节奏和姿势。"))
+                    with gr.Column(scale=6, min_width=400, elem_classes=["workspace-card", "generation-action-card"]):
+                        gr.HTML(_card_heading("动作", "选择并描述动作", "攻击按阶段分配帧数；补充提示词描述本次节奏和姿势。"))
                         generate_action = gr.Dropdown(actions, value=initial_action, label="要生成的动作", filterable=False, elem_classes=["static-choice"])
                         generate_action_summary = gr.HTML(action_projection(initial_action))
                         action_description = gr.Textbox(label="本次动作提示词（可选）", placeholder="例如：起步慢、第三帧开始加速、武器始终朝前；留空使用项目动作规格", lines=4)
@@ -2452,19 +2660,26 @@ def build_ui(
                         generation_cost = gr.HTML(generation_cost_html(1, initial_action))
                         with gr.Accordion("复现与调试设置", open=False):
                             seed = gr.Textbox(label="Seed（可选）", placeholder="留空则自动生成并记录")
+                        with gr.Group(elem_classes=["action-panel", "generation-submit"]):
+                            gr.HTML(_card_heading("提交", "开始制作", "任务自动保存，可稍后回来查看。"))
+                            generate_button = gr.Button("开始生成候选", variant="primary", interactive=api_configured(), elem_classes=["primary-action"])
+                            generation_status = gr.HTML()
+                            generation_next_button = gr.Button("生成完成后可进入播放检查", interactive=False)
+                reference_editor_context = gr.State({})
+                with gr.Accordion("原图像素画布", open=False, elem_id="reference-canvas-panel") as reference_editor_panel:
+                    reference_editor = gr.HTML(_notice("info", "先打开原图", "上传或选择原图后，点击“在像素画布中修改原图”。"))
+                reference_transfer_character = gr.Textbox(value="", elem_id="reference-transfer-character", elem_classes=["internal-bridge"], container=False)
+                reference_transfer_apply = gr.Button("使用已移送原图", elem_id="reference-transfer-apply", elem_classes=["internal-bridge"])
                 generation_request_key = gr.BrowserState(
                     uuid.uuid4().hex,
                     storage_key="sprite_pipeline_generation_request_key_v1",
                     secret="sprite-pipeline-local-idempotency-v1",
                 )
-                with gr.Group(elem_classes=["action-panel"]):
-                    gr.HTML(_card_heading("提交", "确认后开始生成", "每个候选会单独消耗额度；提交后即使刷新页面，任务也会继续保存。"))
-                    generate_button = gr.Button("开始生成候选", variant="primary", interactive=api_configured(), elem_classes=["primary-action"])
-                    generation_status = gr.HTML()
-                    generation_next_button = gr.Button("生成完成后可进入播放检查", interactive=False)
                 with gr.Accordion("生成任务技术记录（仅排错时查看）", open=False, elem_classes=["advanced-panel"]):
                     generation_details = gr.JSON(label="任务记录")
-
+                generation_job = gr.State(None)
+                with gr.Accordion("额度原始记录（仅排错时查看）", open=False, elem_classes=["advanced-panel"]):
+                    quota_details = gr.JSON(service.get_cached_balance() or {})
             with gr.Tab("2 · 播放检查", id="review"):
                 gr.HTML(_stage_header("2", "先播放，再逐帧判断", "先看动作整体是否连贯，再点击具体帧；只有发现问题时才进入修补。"))
                 with gr.Group(elem_classes=["context-panel"]):
@@ -2479,18 +2694,17 @@ def build_ui(
                 with gr.Group(visible=bool(initial_review[12].get("visible", False))) as review_candidate_group:
                     review_candidate = gr.Radio(initial_review[0].get("choices", []), value=initial_review[0].get("value"), label="选择 AI 生成结果", elem_classes=["choice-cards"])
                 review_summary = gr.HTML(initial_review[3])
-                resume_vision_button = gr.Button("继续视觉检查（按用量计费；累计最多补做两次）", visible=False, elem_classes=["compact-action"])
-                gr.HTML('<div class="section-label"><span>先看整体</span><h3>播放整段动画</h3><p>需要时可反复从头播放；这里使用项目实际 FPS。</p></div>')
+                resume_vision_button = gr.Button("继续视觉检查（仅检查和标记，按用量计费）", visible=False, elem_classes=["compact-action"])
+                gr.HTML('<div class="section-label"><span>先看整体</span><h3>播放整段动画</h3><p>选择单次、循环或往返播放；可慢放、快放或直接调整播放 FPS。</p></div>')
                 with gr.Row():
-                    with gr.Column(scale=3, elem_classes=["workspace-card"]):
-                        animation_preview = gr.Image(initial_review[1], label="动画预览（项目 FPS）", type="filepath", interactive=False, height=390, elem_classes=["pixel-preview"], elem_id="animation-preview")
-                        replay_animation_button = gr.Button("▶ 从头播放一次", elem_classes=["replay-action"])
-                    with gr.Column(scale=2, elem_classes=["workspace-card"]):
+                    with gr.Column(scale=3, min_width=420, elem_classes=["workspace-card", "playback-card"]):
+                        animation_preview = gr.HTML(initial_review[1] or "", elem_id="animation-preview")
+                    with gr.Column(scale=1, min_width=250, elem_classes=["workspace-card", "review-check-card"]):
                         gr.HTML(_card_heading("本机检查", "尺寸与透明度等基础检查", "它用于发现尺寸、透明度和突变位移；最终仍以你的视觉判断为准。"))
                         review_issues = gr.Markdown(initial_review[4])
                 gr.HTML('<div class="section-label"><span>再看细节</span><h3>逐帧检查</h3><p>点击一帧后，只做一个判断：采用，或标记为待修补。</p></div>')
                 with gr.Column(elem_classes=["workspace-card"]):
-                    frame_gallery = gr.Gallery(initial_review[2], label="全部帧（点击选择）", columns=4, rows=2, height=430, object_fit="contain", allow_preview=False, selected_index=0, elem_classes=["frame-gallery"])
+                    frame_gallery = gr.Gallery(initial_review[2], label="全部帧（点击选择）", columns=8, rows=2, height=350, object_fit="contain", allow_preview=False, selected_index=0, elem_classes=["frame-gallery", "compact-timeline"])
                     selected_frame_index = gr.State(initial_review[6])
                     selected_frame_banner = gr.HTML(initial_review[7])
                     with gr.Row():
@@ -2513,7 +2727,7 @@ def build_ui(
                 review_action_status = gr.HTML()
                 with gr.Accordion("不采用这组结果", open=False, elem_classes=["secondary-zone"]):
                     reject_button = gr.Button("放弃这组结果", variant="stop")
-                with gr.Accordion("其他入口：检查一张已有 Sprite Sheet", open=False, elem_classes=["secondary-zone"]):
+                with gr.Accordion("其他入口：检查一张已有 Sprite Sheet", open=False, elem_classes=["secondary-zone"]) as sheet_import_panel:
                     gr.Markdown("这里只用于已经是动画 Sheet 的 PNG；角色原型图请回到“1 · 生成”上传。")
                     with gr.Row():
                         with gr.Column():
@@ -2547,10 +2761,10 @@ def build_ui(
                         label="完整帧条（点击任意帧查看）",
                         columns=8,
                         rows=2,
-                        height=330,
+                        height=350,
                         object_fit="contain",
                         allow_preview=False,
-                        elem_classes=["frame-gallery"],
+                        elem_classes=["frame-gallery", "compact-timeline"],
                     )
                     with gr.Row():
                         previous_problem_button = gr.Button(
@@ -2566,19 +2780,30 @@ def build_ui(
                             interactive=bool(initial_repair[15].get("interactive", False)),
                         )
                 repair_summary = gr.HTML(initial_repair[4])
-                gr.HTML('<div class="section-label"><span>像素画布</span><h3>编辑当前帧</h3><p>保存会建立新版本并自动复查，不消耗生成额度；原始帧永久保留。</p></div>')
-                repair_editor = gr.HTML(initial_repair[8], elem_classes=["editor-shell"])
-                repair_base_sha256 = gr.State(initial_repair[9])
-                with gr.Accordion("AI 修补当前问题帧", open=False):
-                    gr.Markdown("结合前后帧修补，先预览再采用。每帧最多生成 2 次，与生成阶段的两次自动补做分别计数；手工像素修补不受此限制。")
-                    with gr.Row():
-                        ai_repair_button = gr.Button("AI 修补当前帧", variant="primary")
-                        ai_retry_button = gr.Button("再试一次（最多两次）")
-                        ai_refresh_button = gr.Button("刷新修补结果")
-                    ai_repair_status = gr.HTML()
-                    ai_repair_preview = gr.Image(label="修补预览", type="filepath", interactive=False, height=256, elem_classes=["pixel-preview"])
-                    ai_repair_token = gr.State({})
-                    ai_adopt_button = gr.Button("采用这张修补帧")
+                with gr.Tabs(selected="manual", elem_id="repair-tools", elem_classes=["tool-tabs"]):
+                    with gr.Tab("手工像素画布", id="manual"):
+                        gr.HTML('<div class="section-label"><span>像素画布</span><h3>编辑当前帧</h3><p>保存会建立新版本并自动复查，不消耗生成额度；原始帧永久保留。</p></div>')
+                        repair_editor = gr.HTML(initial_repair[8], elem_classes=["editor-shell"])
+                        repair_base_sha256 = gr.State(initial_repair[9])
+                    with gr.Tab("AI 修补当前帧", id="ai"):
+                        gr.Markdown("只有点击下方按钮才会请求重新生成，按 PixelLab 和视觉检查用量计费。每帧最多生成 2 次，每次预览至多 2 次视觉调用。参考原图固定服装与配色，前后帧约束动作；先预览再由你采用。阶段不确定时请先选择。")
+                        from .motion_constraints import PHASE_LABELS
+                        ai_repair_phase = gr.Dropdown([("自动使用可靠的视觉判断","auto"), *[(label,key) for key,label in PHASE_LABELS.items() if key!="unknown"]], value="auto", label="当前帧应处于的阶段", filterable=False)
+                        ai_phase_guidance = gr.HTML()
+                        with gr.Row():
+                            ai_repair_button = gr.Button("按阶段与前后帧约束生成预览", variant="primary")
+                            ai_retry_button = gr.Button("再试一次（最多两次）")
+                            ai_refresh_button = gr.Button("刷新修补结果")
+                        ai_repair_status = gr.HTML()
+                        ai_repair_preview = gr.Image(label="修补预览", type="filepath", interactive=False, height=256, elem_classes=["pixel-preview"])
+                        ai_repair_token = gr.State({})
+                        ai_adopt_button = gr.Button("采用这张修补帧")
+                    with gr.Tab("上传替换整帧", id="external"):
+                        gr.Markdown("备用：使用外部绘图软件替换整帧")
+                        gr.Markdown("如需使用 Aseprite、Krita 等外部工具，可上传相同尺寸的透明 PNG。这个入口仍保留两次替换限制；内置手工像素版本没有该限制。")
+                        replacement_file = gr.File(label="修补后的透明 PNG（必须仍为 128×128）", file_count="single", file_types=[".png"], type="filepath")
+                        repair_upload_context = gr.State({})
+                        replace_button = gr.Button("保存外部替换并重新检查", variant="primary", interactive=bool(initial_repair[5].get("interactive", False)), elem_classes=["primary-action"])
                 with gr.Accordion("辅助判断：相邻帧与原问题记录", open=False, elem_classes=["advanced-panel"]):
                     with gr.Row():
                         repair_current = gr.Image(initial_repair[2], label="当前版本", type="filepath", interactive=False, height=330, elem_classes=["pixel-preview"])
@@ -2586,11 +2811,6 @@ def build_ui(
                     with gr.Row():
                         repair_issue_type = gr.Dropdown(ISSUE_TYPE_CHOICES, value=initial_repair[6].get("value", "other"), label="问题类型（记录用）", interactive=False, filterable=False, elem_classes=["static-choice"])
                         repair_note = gr.Textbox(value=initial_repair[7].get("value", ""), label="原问题说明", interactive=False)
-                with gr.Accordion("备用：使用外部绘图软件替换整帧", open=False, elem_classes=["secondary-zone"]):
-                    gr.Markdown("如需使用 Aseprite、Krita 等外部工具，可上传相同尺寸的透明 PNG。这个入口仍保留两次替换限制；内置手工像素版本没有该限制。")
-                    replacement_file = gr.File(label="修补后的透明 PNG（必须仍为 128×128）", file_count="single", file_types=[".png"], type="filepath")
-                    repair_upload_context = gr.State({})
-                    replace_button = gr.Button("保存外部替换并重新检查", variant="primary", interactive=bool(initial_repair[5].get("interactive", False)), elem_classes=["primary-action"])
                 with gr.Group(elem_classes=["action-panel"]):
                     gr.HTML(_card_heading("完成", "所有问题帧处理完毕", "回到整段动画重新播放；确认无误后再进入导出。"))
                     repair_action_status = gr.HTML()
@@ -2624,60 +2844,18 @@ def build_ui(
                     export_attachments = gr.File(label="附加文件", file_count="multiple", interactive=False)
                     export_details = gr.JSON(label="导出记录")
 
-            with gr.Tab("资产库", id="assets"):
-                gr.HTML(
-                    _stage_header("库", "已保存资产（主流程外）", "返回旧任务时再来这里；新任务会沿主流程自动传递，不需要先打开资产库。")
-                )
-                with gr.Group(elem_classes=["context-panel"]):
-                    gr.Markdown("一个任务一个文件夹；同次生成的多个候选保存在其中。列表只读取轻量摘要，点击打开后才载入图片。")
-                    with gr.Row():
-                        task_job = gr.Dropdown(initial_tasks, value=initial_task_job, label="已保存任务", filterable=False, elem_classes=["static-choice"], scale=6)
-                        open_asset_button = gr.Button("打开所选任务", variant="primary", scale=1, elem_classes=["compact-action"])
-                        refresh_asset_catalog_button = gr.Button("刷新", scale=1, elem_classes=["compact-action"])
-                asset_catalog_status = gr.HTML(initial_asset_catalog)
-                asset_candidate = gr.Radio(
-                    initial_asset[0].get("choices", []),
-                    value=initial_asset[0].get("value"),
-                    visible=bool(initial_asset[0].get("visible", False)),
-                    label="该任务中的候选",
-                    elem_classes=["choice-cards"],
-                )
-                asset_summary = gr.HTML(initial_asset[1])
-                with gr.Row():
-                    with gr.Column(elem_classes=["workspace-card"]):
-                        asset_animation_preview = gr.Image(initial_asset[2], label="动画预览", type="filepath", interactive=False, height=360, elem_classes=["pixel-preview"])
-                    with gr.Column(elem_classes=["workspace-card"]):
-                        asset_frame_gallery = gr.Gallery(initial_asset[3], label="逐帧画面", columns=4, rows=2, height=360, object_fit="contain", allow_preview=False, elem_classes=["frame-gallery"])
-                with gr.Row(elem_classes=["step-actions"]):
-                    asset_review_button = gr.Button("在播放检查中打开", interactive=bool(initial_asset[4].get("interactive", False)))
-                    asset_repair_button = gr.Button("打开待修补帧", interactive=bool(initial_asset[5].get("interactive", False)))
-                asset_action_status = gr.HTML()
-                with gr.Accordion("任务保存与恢复（仅异常时使用）", open=False, elem_classes=["secondary-zone"]):
-                    gr.Markdown("只有打开任务后才读取完整安全记录。后台只会继续查询已经提交的任务，不会自动创建第二次生成。")
-                    refresh_task_button = gr.Button("安全刷新 / 继续取回已有结果")
-                    task_status = gr.HTML(initial_task[0])
-                    with gr.Accordion("任务完整记录（排错时再看）", open=False, elem_classes=["advanced-panel"]):
-                        task_details = gr.JSON(initial_task[1])
-                    with gr.Accordion("提交结果未知时的人工恢复", open=False, elem_classes=["advanced-panel"]):
-                        gr.Markdown("只有在 PixelLab 网页或其他记录中能找到此次生成的远端任务编号时才填写。此操作只绑定并查询已有任务，绝不会再次提交生成。")
-                        attach_candidate = gr.Dropdown(
-                            initial_task[2].get("choices", []),
-                            value=initial_task[2].get("value"),
-                            label="需要恢复的候选",
-                            interactive=bool(initial_task[2].get("interactive", False)),
-                            filterable=False,
-                            elem_classes=["static-choice"],
-                        )
-                        attach_provider_id = gr.Textbox(label="PixelLab 远端任务编号")
-                        attach_provider_button = gr.Button("绑定并只取回已有结果")
-                        attach_status = gr.HTML()
-
             with gr.Tab("设置", id="settings"):
                 gr.HTML(_stage_header("设置", "API 与项目合同", "日常流程不需要修改这里；首次生成前配置一次 API Key 即可。"))
                 with gr.Row():
                     with gr.Column(elem_classes=["workspace-card"]):
                         gr.HTML(_card_heading("API", "PixelLab 生成权限", "用于生成与 AI 补做；手工像素修补和导出不需要 API。"))
                         api_status = gr.HTML(api_settings_status())
+                        api_key = gr.Textbox(label="API Key", type="password", placeholder="粘贴后点击保存；保存成功会自动清空输入框")
+                        with gr.Row():
+                            save_api_button = gr.Button("保存并立即生效", variant="primary")
+                            clear_api_button = gr.Button("清除已保存的 Key")
+                    with gr.Column(elem_classes=["workspace-card"]):
+                        gr.HTML(_card_heading("视觉检查", "检查服务与权限", "检查动画并标记问题；修补由你决定。"))
                         from .vision_review import VisionReviewer
                         vision_provider = gr.Dropdown(choices=[("混元 HY Vision 2.0（默认）", "hunyuan"), ("OpenAI GPT-5.4", "openai")], value=VisionReviewer(service.settings).provider, label="视觉检查服务", filterable=False)
                         vision_api_status = gr.HTML(vision_status())
@@ -2685,34 +2863,31 @@ def build_ui(
                         with gr.Row():
                             save_vision_button = gr.Button("保存视觉检查 Key")
                             clear_vision_button = gr.Button("清除视觉检查 Key")
-                        api_key = gr.Textbox(label="API Key", type="password", placeholder="粘贴后点击保存；保存成功会自动清空输入框")
-                        with gr.Row():
-                            save_api_button = gr.Button("保存并立即生效", variant="primary")
-                            clear_api_button = gr.Button("清除已保存的 Key")
-                    with gr.Column(elem_classes=["workspace-card"]):
-                        gr.HTML(_card_heading("存储", "用户数据与恢复位置", "任务、缓存、导出和程序代码彼此分离。"))
-                        storage_status = gr.HTML(storage_status_html())
-                        refresh_storage_button = gr.Button("刷新存储状态")
-                        with gr.Accordion("迁移与存储技术记录", open=False, elem_classes=["advanced-panel"]):
-                            storage_details = gr.JSON(service.storage_status())
-                gr.HTML('<div class="section-label"><span>只读合同</span><h3>当前游戏项目规格</h3><p>这些规格由项目配置提供，不是每次生成都要填写的表单。</p></div>')
-                gr.HTML(
-                    '<div class="workspace-card">'
-                    f'<p>项目：{_escape(profile.project_name)}　·　引擎：{_escape(profile.engine)}　·　目标角色：{_escape(profile.character_name)}</p>'
-                    f'<div class="contract-grid"><div class="contract-card"><small>单帧</small><b>{profile.cell_width}×{profile.cell_height} RGBA</b></div><div class="contract-card"><small>统一网格</small><b>所有动作 16 帧 · {profile.columns} 列×4 行</b></div><div class="contract-card"><small>参考锚点 / 运行时偏移</small><b>({profile.anchor_x},{profile.anchor_ground_y}) / ({profile.sprite_offset_x},{profile.sprite_offset_y})</b></div></div>'
-                    + '<table class="project-table"><thead><tr><th>动画</th><th>输出规格</th><th>播放</th><th>文件名</th><th>工程状态</th></tr></thead><tbody>'
-                    + "".join(
-                        f"<tr><td>{_escape(item.display_name)}</td>"
-                        f"<td>{item.sheet_size[0]}×{item.sheet_size[1]} · {item.frame_count} 帧</td>"
-                        f"<td>{item.fps:g} FPS{'（资源场景 ' + format(item.scene_fps, 'g') + '）' if item.scene_fps != item.fps else ''} · {'循环' if item.loop else '单次'}</td>"
-                        f"<td>{_escape(item.filename)}</td>"
-                        f"<td>{_escape(PROJECT_INTEGRATION_STATUS_CN.get(item.integration_status, item.integration_status))}</td></tr>"
-                        for item in profile.actions
+                with gr.Accordion("存储位置与恢复记录", open=False, elem_classes=["advanced-panel"]):
+                    gr.HTML(_card_heading("存储", "用户数据与恢复位置", "任务、缓存、导出和程序代码彼此分离。"))
+                    storage_status = gr.HTML(storage_status_html())
+                    refresh_storage_button = gr.Button("刷新存储状态")
+                    with gr.Accordion("迁移与存储技术记录", open=False, elem_classes=["advanced-panel"]):
+                        storage_details = gr.JSON(service.storage_status())
+                with gr.Accordion("当前游戏项目规格（只读）", open=False, elem_classes=["advanced-panel"]):
+                    gr.HTML('<div class="section-label"><span>只读合同</span><h3>当前游戏项目规格</h3><p>这些规格由项目配置提供，不是每次生成都要填写的表单。</p></div>')
+                    gr.HTML(
+                        '<div class="workspace-card">'
+                        f'<p>项目：{_escape(profile.project_name)}　·　引擎：{_escape(profile.engine)}　·　目标角色：{_escape(profile.character_name)}</p>'
+                        f'<div class="contract-grid"><div class="contract-card"><small>单帧</small><b>{profile.cell_width}×{profile.cell_height} RGBA</b></div><div class="contract-card"><small>统一网格</small><b>所有动作 16 帧 · {profile.columns} 列×4 行</b></div><div class="contract-card"><small>参考锚点 / 运行时偏移</small><b>({profile.anchor_x},{profile.anchor_ground_y}) / ({profile.sprite_offset_x},{profile.sprite_offset_y})</b></div></div>'
+                        + '<table class="project-table"><thead><tr><th>动画</th><th>输出规格</th><th>播放</th><th>文件名</th><th>工程状态</th></tr></thead><tbody>'
+                        + "".join(
+                            f"<tr><td>{_escape(item.display_name)}</td>"
+                            f"<td>{item.sheet_size[0]}×{item.sheet_size[1]} · {item.frame_count} 帧</td>"
+                            f"<td>{item.fps:g} FPS{'（资源场景 ' + format(item.scene_fps, 'g') + '）' if item.scene_fps != item.fps else ''} · {'循环' if item.loop else '单次'}</td>"
+                            f"<td>{_escape(item.filename)}</td>"
+                            f"<td>{_escape(PROJECT_INTEGRATION_STATUS_CN.get(item.integration_status, item.integration_status))}</td></tr>"
+                            for item in profile.actions
+                        )
+                        + '</tbody></table>'
+                        + _notice("info", "新生成规格已统一为 16 帧", "所有动作都生成并导出完整 4×4 Sheet，不再为攻击、跳跃、受击或闪避降低默认帧数。旧 Sheet 仍可导入检查；替换旧资产时需要同步 Godot 的动画帧列表。")
+                        + '</div>'
                     )
-                    + '</tbody></table>'
-                    + _notice("info", "新生成规格已统一为 16 帧", "所有动作都生成并导出完整 4×4 Sheet，不再为攻击、跳跃、受击或闪避降低默认帧数。旧 Sheet 仍可导入检查；替换旧资产时需要同步 Godot 的动画帧列表。")
-                    + '</div>'
-                )
                 with gr.Row(elem_classes=["step-actions"]):
                     settings_back_button = gr.Button("返回 1 · 生成 →", variant="primary")
 
@@ -2722,7 +2897,245 @@ def build_ui(
         repair_outputs = [repair_candidate, repair_frame, repair_current, repair_neighbors, repair_summary, replace_button, repair_issue_type, repair_note, repair_editor, repair_base_sha256, replacement_file, repair_upload_context, repair_timeline, previous_problem_button, next_problem_button, accept_repair_frame_button, finish_repair_button]
         export_outputs = [export_candidate, export_summary, export_sheet_preview, export_filename, export_button]
 
-        generation_reference_file.change(
+        def refresh_library(current: list[dict[str, Any]]) -> Any:
+            rows = library.list_artworks()
+            return gr.skip() if rows == current else rows
+
+        def import_library_material(uploaded: Any, kind: str, name: str) -> tuple[Any, ...]:
+            try:
+                source = _uploaded_path(uploaded)
+                if kind == "map":
+                    library.import_map(source, name or "")
+                elif kind == "character":
+                    resolve_generation_character(uploaded, {}, name or source.stem, "", None)
+                else:
+                    raise ValidationHarnessError("请选择素材类型")
+                return library.list_artworks(), 1, "all", "", _notice("ok", "作品已保存", "可直接从卡片继续创作。"), None
+            except Exception as exc:
+                return gr.skip(), gr.skip(), gr.skip(), gr.skip(), _notice("error", "素材未能入库", _human_error(exc)), gr.skip()
+
+        def show_library_details(artwork_id: str | None = None, *, download: bool = False) -> dict[Any, Any]:
+            try:
+                row = library.get(artwork_id) if artwork_id else None
+                records = service.list_jobs()
+                if row:
+                    records = [record for record in records if
+                               record.get("job_id") == row.get("job_id") or
+                               (row["kind"] == "character" and record.get("character_id") == row.get("character_id"))]
+                choices = [(job_summary_label(record) if record.get("status") != "invalid" else f"记录无法读取 · {record['job_id']}", record["job_id"]) for record in records]
+                selected = row.get("job_id") if row else None
+                source = library.preview_source(row) if row else None
+                files = [str(source)] if download and source else []
+                title = _notice("info", row["title"] if row else "全部执行记录",
+                                f"{KIND_LABELS[row['kind']]} · {row['status_label']} · {row['subtitle']}" if row else "这里保留失败、未生成、重试和测试记录；已有画面的作品在上方卡片中展示。")
+                updates = {
+                    library_detail_panel: gr.update(open=True),
+                    record_content_panel: gr.update(open=False),
+                    library_detail_title: title,
+                    library_detail_image: gr.update(value=str(source) if source else None, visible=source is not None),
+                    library_download: gr.update(value=files, visible=bool(files)),
+                    task_job: gr.update(choices=choices, value=selected),
+                }
+                for component, value in zip([asset_catalog_status, *asset_outputs, *task_outputs], select_saved_asset_summary(selected)):
+                    updates[component] = value
+                if download and not files:
+                    updates[library_action_status] = _notice("error", "原图暂不可用", "素材记录仍保留，请检查文件是否被移动或删除。")
+                return updates
+            except Exception as exc:
+                return {library_action_status: _notice("error", "详情无法打开", _human_error(exc))}
+
+        def open_reference_canvas(uploaded: Any, saved_id: str | None, name: str, identity: str, context: dict[str, Any]) -> dict[Any, Any]:
+            try:
+                canvas = ReferenceCanvas(service)
+                if uploaded is not None:
+                    image, _state = inspect_generation_reference_source(_uploaded_path(uploaded))
+                    character = CharacterPreset(
+                        character_id="reference_edit", display_name=(name or "").strip() or "新角色",
+                        cell_width=image.width, cell_height=image.height,
+                        facing=profile.facing, reference_frame="idle_reference.png",
+                        identity_description=(identity or "").strip(),
+                        anchor=Anchor(x=profile.anchor_x, ground_y=profile.anchor_ground_y),
+                        sheet_columns=profile.columns,
+                    )
+                else:
+                    if not saved_id:
+                        raise ValidationHarnessError("请先上传或选择角色原图")
+                    character, preset_path = service.presets.load_character(saved_id)
+                    with Image.open(preset_path.parent / character.reference_frame) as source:
+                        image = source.convert("RGBA")
+                    character = character.model_copy(update={
+                        "display_name": (name or "").strip() or character.display_name,
+                        "identity_description": (identity or "").strip() or character.identity_description,
+                    })
+                signature = hashlib.sha256(image.tobytes() + character.model_dump_json().encode("utf-8")).hexdigest()
+                edit_id = (context or {}).get("edit_id") if (context or {}).get("signature") == signature else None
+                if edit_id:
+                    canvas.directory(edit_id)
+                else:
+                    edit_id = canvas.start(image, character)["edit_id"]
+                embed = (f'<iframe class="pixel-editor-frame reference-editor-frame" src="/pixel-editor?reference_edit={edit_id}" '
+                         'title="原图像素画布" sandbox="allow-scripts allow-same-origin allow-downloads allow-modals"></iframe>')
+                return {reference_editor: embed, reference_editor_panel: gr.update(open=True),
+                        reference_editor_context: {"edit_id": edit_id, "signature": signature}}
+            except Exception as exc:
+                return {generation_reference_status: _notice("error", "原图画布暂时无法打开", _human_error(exc))}
+
+        def select_transferred_reference(character_id: str) -> dict[Any, Any]:
+            try:
+                if not re.fullmatch(r"edited_[0-9a-f]{32}_v[0-9]+", character_id or ""):
+                    raise ValidationHarnessError("修改版原图编号无效")
+                character, _ = service.presets.load_character(character_id)
+                preview, _status, _state = prepare_generation_reference(None, character_id)
+                return {
+                    workflow_tabs: gr.update(selected="generate"),
+                    generate_character: gr.update(choices=official_character_choices(), value=character_id),
+                    generation_reference_file: None, generation_reference_state: {},
+                    generation_reference_preview: preview,
+                    generation_reference_status: _notice("ok", "修改版已作为新的生成原图", "下次生成将使用上方这张修改后的原图。"),
+                    generation_character_name: character.display_name,
+                    generation_identity_prompt: character.identity_description,
+                    generation_request_key: uuid.uuid4().hex,
+                    generation_job: None, generation_details: {},
+                    generation_status: _notice("ok", "新原图已就绪", "选择动作并确认后即可开始生成。"),
+                    generation_next_button: gr.update(value="生成完成后可进入播放检查", interactive=False),
+                    reference_editor_panel: gr.update(open=False),
+                    library_rows: library.list_artworks(),
+                }
+            except Exception as exc:
+                return {generation_reference_status: _notice("error", "原图移送暂未完成", _human_error(exc))}
+
+        def artwork_action(artwork_id: str, action: str) -> dict[Any, Any]:
+            try:
+                row = library.get(artwork_id)
+                if action not in row["actions"]:
+                    raise ValidationHarnessError("作品状态已经改变，请刷新后继续")
+                if action == "download":
+                    return show_library_details(artwork_id, download=True)
+                if action in {"generate", "edit_reference"}:
+                    character, _path = service.presets.load_character(row["character_id"])
+                    reference, notice = character_projection(character.character_id)
+                    updates = {
+                        workflow_tabs: gr.update(selected="generate"),
+                        generate_character: gr.update(choices=official_character_choices(), value=character.character_id),
+                        generation_reference_file: None, generation_reference_state: {},
+                        generation_reference_preview: reference, generation_reference_status: notice,
+                        generation_character_name: character.display_name,
+                        generation_identity_prompt: character.identity_description,
+                        action_description: "", seed: "", candidate_count: 1,
+                        generation_request_key: uuid.uuid4().hex,
+                        generation_job: None, generation_details: {},
+                        generation_next_button: gr.update(value="生成完成后可进入播放检查", interactive=False),
+                        generation_status: _notice("info", "角色已带入", "选择动作并确认后再开始生成。"),
+                    }
+                    if action == "edit_reference":
+                        updates.update(open_reference_canvas(None, character.character_id, character.display_name, character.identity_description, {}))
+                    return updates
+                job = service.get_job(row["job_id"])
+                candidate = next(item for item in job.candidates if item.candidate_index == row["candidate_index"])
+                if action == "review":
+                    values = load_saved_asset_in_review(job.job_id, candidate.candidate_index)
+                    return dict(zip([library_action_status, workflow_tabs, review_job, *review_outputs], values))
+                if action == "edit":
+                    service._assert_candidate_editable(job, candidate, operation="open_artwork")
+                    return {
+                        workflow_tabs: gr.update(selected="repair"),
+                        repair_job: gr.update(choices=repair_job_choices_with_context(job.job_id), value=job.job_id),
+                        **dict(zip(repair_outputs, repair_projection(job.job_id, candidate.candidate_index))),
+                    }
+                if action == "export":
+                    return {
+                        workflow_tabs: gr.update(selected="export"),
+                        export_job: gr.update(choices=job_choices(approved_only=True), value=job.job_id),
+                        **dict(zip(export_outputs, export_projection(job.job_id, candidate.candidate_index))),
+                        # A previously exported work offers its actual bundle immediately.
+                        exported_sheet: service.settings.resolve_record_path(job.export.sheet_path) if job.export and job.export.candidate_index == candidate.candidate_index else None,
+                        export_attachments: [str(service.settings.resolve_record_path(value)) for value in (job.export.preview_path, job.export.recipe_path, job.export.qa_path)] if job.export and job.export.candidate_index == candidate.candidate_index else [],
+                    }
+                raise ValidationHarnessError("当前作品不支持此操作")
+            except Exception as exc:
+                return {library_action_status: _notice("error", "暂时无法继续", _human_error(exc))}
+
+        detail_outputs = [library_action_status, library_detail_panel, record_content_panel, library_detail_title, library_detail_image, library_download, task_job, asset_catalog_status, *asset_outputs, *task_outputs]
+        artwork_action_outputs = list(dict.fromkeys([
+            *detail_outputs, workflow_tabs, generate_character, generation_reference_file,
+            reference_editor, reference_editor_panel, reference_editor_context, library_rows,
+            generation_reference_state, generation_reference_preview, generation_reference_status,
+            generation_character_name, generation_identity_prompt, action_description, seed, candidate_count,
+            generation_request_key, generation_status, generation_job, generation_details, generation_next_button, review_job, *review_outputs,
+            repair_job, *repair_outputs, export_job, *export_outputs, exported_sheet, export_attachments,
+        ]))
+
+        with library_grid:
+            @gr.render(inputs=[library_rows, library_kind, library_search, library_page])
+            def render_artwork_cards(rows: list[dict[str, Any]], kind: str, query: str, page: int) -> None:
+                cards, selected_page, total = library.filter_page(rows, kind, query, page)
+                gr.HTML(f'<p class="library-count">{total} 件作品 · 第 {selected_page} / {max(1, math.ceil(total / 12))} 页</p>')
+                if not cards:
+                    gr.HTML('<div class="library-empty"><b>这里还没有作品</b><p>导入角色原图或地图，或制作第一段动画。已有执行记录可从“执行记录”查看。</p></div>' if not query and kind == "all" else '<div class="library-empty"><b>没有匹配的作品</b><p>试试其他名称或切换作品类型。</p></div>')
+                for start in range(0, len(cards), 3):
+                    with gr.Row(equal_height=True, elem_classes=["artwork-row"]):
+                        for row in cards[start:start + 3]:
+                            artwork_id = row["id"]
+                            with gr.Column(min_width=250, scale=1, elem_classes=["artwork-card"], key=artwork_id):
+                                thumbnail = library.thumbnail(row)
+                                if thumbnail:
+                                    gr.Image(thumbnail, label=row["title"], interactive=False, type="filepath", show_label=False, height=220, buttons=[], elem_classes=["artwork-thumbnail"], key=artwork_id + ":image", preserved_by_key=[])
+                                else:
+                                    gr.HTML('<div class="artwork-missing">预览暂不可用<br><small>作品记录仍保留，可查看详情</small></div>')
+                                gr.HTML(f'<div class="artwork-caption"><span class="artwork-kind">{_escape(KIND_LABELS[row["kind"]])}</span><h3>{_escape(row["title"])}</h3><p>{_escape(row["subtitle"])}</p><span class="artwork-status">{_escape(row["status_label"])}</span></div>')
+                                with gr.Row(elem_classes=["artwork-actions"]):
+                                    for index, action in enumerate(row["actions"]):
+                                        button = gr.Button(ACTION_LABELS[action] + (" →" if index == 0 else ""), variant="primary" if index == 0 else "secondary", size="sm", min_width=90, key=artwork_id + ":" + action)
+                                        button.click(partial(artwork_action, artwork_id, action), outputs=artwork_action_outputs, show_progress="minimal").then(
+                                            fn=None, js=LIBRARY_DETAIL_SCROLL_JS if action == "download" else "() => window.scrollTo({top: 0, behavior: 'smooth'})", queue=False,
+                                        )
+                                    details = gr.Button("详情", size="sm", min_width=60, key=artwork_id + ":details")
+                                    details.click(partial(show_library_details, artwork_id), outputs=detail_outputs, show_progress="minimal").then(fn=None, js=LIBRARY_DETAIL_SCROLL_JS, queue=False)
+
+        def page_controls(rows: list[dict[str, Any]], kind: str, query: str, page: int) -> tuple[Any, ...]:
+            _cards, selected, total = library.filter_page(rows, kind, query, page)
+            return gr.update(interactive=selected > 1), f"第 {selected} / {max(1, math.ceil(total / 12))} 页", gr.update(interactive=selected * 12 < total)
+
+        def move_library_page(rows: list[dict[str, Any]], kind: str, query: str, page: int, offset: int) -> int:
+            _cards, selected, _total = library.filter_page(rows, kind, query, page)
+            return library.filter_page(rows, kind, query, selected + offset)[1]
+
+        library_import_toggle.click(lambda: gr.update(open=True), outputs=library_import_panel, queue=False)
+        library_generate.click(lambda: gr.update(selected="generate"), outputs=workflow_tabs, queue=False)
+        library_import_animation.click(lambda: (gr.update(selected="review"), gr.update(open=True)), outputs=[workflow_tabs, sheet_import_panel], queue=False)
+        library_import_save.click(import_library_material, inputs=[library_import_file, library_import_kind, library_import_name], outputs=[library_rows, library_page, library_kind, library_search, library_action_status, library_import_file], concurrency_limit=1)
+        library_records.click(show_library_details, outputs=detail_outputs, queue=False).then(fn=None, js=LIBRARY_DETAIL_SCROLL_JS, queue=False)
+        library_refresh.click(refresh_library, inputs=library_rows, outputs=library_rows, queue=False)
+        library_tab.select(refresh_library, inputs=library_rows, outputs=library_rows, queue=False)
+        library_kind.input(lambda: 1, outputs=library_page, queue=False)
+        library_search.input(lambda: 1, outputs=library_page, queue=False)
+        library_previous.click(partial(move_library_page, offset=-1), inputs=[library_rows, library_kind, library_search, library_page], outputs=library_page, queue=False)
+        library_next.click(partial(move_library_page, offset=1), inputs=[library_rows, library_kind, library_search, library_page], outputs=library_page, queue=False)
+        for control in [library_rows, library_kind, library_search, library_page]:
+            control.change(page_controls, inputs=[library_rows, library_kind, library_search, library_page], outputs=[library_previous, library_page_label, library_next], queue=False)
+        demo.load(page_controls, inputs=[library_rows, library_kind, library_search, library_page], outputs=[library_previous, library_page_label, library_next], queue=False)
+
+        edit_reference_button.click(
+            open_reference_canvas,
+            inputs=[generation_reference_file, generate_character, generation_character_name, generation_identity_prompt, reference_editor_context],
+            outputs=[reference_editor, reference_editor_panel, reference_editor_context, generation_reference_status],
+            concurrency_limit=1,
+        ).then(fn=None, js=REFERENCE_CANVAS_SCROLL_JS, queue=False)
+        reference_transfer_apply.click(select_transferred_reference, inputs=reference_transfer_character, outputs=artwork_action_outputs, queue=False).then(
+            fn=None, js="""() => document.getElementById("edit-reference-button")?.scrollIntoView({behavior: "smooth", block: "center"})""", queue=False,
+        )
+        def load_canvas_character(request: gr.Request) -> dict[Any, Any]:
+            character_id = request.query_params.get("canvas_character", "") if request else ""
+            return select_transferred_reference(character_id) if character_id else {workflow_tabs: gr.update()}
+
+        demo.load(load_canvas_character, outputs=artwork_action_outputs, queue=False)
+        generation_reference_file.upload(
+            prepare_generation_reference,
+            inputs=[generation_reference_file, generate_character],
+            outputs=[generation_reference_preview, generation_reference_status, generation_reference_state],
+            queue=False,
+        )
+        generation_reference_file.clear(
             prepare_generation_reference,
             inputs=[generation_reference_file, generate_character],
             outputs=[generation_reference_preview, generation_reference_status, generation_reference_state],
@@ -2789,9 +3202,23 @@ def build_ui(
             concurrency_limit=1,
             concurrency_id="pixellab_generation_submission",
         )
+        def continue_generation_result(job_id: str | None) -> tuple[Any, ...]:
+            candidate_index = None
+            if job_id:
+                try:
+                    job = service.get_job(job_id)
+                    candidate_index = next((candidate.candidate_index for candidate in job.candidates if candidate.frames), None)
+                except Exception:
+                    pass
+            return load_saved_asset_in_review(job_id, candidate_index)
+
+        generation_details.change(
+            lambda details: (details or {}).get("job", {}).get("job_id"),
+            inputs=generation_details, outputs=generation_job, queue=False,
+        )
         generation_next_button.click(
-            load_saved_asset_in_review,
-            inputs=[review_job, review_candidate],
+            continue_generation_result,
+            inputs=generation_job,
             outputs=[generation_status, workflow_tabs, review_job, *review_outputs],
             queue=False,
         )
@@ -2806,7 +3233,7 @@ def build_ui(
             inputs=[task_job, asset_candidate],
             outputs=[asset_catalog_status, *asset_outputs, *task_outputs],
             queue=False,
-        )
+        ).then(lambda: gr.update(open=True), outputs=record_content_panel, queue=False)
         asset_candidate.input(
             saved_asset_projection,
             inputs=[task_job, asset_candidate],
@@ -2919,15 +3346,10 @@ def build_ui(
             api_visibility="private",
         )
         task_timer = gr.Timer(value=5.0, active=True)
-        task_timer.tick(
-            reload_saved_asset_catalog,
-            inputs=task_job,
-            outputs=[task_job, asset_catalog_status],
-            queue=False,
-        )
+        task_timer.tick(refresh_library, inputs=library_rows, outputs=library_rows, queue=False)
         task_timer.tick(
             generation_continue_projection,
-            inputs=review_job,
+            inputs=generation_job,
             outputs=generation_next_button,
             queue=False,
         )
@@ -2943,12 +3365,6 @@ def build_ui(
         )
         review_job.input(review_payload, inputs=review_job, outputs=review_outputs, queue=False)
         review_candidate.input(review_payload, inputs=[review_job, review_candidate], outputs=review_outputs, queue=False)
-        replay_animation_button.click(
-            fn=None,
-            js=REPLAY_ANIMATION_JS,
-            queue=False,
-            api_visibility="private",
-        )
         review_summary.change(resume_vision_projection, inputs=review_job, outputs=resume_vision_button, queue=False)
         resume_vision_button.click(resume_motion_review, inputs=[review_job, review_candidate], outputs=[review_action_status, *review_outputs])
         recheck_button.click(recheck_candidate, inputs=[review_job, review_candidate], outputs=[review_action_status, *review_outputs])
@@ -3042,10 +3458,19 @@ def build_ui(
         vision_provider.input(select_vision_provider, inputs=vision_provider, outputs=[vision_api_status, vision_api_key, vision_provider]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
         save_vision_button.click(save_vision_key, inputs=[vision_api_key, vision_provider], outputs=[vision_api_status, vision_api_key]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
         clear_vision_button.click(lambda p: save_vision_key("",p), inputs=vision_provider, outputs=[vision_api_status, vision_api_key]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
-        ai_inputs = [repair_job, repair_candidate, repair_frame, repair_base_sha256]
+        ai_inputs = [repair_job, repair_candidate, repair_frame, repair_base_sha256, ai_repair_phase, repair_note]
+        for component in [repair_job, repair_candidate, repair_frame]:
+            component.change(lambda: gr.update(value="auto"), outputs=ai_repair_phase, queue=False)
+        for component in [repair_job, repair_candidate, repair_frame, repair_base_sha256, ai_repair_phase]:
+            component.change(ai_repair_guidance, inputs=[repair_job,repair_candidate,repair_frame,ai_repair_phase], outputs=ai_phase_guidance, queue=False)
         ai_outputs = [ai_repair_status, ai_repair_preview, ai_repair_token]
+        for component in [repair_job, repair_candidate, repair_frame]:
+            component.change(ai_repair_selection, inputs=[repair_job, repair_candidate, repair_frame, repair_base_sha256], outputs=ai_outputs, queue=False)
+        # A new pixel version invalidates the proposal, but must not erase the
+        # successful adoption message that produced that version.
+        repair_base_sha256.change(lambda: (None, {}), outputs=[ai_repair_preview, ai_repair_token], queue=False)
         ai_repair_button.click(ai_repair_start, inputs=ai_inputs, outputs=ai_outputs)
-        ai_retry_button.click(lambda j,c,f,b: ai_repair_start(j,c,f,b,True), inputs=ai_inputs, outputs=ai_outputs)
+        ai_retry_button.click(lambda j,c,f,b,p,n: ai_repair_start(j,c,f,b,p,n,True), inputs=ai_inputs, outputs=ai_outputs)
         ai_refresh_button.click(ai_repair_refresh, inputs=ai_repair_token, outputs=ai_outputs)
         ai_adopt_button.click(ai_repair_adopt, inputs=[ai_repair_token, repair_job, repair_candidate, repair_frame], outputs=[ai_repair_status, *repair_outputs])
         save_api_button.click(save_api_key, inputs=api_key, outputs=[header_status, api_status, ai_api_banner, generate_button, api_key])
@@ -3088,6 +3513,8 @@ def create_ui_app(
     service = SpritePipelineService(root)
     app = create_api(root, service=service)
     demo = build_ui(root, service=service)
+    from .ui_session import install_ui_session
+    session_head = install_ui_session(app, demo)
     return gr.mount_gradio_app(
         app,
         demo,
@@ -3095,6 +3522,7 @@ def create_ui_app(
         server_name=host,
         server_port=port,
         theme=demo.sprite_pipeline_theme,
+        head=session_head,
         css=UI_CSS,
         footer_links=[],
         max_file_size="32mb",

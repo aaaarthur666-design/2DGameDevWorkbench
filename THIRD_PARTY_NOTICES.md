@@ -5,7 +5,7 @@ This current-maintenance file records provenance and the license status of incor
 ## NativeFramesGeneration / SpritePipeline
 
 - Upstream: <https://github.com/flxBurnOut/NativeFramesGeneration.git>
-- Synchronized through upstream commit `e4df6f2de215f01db2e28ce1e175894186bb44f8` (repair workflow and operator UI update, 2026-09-05), retaining the workbench job navigation, frame/export artifact endpoints, and their integration coverage under `Tools/SpritePipeline/`.
+- Synchronized through upstream commit `4f7f4cc4bee625d75c53570887ddf184dbe380ba` (attack sequence review, reference canvas and animation player, synchronized 2026-09-08), retaining the workbench job navigation, frame/export artifact endpoints, and their integration coverage under `Tools/SpritePipeline/`.
 - License: MIT License, Copyright (c) 2026 flxBurnOut.
 - Authorization confirmed by the copyright holder on 2026-09-04. The integrated copy includes its license at `Tools/SpritePipeline/LICENSE`; the upstream repository also carries the MIT license.
 - Distribution status: **resolved under the MIT License**.

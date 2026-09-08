@@ -37,6 +37,10 @@ On Windows, use `harness.cmd` when PowerShell execution policy blocks
 
 `list-jobs` is intentionally a lightweight catalog command. It reads each
 task's `summary.json` and does not load frames, previews, or the full journal.
+The UI Artwork Library uses the material entries in version 2 summaries,
+plus character presets and imported maps. Empty/failed/fixture executions remain
+in execution details; their absence from the card grid does not mean data was
+deleted. Only the visible page loads thumbnail images.
 After selecting a `job_id`, use `status --job <id>` for the complete durable
 record. All candidates created by one request remain under that single task
 directory.
@@ -159,18 +163,18 @@ balance query, while `estimate` is entirely local. `recover-all`, `recover`, `sa
 `attach-provider-job` never create a chargeable submission. Only pass
 `--root` for an explicitly requested portable/test workspace.
 
-## 攻击默认检查与有限补做
+## 攻击视觉检查与人工修补
 
-地面攻击（`attack`）和空中攻击（`attack_in_air`）的非循环生成默认启用：先生成完整动作，再由所选视觉服务检查判断提前挥刀、武器翻向、重复蓄力、额外挥刀及身体连续性。无需选择额外模式或上传关键姿势。
+地面攻击（`attack`）和空中攻击（`attack_in_air`）的非循环生成默认进行视觉检查。检查后只在问题帧添加提醒 tag，例如“蓄力 · 刀刃翻向”，保存问题说明、建议修改和阶段置信度；不会因不通过而自动重新生成或采用替代帧。无法判断时标为待人工确认。
 
-在设置中选择视觉检查服务并保存 **视觉检查 API Key**。默认使用 TokenHub 的混元 `hy-vision-2.0-instruct`，可复用服务端 `TOKENHUB_API_KEY`；如果 Key 仅保存在地图页面的运行时进程，请在视觉设置中再保存一次。也可选择 OpenAI `gpt-5.4-2026-03-05`，使用独立的 `OPENAI_API_KEY` 或本机保存的密钥。两家密钥分别存于受保护存储，不互相覆盖；不会在检查失败时自动切换提供方。图片发送至所选服务，按 API 用量另行计费。未配置时不提交新的攻击生成，低置信度、超时、截断或无有效结论均停止自动补做。
+在设置中保存视觉检查 API Key。默认使用 TokenHub 混元 `hy-vision-2.0-instruct`，可复用服务端 `TOKENHUB_API_KEY`；也可选择 OpenAI `gpt-5.4-2026-03-05`，使用独立的 `OPENAI_API_KEY`。两家密钥分开保管；图片发给所选服务，视觉检查按用量计费，不自动重试结果未知的请求。地图页面只保存在进程内的 Key 需在此另行保存。
 
-每个任务（多个候选共用）最多额外生成 **两次**，每次编辑包含邻帧的 4 帧短段，仅将问题帧放回完整动画复检。只有结论改善且本机检查无阻止问题，才自动采用。原始帧与未采用候选保留。检查请求最多为候选数加两次，不会自动重试结果未知的付费请求。次数记录先持久化，刷新与重启不会清零；旧任务不会自动触发新增费用。
+在 **3 · 逐帧修补 → AI 修补当前问题帧** 中，由人决定保留当前帧、手工修改或请求 AI 重新生成。新请求必须携带当前帧的攻击阶段及专项约束，并锁定前后帧参考；例如蓄力阶段要求刀保持在肩后，不提前出刀或重新蓄力。可靠且对应当前版本的视觉判断可以自动提供阶段；否则必须人工选择，不能按固定帧号猜测阶段。修改其他帧后，旧报告不能继续自动提供阶段。
 
-达到上限仍有问题时，保留较好版本并标记至 **3 · 逐帧修补**。其中的 **AI 修补当前问题帧** 可生成、刷新和预览，再由用户明确采用；每帧最多手动请求两次，与自动阶段分别计数。采用时检查基础版本，防止覆盖补做期间的新修改。手工像素修补和上传替换继续可用。
+每帧最多人工请求两次，每次使用四个上下文槽位并对完整动画复检；生成和视觉检查按用量计费。必须先预览、再由人明确采用，只有目标帧会替换；其余帧与原始版本保留。保存的次数不会因刷新或重启重置，手工像素修补仍可继续。旧自动补做队列不再自动提交或采用，已有结果保留。
 
-旧 `/attack-plans` 接口及记录保留兼容，但复杂的方案面板已经从生成页移除。内部补做子任务只作为执行记录，不列入作品库。
+检查与修补继续支持实际 1–64 帧，完整保留播放顺序；少于四帧时仅对提交上下文补齐，不增加最终帧数。单帧不足以证明动作连续性，不能判为通过。首尾帧明确记录缺失的邻帧，不虚构衔接。
 
-视觉检查按候选的实际帧数工作，支持 1–64 帧；17 帧等结果全部按原顺序发送，不截断到 16 帧。非标准帧数按可见动作判断阶段边界，问题帧号不得越界。单帧无法证明连续性，因此不能判为通过。局部补做仍提交四个上下文槽位，少于四帧时只对上下文补齐，采用时保留原动画长度、原始帧和全部非目标帧。整个任务的自动补做上限仍为两次，不因帧数、刷新或重启而重置。
+旧版在发送前停止的检查可点击“继续视觉检查”，或调用 `POST /jobs/{job_id}/motion-review/resume`；它只复用原帧检查并打 tag，不自动重新生成。人工修补接口 `POST /jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/ai-repair` 可传入 `phase`（默认 `auto`）；可用阶段为 `prepare`、`windup`、`charge`、`strike`、`extend`、`follow_through`、`recover`，其中举刀/蓄力仅用于地面攻击，伸展仅用于空中攻击。不确定或不适用的阶段会在收费请求前被拦截。
 
-播放检查和逐帧修补明确区分本机基础检查与视觉检查状态。对于旧版本因非 16 帧而在发送前停止的任务，可在“播放检查”选中动画后点击“继续视觉检查”，或调用 `POST /jobs/{job_id}/motion-review/resume`。这会复用已有帧并排队检查，视觉请求及有限补做按用量计费。已发送但结果未知的请求不会借此重发；已完成的视觉检查不会重置补做预算。旧任务不会仅因更新程序而自动收费。
+旧 `/attack-plans` 接口及记录保留兼容；复杂的分段方案面板不再显示。修补子任务作为执行记录保留，不列入作品库。

@@ -120,8 +120,8 @@ DREAMWEAVER_PROFILE = ProjectProfile(
         ),
         ProjectAction(
             "attack", "attack", "地面攻击", "赛博人物攻击.png", 16, 16, 18, 18, False,
-            4, 4, _row_major_cells(16), (6,), integration_status="frame_upgrade",
-            note="新合同使用完整 16 帧；整段只攻击一次，第 7 帧（索引 6）作为刀举过头或肩侧的唯一蓄力/技能定格姿势，随后向前纵向劈砍并只做跟随与恢复；替换旧资产时需要同步 Godot 帧列表。",
+            4, 4, _row_major_cells(16), (5,), integration_status="frame_upgrade",
+            note="默认两段为 6 帧起势/蓄力＋10 帧连续攻击/收招；节奏目标为 1–6 帧起势/蓄力、7–12 帧出刀/随挥、13–16 帧收招。第 6 帧（索引 5）为蓄力关键姿势目标，需按实际画面确认；替换旧资产时需要同步 Godot 的蓄力定格映射与帧列表。",
             legacy_sheet_rows=2,
             legacy_frame_cells=((0, 0), (2, 0), (1, 1), (2, 1), (3, 1)),
         ),

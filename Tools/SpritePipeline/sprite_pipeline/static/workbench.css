@@ -337,6 +337,28 @@ body {
   .workspace-card { padding: 12px !important; }
 }
 
+/* Material-first library */
+.library-toolbar { align-items: end; }
+.library-count { color: #c1c9dc; margin: 8px 0 4px; font-size: 14px; }
+.artwork-card { background: #111b2f !important; border: 1px solid #2d3c5a !important; border-radius: 18px !important; padding: 12px !important; gap: 8px !important; overflow: hidden; }
+.artwork-card:hover { border-color: #a894ff !important; }
+.artwork-thumbnail { border: none !important; border-radius: 12px !important; background-color: #0b1425 !important; background-image: conic-gradient(#18243a 25%, transparent 0 50%, #18243a 0 75%, transparent 0) !important; background-size: 20px 20px !important; }
+.artwork-thumbnail img { image-rendering: pixelated !important; object-fit: contain !important; }
+.artwork-caption { padding: 2px 4px 7px; }
+.artwork-caption h3 { color: #f4f7ff; font-size: 18px; line-height: 1.45; margin: 8px 0 5px; overflow-wrap: anywhere; }
+.artwork-caption p { font-size: 14px; color: #c1c9dc; margin: 0 0 10px; }
+.artwork-kind { color: #70d8ff; font-size: 12px; font-weight: 700; }
+.artwork-status { display: inline-block; border: 1px solid #3a4b6d; border-radius: 20px; padding: 4px 9px; font-size: 12px; color: #e3e9f8; background: #182641; }
+.artwork-actions { gap: 6px !important; margin-top: auto; }
+.artwork-actions button { min-height: 38px; }
+.library-empty { text-align: center; padding: 64px 24px; border: 1px dashed #3a4b6d; border-radius: 18px; color: #c1c9dc; }
+.library-empty b { display: block; color: #f4f7ff; font-size: 22px; margin-bottom: 12px; }
+.artwork-missing { display: grid; place-content: center; text-align: center; height: 220px; background: #0b1425; color: #c1c9dc; border-radius: 12px; }
+.library-pagination { align-items: center; }
+.library-pagination .prose { text-align: center; }
+@media(max-width:760px) { .artwork-card { min-width: min(100%, 280px) !important; } }
+@media(min-width:1000px) { .artwork-row > .artwork-card { flex: 0 0 calc((100% - 32px) / 3) !important; min-width: 0 !important; } }
+
 /* Keep pose review and its coordinate table usable on narrow screens. */
 @media (max-width: 640px) {
   #generation-tab, #generation-tab .row, #generation-tab .column,
@@ -349,4 +371,205 @@ body {
 .gradio-container { width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
 .gradio-container > .main, .gradio-container .wrap, .gradio-container .contain {
   min-width: 0 !important; max-width: 100% !important; box-sizing: border-box !important;
+}
+
+/* Comfortable working space: one surface per task, controls stay at point of use. */
+.gradio-container {
+  max-width: 1480px !important;
+  padding: 20px 28px 56px !important;
+  --layout-gap: 16px;
+}
+#sprite-hero {
+  padding: 14px 18px;
+  margin-bottom: 0;
+  border-radius: 14px;
+  box-shadow: none;
+  background: var(--sp-surface-soft);
+}
+#sprite-hero h1 { font-size: 24px; }
+#sprite-hero p { margin: 4px 0 0; font-size: 14px; }
+.product-eyebrow { font-size: 11px; margin-bottom: 3px; }
+.project-pill { font-size: 12px; }
+.workflow-guide { margin-top: 10px; }
+.workflow-guide summary { color: var(--sp-muted); font-size: 13px; cursor: pointer; }
+.workflow-guide .flow-map { margin-top: 12px; }
+.status-bar { margin: 0; padding: 0; gap: 6px; }
+.status-bar span { padding: 3px 8px; font-size: 12px; }
+.workflow-tabs > .tab-nav, .workflow-tabs > div[role="tablist"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px !important;
+  margin: 0 0 14px;
+  padding: 4px !important;
+  border: 1px solid var(--sp-border) !important;
+  border-radius: 12px;
+  background: var(--sp-surface-soft);
+}
+.workflow-tabs > .tab-nav button, .workflow-tabs > div[role="tablist"] button {
+  padding: 9px 15px !important;
+  min-height: 42px;
+  border-radius: 8px;
+}
+.stage-header { margin: 0 0 8px; padding: 0 0 12px; }
+.stage-header h2 { font-size: 23px; }
+.stage-header p { font-size: 14px; }
+.stage-badge { min-width: 36px; height: 36px; border-radius: 10px; }
+.workspace-card { padding: 20px !important; gap: 16px !important; }
+.card-heading { margin: 0 0 2px; }
+.card-heading h3 { font-size: 18px; }
+.card-heading p { font-size: 14px; }
+.workspace-card > .form, .action-panel > .form,
+.workspace-card .form > .block {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+.workspace-card .form > .block { padding: 8px 0 !important; }
+.workspace-card input, .workspace-card textarea { line-height: 1.6; }
+.gradio-container .row { gap: 16px; }
+.gradio-container button { white-space: normal; overflow-wrap: anywhere; }
+.gradio-container button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--sp-success) !important;
+  outline-offset: 3px;
+}
+.notice { margin: 0; padding: 11px 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.notice strong { margin-bottom: 3px; }
+.status-strip { align-items: center !important; margin-bottom: 0; gap: 14px !important; }
+.status-strip .notice { background: transparent; border-width: 0 0 0 3px; border-radius: 0; padding: 5px 12px; font-size: 13px; }
+.reference-inputs { align-items: stretch; gap: 12px !important; }
+.reference-inputs .column { gap: 0 !important; }
+.reference-inputs .file-preview, .reference-inputs .upload-container { min-height: 160px; }
+.reference-inputs .block { width: 100%; }
+.generation-submit {
+  margin-top: 6px !important;
+  padding: 16px !important;
+  background: var(--sp-surface-soft) !important;
+  border-color: var(--sp-border) !important;
+}
+.action-panel { box-shadow: none !important; }
+.action-panel > .form { padding: 0 !important; }
+.inline-details { border-top: 1px solid var(--sp-border); padding: 10px 0 0; margin-top: 4px; }
+.inline-details summary { color: var(--sp-muted); cursor: pointer; font-size: 14px; }
+.inline-details[open] summary { margin-bottom: 10px; color: var(--sp-text); }
+.inline-details p { font-size: 14px; color: var(--sp-muted); line-height: 1.7; }
+.context-panel { padding: 12px 16px !important; margin-bottom: 0; }
+.section-label { margin: 12px 0 4px; }
+.section-label span { font-size: 12px; }
+.section-label h3 { font-size: 20px; }
+.section-label p { font-size: 14px; }
+.review-check-card { align-self: flex-start; }
+.tool-tabs { margin-top: 8px; }
+#repair-tools > .tab-nav, #repair-tools > div[role="tablist"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--sp-border);
+  padding-bottom: 12px;
+}
+#repair-tools > .tab-nav button, #repair-tools > div[role="tablist"] button {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--sp-border);
+  border-radius: 9px;
+}
+#repair-tools button[role="tab"][aria-selected="true"] {
+  color: var(--sp-text);
+  border-color: var(--sp-accent);
+  background: var(--sp-accent-soft);
+}
+.path-list code, .project-table td { overflow-wrap: anywhere; word-break: break-word; }
+.project-table { width: 100%; table-layout: fixed; }
+.artwork-card { border-radius: 14px !important; padding: 16px !important; gap: 12px !important; }
+.artwork-caption h3 { font-size: 17px; }
+.artwork-actions { flex-wrap: wrap !important; gap: 8px !important; }
+.artwork-actions button { min-height: 42px; }
+
+@media (max-width: 1000px) {
+  .gradio-container { padding: 16px 18px 48px !important; }
+  .generation-workspace > .column { flex: 1 1 100% !important; min-width: 0 !important; }
+  .product-row { flex-direction: row; }
+}
+@media (max-width: 640px) {
+  .gradio-container { padding: 10px 12px 36px !important; }
+  .gradio-container .row, .gradio-container .column, .gradio-container .form,
+  .gradio-container .block { min-width: 0 !important; max-width: 100% !important; }
+  .gradio-container .row { flex-wrap: wrap !important; }
+  .gradio-container .row > .column { flex: 1 1 100% !important; }
+  .gradio-container .row > button { flex: 1 1 160px !important; }
+  .workspace-card { padding: 14px !important; }
+  .product-row { flex-direction: column; }
+  .workflow-tabs > div[role="tablist"] button { padding: 8px 10px !important; }
+  .stage-header h2 { font-size: 21px; }
+  .context-panel { padding: 10px !important; }
+  .status-strip { gap: 8px !important; }
+  #generation-tab .reference-inputs > .column { flex: 1 1 140px !important; }
+  .project-table { font-size: 12px; }
+  .project-table th, .project-table td { padding: 8px 4px; }
+  #repair-tools > div[role="tablist"] button { flex: 1 1 100px; padding: 10px 8px; }
+}
+
+/* Gradio wraps Group twice and places the tablist inside a tab-wrapper. */
+.gradio-container [data-testid="block-info"] { color: #e3e9f8 !important; font-size: 15px !important; }
+.gr-group > .gr-group { padding: 0 !important; border: 0 !important; margin: 0 !important; background: transparent !important; }
+.gr-group > .styler { background: transparent !important; }
+.workflow-tabs > .tab-wrapper { margin-bottom: 12px; }
+.workflow-tabs > .tab-wrapper > .tab-container {
+  gap: 4px;
+  padding: 5px !important;
+  border: 1px solid var(--sp-border);
+  border-radius: 12px;
+  background: var(--sp-surface-soft);
+}
+.workflow-tabs > .tab-wrapper > .tab-container > button {
+  min-height: 42px;
+  padding: 9px 15px !important;
+  border-radius: 8px;
+}
+.workflow-tabs > .tab-wrapper > .tab-container > button.selected {
+  background: var(--sp-accent-soft);
+  border-color: transparent;
+  color: var(--sp-text);
+}
+#repair-tools > .tab-wrapper > .tab-container { gap: 8px; padding: 6px 0 12px; }
+#repair-tools > .tab-wrapper > .tab-container > button {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--sp-border);
+  border-radius: 9px;
+}
+#repair-tools > .tab-wrapper > .tab-container > button.selected { background: var(--sp-accent-soft); border-color: var(--sp-accent); color: var(--sp-text); }
+@media (max-width: 640px) {
+  .workflow-tabs > .tab-wrapper > .tab-container > button { padding: 8px 10px !important; }
+  #repair-tools > .tab-wrapper > .tab-container > button { padding: 10px 8px; }
+}
+
+/* Keep each original frame inside a bounded thumbnail, including its caption.
+   Gallery's current frontend accepts an integer column count, not a list. */
+.compact-timeline .grid-container {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
+  grid-template-rows: none !important;
+  grid-auto-rows: 148px !important;
+  gap: 10px !important;
+  padding-top: 34px !important;
+  padding-bottom: 8px;
+}
+.compact-timeline .gallery-item { min-width: 0; height: 148px; }
+.compact-timeline .thumbnail-item {
+  width: 100%; height: 148px; min-height: 0; aspect-ratio: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 6px 4px 0 !important;
+}
+.compact-timeline .thumbnail-item img {
+  flex: 0 0 112px; width: 112px !important; height: 112px !important;
+  max-width: 100%; max-height: 112px; object-fit: contain !important;
+  image-rendering: pixelated !important;
+}
+.compact-timeline .caption-label {
+  position: static !important; flex: 0 0 28px; width: 100%; max-width: 100%;
+  line-height: 28px; padding: 0 4px; font-size: 13px !important;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.animation-player-frame { height: 580px !important; }
+@media (max-width: 900px) {
+  .animation-player-frame { height: 610px !important; }
 }

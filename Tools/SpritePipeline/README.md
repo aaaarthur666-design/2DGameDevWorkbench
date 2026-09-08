@@ -282,24 +282,34 @@ with the same value after a client timeout to receive the original task.
 .\harness.ps1 serve-ui
 ```
 
-Open `http://127.0.0.1:7860`. The pages are Guide & Example, Generate Animation,
-Saved Assets, Playback Review, Frame Repair, Export, and API & Project.
-The Generate page returns after the durable submit step. Historical results and
-the four-stage task safety center live in Saved Assets instead of below the
-generation form. Closing or refreshing the browser does not stop the local
-recovery worker; reopening the task shows its saved state.
+Open `http://127.0.0.1:7860`. **Artwork Library** is the first/default page,
+followed by Guide & Example, Generate Animation, Playback Review, Frame Repair,
+Export, and API & Project. Thumbnail cards show character references, saved
+animation candidates, and imported maps, with type filters, search, and twelve
+items per page. Card actions carry the exact character or candidate into the
+existing generate, edit, review, or export workflow. Approved/exported candidates
+remain read-only, and outdated QA requires review before export.
 
-Startup, the five-second catalog refresh, and changing the task selection read
-only each task's small `summary.json`. Full job history, candidate frames, and
-previews are loaded only after **Open selected task** is pressed. One task owns
-one directory; all of that task's candidates are kept below it as
-`raw/candidate_01`, `candidate_02`, and so on. A missing summary on a legacy task
-is backfilled once from its canonical job record.
+Empty, failed, and diagnostic executions remain available under **Execution
+records** inside details; they do not create material cards. Character details
+filter related executions, while animation details identify the owning task.
+Full job history and candidate frames load only after opening a record.
+Version 2 of `summary.json` indexes saved materials; old summaries are backfilled
+once. The five-second refresh reads metadata and does not reset open details.
+Only visible-page thumbnails are decoded/cached under `cache/artwork_thumbnails`;
+animations use existing QA previews with an active-first-frame fallback.
+
+**Import materials** saves character references without creating jobs. Static
+PNG/JPEG/WebP maps (up to 32 MB / 16,777,216 pixels) are stored byte-for-byte under
+`artworks/maps` in the user data directory and deduplicated by SHA-256. Maps offer
+preview and original download; map generation/editing is outside this version.
+An existing animation Sheet can be sent directly to the Playback Review import
+panel. Closing the browser does not stop the local recovery worker.
 
 Generate Animation accepts the character source PNG, reusable identity prompt,
 and action prompt on one page. A 128×128 single frame is used directly; a
 four-column project Sheet automatically contributes its first visible cell.
-Existing completed Sheets can be uploaded only from Playback Review, where a
+Existing completed Sheets are imported through Playback Review, where a
 numbered grid is shown before they enter inspection. Frame Repair embeds the
 exact-pixel editor and a full five-state frame timeline. It can jump to the
 previous or next problem frame and preserves the current job, candidate, and
@@ -343,18 +353,39 @@ and state mapping because it is not present in the supplied project manifest.
 
 This project is released under the [MIT License](LICENSE).
 
-## 攻击默认检查与有限补做
+## 攻击视觉检查与人工修补
 
-地面攻击（`attack`）和空中攻击（`attack_in_air`）的非循环生成默认启用：先生成完整动作，再由所选视觉服务检查判断提前挥刀、武器翻向、重复蓄力、额外挥刀及身体连续性。无需选择额外模式或上传关键姿势。
+节奏设计及样本复盘见 [攻击动画的节奏经验](docs/attack-animation-notes.md)。
 
-在设置中选择视觉检查服务并保存 **视觉检查 API Key**。默认使用 TokenHub 的混元 `hy-vision-2.0-instruct`，可复用服务端 `TOKENHUB_API_KEY`；如果 Key 仅保存在地图页面的运行时进程，请在视觉设置中再保存一次。也可选择 OpenAI `gpt-5.4-2026-03-05`，使用独立的 `OPENAI_API_KEY` 或本机保存的密钥。两家密钥分别存于受保护存储，不互相覆盖；不会在检查失败时自动切换提供方。图片发送至所选服务，按 API 用量另行计费。未配置时不提交新的攻击生成，低置信度、超时、截断或无有效结论均停止自动补做。
+地面/空中攻击的新 PixelLab 任务默认使用 `two_stage_attack`：每个候选固定生成准备/蓄力、挥击/收招两个片段；16 帧默认使用 4 + 12 个请求帧：4 帧起势/蓄力，8 帧出刀与随挥，4 帧收招。出刀先快后慢；中间 8 帧包含同一次攻击的随挥减速，不要求把刀匀速慢挥 8 帧。空中攻击的前 4 帧为沿连续飞行轨迹准备，不强加地面蓄力。第二段使用第一段实际末帧作为起始参考，持续沿用同一持刀手和肩肘腕连接。新计划不再用可能握法不同的原图待机姿势强制收招终点；两段分别以自身起始参考锁定握刀臂，文字明确要求同一只手完成挥击并回到准备姿势。角色可用 `weapon_hand` 声明左右手/双手，默认沿用原图的持刀手；其值和原图哈希在创建时冻结。两段都复用普通生成的角色身份约束，并保留创建时的专属外观说明及不得新增披风的约束；衔接帧不能取代原型定义。分别给出短阶段提示词，第二段必须立即出刀，不再重新蓄力。仅去掉两个片段间像素完全相同的重复衔接帧，保留其他所有实际返回帧，再检查整段动作。阶段端点是生成模型的引导输入，仍需实际画面验收。
 
-每个任务（多个候选共用）最多额外生成 **两次**，每次编辑包含邻帧的 4 帧短段，仅将问题帧放回完整动画复检。只有结论改善且本机检查无阻止问题，才自动采用。原始帧与未采用候选保留。检查请求最多为候选数加两次，不会自动重试结果未知的付费请求。次数记录先持久化，刷新与重启不会清零；旧任务不会自动触发新增费用。
+每段最多提交一次，每个候选固定最多两次生成，不因视觉检查失败追加生成。提交前持久记录次数、原图/衔接帧哈希及远端任务 ID；重启只推进尚未提交的计划片段，提交结果未知时停止。取回接口只取回已存在的片段，不提交下一段。128×128、4 + 12 帧仍通常合计 4 个 generation 额度；较小尺寸按每段分别向上取整，页面及额度预检使用相同计算。每次提交仍读取余额。旧任务保留创建时的单段或两段计划、提示词、端点和额度预算，不自动转换或重新收费；显式选帧、循环及不支持两段帧数的动作保持原流程。
 
-达到上限仍有问题时，保留较好版本并标记至 **3 · 逐帧修补**。其中的 **AI 修补当前问题帧** 可生成、刷新和预览，再由用户明确采用；每帧最多手动请求两次，与自动阶段分别计数。采用时检查基础版本，防止覆盖补做期间的新修改。手工像素修补和上传替换继续可用。
+节奏比例是新生成的目标，不是按帧号强行贴上的视觉阶段标签。新计划保存 `rhythm` 中的请求帧分配，不能用后来的默认值覆盖。受 PixelLab 每次至少 4 帧且必须为偶数的限制，8/10/12/14 帧请求分别使用 4+4、4+6、4+8、4+10 两段，并为后段保留收招空间；这些较短任务不能精确达到 1:2:1。模型返回 17/18 等实际帧数时，保留全部有效帧，不通过删帧、补重复帧或拉长刀光凑比例。视觉阶段仍依据真实画面确认。
 
-旧 `/attack-plans` 接口及记录保留兼容，但复杂的方案面板已经从生成页移除。内部补做子任务只作为执行记录，不列入作品库。
 
-视觉检查按候选的实际帧数工作，支持 1–64 帧；17 帧等结果全部按原顺序发送，不截断到 16 帧。非标准帧数按可见动作判断阶段边界，问题帧号不得越界。单帧无法证明连续性，因此不能判为通过。局部补做仍提交四个上下文槽位，少于四帧时只对上下文补齐，采用时保留原动画长度、原始帧和全部非目标帧。整个任务的自动补做上限仍为两次，不因帧数、刷新或重启而重置。
+批量候选独立记录视觉结果与次数。某个候选网络或格式失败会显示“检查未完成”，后续候选继续检查，失败请求不自动重试。旧版因中途失败而跳过的后续候选可用“继续视觉检查”补做仅未发送的检查，已检查或结果未知的请求不会重发。
 
-播放检查和逐帧修补明确区分本机基础检查与视觉检查状态。对于旧版本因非 16 帧而在发送前停止的任务，可在“播放检查”选中动画后点击“继续视觉检查”，或调用 `POST /jobs/{job_id}/motion-review/resume`。这会复用已有帧并排队检查，视觉请求及有限补做按用量计费。已发送但结果未知的请求不会借此重发；已完成的视觉检查不会重置补做预算。旧任务不会仅因更新程序而自动收费。
+地面攻击（`attack`）和空中攻击（`attack_in_air`）的非循环生成默认进行视觉检查。协议 4 先记录每个实际帧的武器持有者、握剑手高度、刀尖位置及可见姿势，再用有帧号、含原图、跨页重叠的整段对照图核验动作完整性。即使初检没有疑点，也必须完成第二次检查。地面攻击必须有举刀、肩后蓄力停顿、从高到低出刀、随挥和收招的帧证据；空中攻击使用准备、出刀、伸展、随挥和收招，不套用地面蓄力。两次证据矛盾、覆盖不全或阶段缺失均不能通过，不能只凭模型自报置信度判定合格。
+
+视觉复核必须逐帧追踪“原图持刀臂 / 另一条臂 / 双手 / 被遮挡”，并在分段交接处额外提供放大的对照图；不能把画面左右位置变化当作左右手变化。两次独立观察都能看到持刀手变化时，直接标记 `hand_swap` 待修补帧；无法辨认、记录不全或证据矛盾不能当成已通过。持刀手证据与动作阶段分别验证，已确认的换手不会被无效阶段证据丢弃。旧报告明确提示未检查持刀手，不自动重新收费。逐帧修补同时锁定持刀手，不复制错误邻帧的换手。
+
+每次最多两次视觉请求，使用同一已选模型。局部异常至多复核八项（优先外观漂移），整段动作完整性始终核验全部实际帧（1–64 帧）。确认的问题，包括缺失的攻击阶段，会直接标记待修补帧；查看结论可展开逐帧观察与调用记录。缺失阶段没有可靠的实际相位，修补时必须由人指定预期阶段，再带入阶段与前后帧约束。不会自动重新生成或采用替代帧。旧版通过报告明确显示未验证动作完整性，不自动重新收费检查。
+
+生成动作描述放在提示词前部；保持角色服装与颜色不等于保持待机姿势。肩后持刀约束仅适用于蓄力阶段，允许从参考图待机姿势举刀。PixelLab 的文本约束仍是软约束，不能保证生成器按阶段执行。同一模型的两次检查也不等于独立模型验证：2026-09-07 的有上限真实样本复测仍发现 HY Vision 2.0 的握剑手位置和阶段描述错误，目前不能据此声称视觉识别准确率达标。协议回归测试验证检查与计费边界，不代表模型语义准确率。
+
+在设置中保存视觉检查 API Key。默认使用 TokenHub 混元 `hy-vision-2.0-instruct`，可复用服务端 `TOKENHUB_API_KEY`；也可选择 OpenAI `gpt-5.4-2026-03-05`，使用独立的 `OPENAI_API_KEY`。两家密钥分开保管；图片发给所选服务，视觉检查按用量计费，不自动重试结果未知的请求。地图页面只保存在进程内的 Key 需在此另行保存。TokenHub Key 不指定模型；`hy-image-v3` 是图像生成模型，本页使用图片理解接口。新报告分别保存请求模型、服务回传模型（缺失时明确未知）、响应 ID、调用次数、用量及送检原图/帧哈希。
+
+在 **3 · 逐帧修补 → AI 修补当前问题帧** 中，由人决定保留当前帧、手工修改或请求 AI 重新生成。新请求必须携带当前帧的攻击阶段及专项约束，并锁定前后帧参考；例如蓄力阶段要求刀保持在肩后，不提前出刀或重新蓄力。已复核、证据充分且对应当前版本的视觉判断可以自动提供阶段；否则必须人工选择，不能按固定帧号猜测阶段。修改其他帧后，旧报告不能继续自动提供阶段。
+
+直接选中可编辑帧即可发起预览，无须先标为待修补。每帧最多人工生成两次。四个输入槽位使用前帧、目标帧、后帧及不可变原图；第四槽位明确标为身份参考而非动画帧，用于约束服装和配色。每个预览对完整动画进行检查，至多两次视觉调用；生成和检查分别按用量计费。必须先预览、再由人明确采用，只有目标帧会替换；其余帧与原始版本保留。保存的次数不会因刷新或重启重置，手工像素修补仍可继续。旧自动补做队列不再自动提交或采用，已有结果保留。
+
+检查与修补继续支持实际 1–64 帧，完整保留播放顺序；缺少邻帧时仅对前三个提交上下文槽位补齐，第四槽位始终是原图，不增加最终帧数。单帧不足以证明动作连续性，不能判为通过。首尾帧明确记录缺失的邻帧，不虚构衔接。
+
+旧版在发送前停止的检查可点击“继续视觉检查”，或调用 `POST /jobs/{job_id}/motion-review/resume`；它只复用原帧检查并打 tag，不自动重新生成。人工修补接口 `POST /jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/ai-repair` 可传入 `phase`（默认 `auto`）；可用阶段为 `prepare`、`windup`、`charge`、`strike`、`extend`、`follow_through`、`recover`，其中举刀/蓄力仅用于地面攻击，伸展仅用于空中攻击。不确定或不适用的阶段会在收费请求前被拦截。
+
+新生成提示始终优先锁定原图服装、身体/盔甲配色和装备，不因填写自定义角色描述而省略；所有预设仍受 1000 字符限制，超长会在请求前拒绝，原型与动作约束不会静默截断。
+
+旧 `/attack-plans` 接口及记录保留兼容；复杂的分段方案面板不再显示。修补子任务作为执行记录保留，不列入作品库。
+
+原图现可从作品库或生成页进入像素画布，保存副本并移送为新的生成原图。播放检查支持单次、循环、往返和整段 FPS 调整；详见[原图像素修改与播放检查](docs/reference-canvas-and-playback.md)。

@@ -1,3 +1,4 @@
+from vision_test_fixtures import observed
 import copy
 import json
 from pathlib import Path
@@ -13,7 +14,7 @@ from sprite_pipeline.providers.pixellab import PixelLabProvider
 from sprite_pipeline.errors import ConflictError, ValidationHarnessError, ProviderTemporaryError, ExportBlockedError
 
 PASS={"verdict":"pass","confidence":0.96,"summary":"一段连续攻击","issues":[]}
-FAIL={"verdict":"fail","confidence":0.96,"summary":"第七帧刀突然翻向","issues":[{"code":"weapon_flip","frames":[7],"description":"刀尖提前翻转","correction":"Keep blade behind shoulder during charge."}]}
+FAIL={"verdict":"fail","confidence":0.96,"summary":"第七帧刀突然翻向","issues":[{"code":"weapon_flip","evidence_status":"confirmed","evidence_confidence":0.96,"frames":[7],"description":"刀尖提前翻转","correction":"Keep blade behind shoulder during charge.","phase":"charge","phase_confidence":0.96}]}
 
 class FakeProvider:
     name="pixellab"
@@ -42,6 +43,9 @@ def setup(tmp_path, monkeypatch):
     fixture=TemporaryHarness(tmp_path)
     for name in ("attack","attack_in_air"):
         preset=json.loads((Path(__file__).parents[1]/f"presets/actions/{name}.json").read_text(encoding="utf-8"))
+        # These tests isolate review/repair and legacy single-submission recovery.
+        # Default two-stage generation has its own provider and crash regression suite.
+        preset["generation_strategy"]="single"
         (fixture.action_dir/f"{name}.json").write_text(json.dumps(preset),encoding="utf-8")
     service=SpritePipelineService(tmp_path); provider=FakeProvider(fixture)
     with patch("sprite_pipeline.providers.get_provider",return_value=provider), patch.object(SpritePipelineService,"_check_submission_quota"), patch.object(VisionReviewer,"configured",new_callable=PropertyMock,return_value=True):
@@ -61,31 +65,43 @@ def test_default_pass_does_not_spend_extra(setup,action):
         for _ in range(4): s.generate_job(job.job_id)
         assert len(p.requests)==1 and review.call_count==1
 
-def test_two_extra_attempts_shared_across_candidates_and_restart(setup):
+def test_failed_checks_only_tag_frames_across_candidates_and_restart(setup):
     s,p,_=setup; job=create(setup,count=2)
     with patch.object(VisionReviewer,"review",return_value=FAIL) as review:
         result=s.generate_job(job.job_id)
         assert result.motion_control["state"]=="needs_repair"
-        assert len(p.requests)==4
-        assert p.requests[-1].seed != p.requests[-2].seed
-        assert len(result.motion_control["attempts"])==2
-        assert review.call_count==4
+        assert len(p.requests)==2 and review.call_count==2
+        assert result.motion_control["attempts"]==[]
         restarted=SpritePipelineService(s.settings.root)
         for _ in range(3): restarted.generate_job(job.job_id)
-        assert len(p.requests)==4 and review.call_count==4
-        assert all(c.frames[6].review_status==ReviewStatus.repair_requested for c in result.candidates)
+        assert len(p.requests)==2 and review.call_count==2
+        for c in result.candidates:
+            assert c.frames[6].review_status==ReviewStatus.repair_requested
+            assert c.frames[6].motion_tags[0]["label"]=="刀刃翻向"
+            assert not c.frames[5].motion_tags
 
-def test_improved_proposal_only_changes_faulty_frame_and_preserves_raw(setup):
+
+def test_human_requested_proposal_only_changes_target_after_explicit_adoption(setup):
     s,p,_=setup; job=create(setup)
     with patch.object(VisionReviewer,"review",side_effect=[FAIL,PASS]):
         result=s.generate_job(job.job_id)
-    assert result.motion_control["state"]=="passed", result.motion_control
+        original=[f.active_path for f in result.candidates[0].frames]
+        control=MotionCorrection(s)
+        a=control.manual(job.job_id,1,6,result.candidates[0].frames[6].sha256,wait=True)
+        assert [f.active_path for f in s.get_job(job.job_id).candidates[0].frames]==original
+        with pytest.raises(ConflictError,match="人确认"):
+            control.adopt(job.job_id,a["id"])
+        result=control.adopt(job.job_id,a["id"],manual=True)
     assert len(p.requests)==2
     c=result.candidates[0]
     assert c.frames[6].active_path.startswith("motion/")
     assert all(not f.active_path.startswith("motion/") for f in c.frames if f.index!=6)
     assert s.store.resolve_job_path(job.job_id,c.frames[6].raw_path).is_file()
-    assert c.frames[6].repair_attempts==0
+    assert not c.frames[6].motion_tags
+    assert "INTENDED PHASE=charge" in p.requests[-1].prompt
+    assert "LOCK previous frame 6" in p.requests[-1].prompt
+    assert "LOCK next frame 8" in p.requests[-1].prompt
+
 
 def test_uncertain_or_missing_service_stops_without_spending(setup):
     s,p,_=setup; job=create(setup)
@@ -107,13 +123,19 @@ def test_interrupted_visual_request_is_not_repeated(setup):
         for _ in range(4): s.generate_job(job.job_id)
         assert review.call_count==1 and len(p.requests)==1
 
-def test_unknown_repair_submission_stops_entire_automatic_budget(setup):
+def test_unknown_manual_submission_never_repeats_on_refresh(setup):
     s,p,_=setup; p.unknown=True; job=create(setup)
     with patch.object(VisionReviewer,"review",return_value=FAIL):
         result=s.generate_job(job.job_id)
-        for _ in range(4): s.generate_job(job.job_id)
-    assert result.motion_control["state"]=="needs_repair"
-    assert len(p.requests)==2 and len(result.motion_control["attempts"])==1
+        control=MotionCorrection(s)
+        with pytest.raises(ProviderTemporaryError):
+            control.manual(job.job_id,1,6,result.candidates[0].frames[6].sha256,wait=True)
+        for _ in range(2):
+            with pytest.raises(ConflictError):
+                control.manual(job.job_id,1,6,result.candidates[0].frames[6].sha256,wait=True)
+    assert len(p.requests)==2
+    assert len(s.get_job(job.job_id).motion_control["attempts"])==1
+
 
 def test_manual_has_separate_cap_and_explicit_adoption(setup):
     s,p,_=setup; job=create(setup)
@@ -122,11 +144,11 @@ def test_manual_has_separate_cap_and_explicit_adoption(setup):
         control=MotionCorrection(s); f=result.candidates[0].frames[6]
         first=control.manual(job.job_id,1,6,f.sha256,wait=True)
         assert first["state"]=="proposed"
-        assert len(p.requests)==4
+        assert len(p.requests)==2
         assert control.manual(job.job_id,1,6,f.sha256,wait=True)["id"]==first["id"]
-        assert len(p.requests)==4
+        assert len(p.requests)==2
         second=control.manual(job.job_id,1,6,f.sha256,retry=True,wait=True)
-        assert len(p.requests)==5 and second["id"]!=first["id"]
+        assert len(p.requests)==3 and second["id"]!=first["id"]
         with pytest.raises(ConflictError,match="两次上限"):
             control.manual(job.job_id,1,6,f.sha256,retry=True)
         assert s.get_job(job.job_id).candidates[0].frames[6].active_path==f.active_path
@@ -177,12 +199,12 @@ def test_visual_wire_sends_ordered_frames_and_strict_schema(setup):
     class Response:
         status_code=200
         def json(self):
-            return {"status":"completed","id":"test-response","usage":{"total_tokens":123},"output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(PASS)}]}]}
+            return {"status":"completed","id":"test-response","usage":{"total_tokens":123},"output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(observed(PASS))}]}]}
     with patch.object(VisionReviewer,"key",return_value="test-vision-secret"), patch("sprite_pipeline.vision_review.httpx.Client") as factory:
         client=factory.return_value.__enter__.return_value
         client.post.return_value=Response()
         result=VisionReviewer(s.settings).review(paths,"attack",f.reference_path)
-        args=client.post.call_args
+        args=client.post.call_args_list[0]
         assert args.args[0]=="https://api.openai.com/v1/responses"
         body=args.kwargs["json"]
         assert body["store"] is False and body["text"]["format"]["strict"] is True
@@ -190,8 +212,9 @@ def test_visual_wire_sends_ordered_frames_and_strict_schema(setup):
         images=[v for v in body["input"][0]["content"] if v["type"]=="input_image"]
         assert len(images)==17 and all(v["detail"]=="high" for v in images)
         assert result["usage"]["total_tokens"]==123
+        assert result["verdict"]=="uncertain" and result["request_count"]==2
         assert "test-vision-secret" not in json.dumps(result)
-        assert client.post.call_count==1
+        assert client.post.call_count==2
 
 
 def test_visual_http_error_never_retries_or_leaks_response(setup):
@@ -236,7 +259,7 @@ def test_hunyuan_reuses_tokenhub_environment_key(setup,monkeypatch):
         reviewer.save_key("replacement-secret")
 
 
-@pytest.mark.parametrize("finish,content,should_pass",[("stop",json.dumps(PASS),True),("length",json.dumps(PASS),False),("stop","looks good",False),("stop",json.dumps({**FAIL,"verdict":"pass"}),False)])
+@pytest.mark.parametrize("finish,content,should_pass",[("stop",json.dumps(observed(PASS)),True),("length",json.dumps(PASS),False),("stop","looks good",False),("stop",json.dumps({**FAIL,"verdict":"pass"}),False)])
 def test_hunyuan_ordered_images_and_fail_closed(setup,monkeypatch,finish,content,should_pass):
     s,_,f=setup
     monkeypatch.setenv("SPRITE_PIPELINE_VISION_PROVIDER","hunyuan")
@@ -255,8 +278,8 @@ def test_hunyuan_ordered_images_and_fail_closed(setup,monkeypatch,finish,content
         else:
             with pytest.raises(ValidationHarnessError,match="未取得有效结论"):
                 VisionReviewer(s.settings).review(paths,"attack",f.reference_path)
-        assert client.post.call_count==1
-        call=client.post.call_args
+        assert client.post.call_count==(2 if should_pass else 1)
+        call=client.post.call_args_list[0]
         assert call.args[0]=="https://tokenhub.tencentmaas.com/v1/chat/completions"
         body=call.kwargs["json"]
         assert body["max_tokens"]==6000 and body["stream"] is False
