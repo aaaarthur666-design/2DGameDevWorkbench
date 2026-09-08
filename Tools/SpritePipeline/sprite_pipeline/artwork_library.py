@@ -74,7 +74,8 @@ class ArtworkLibrary:
                 })
             except (OSError, ValueError, ValidationHarnessError):
                 continue
-        for row in self.service.list_jobs():
+        # Workbench history archiving must not hide durable artwork.
+        for row in self.service.store.list_jobs():
             if row.get("execution_only") or row.get("status") == "invalid" or row.get("provider") == "fixture" or row.get("character_id") == "diagnostic_dummy":
                 continue
             for material in row.get("artworks", []):

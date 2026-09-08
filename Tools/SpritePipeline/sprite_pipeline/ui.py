@@ -741,7 +741,8 @@ def build_ui(
 
     def job_choices(*, approved_only: bool = False, repair_only: bool = False) -> list[tuple[str, str]]:
         result: list[tuple[str, str]] = []
-        for row in service.list_jobs():
+        # Workflow selectors address durable works, not the archived history view.
+        for row in service.store.list_jobs():
             job_id = str(row.get("job_id", ""))
             if row.get("execution_only") or row.get("status") == "invalid":
                 continue
@@ -754,11 +755,14 @@ def build_ui(
             result.append((job_summary_label(row), job_id))
         return result
 
-    def saved_asset_choices() -> list[tuple[str, str]]:
-        # Execution history deliberately includes empty, failed and test runs.
+    def saved_asset_choices(preferred: str | None = None) -> list[tuple[str, str]]:
+        # Keep history archived, but preserve an explicitly opened artwork's context.
+        rows = service.list_jobs()
+        if preferred and not any(row["job_id"] == preferred for row in rows):
+            rows.extend(row for row in service.store.list_jobs() if row["job_id"] == preferred)
         return [
             (job_summary_label(row) if row.get("status") != "invalid" else f"记录无法读取 · {row['job_id']}", str(row["job_id"]))
-            for row in service.list_jobs()
+            for row in rows
         ]
 
     def saved_asset_catalog_projection(job_id: str | None) -> str:
@@ -769,7 +773,7 @@ def build_ui(
                 "启动时只读取轻量摘要。选择或打开任务后，才会读取候选、帧和详细记录。",
             )
         row = next(
-            (item for item in service.list_jobs() if str(item.get("job_id")) == str(job_id)),
+            (item for item in service.store.list_jobs() if str(item.get("job_id")) == str(job_id)),
             None,
         )
         if row is None or row.get("status") == "invalid":
@@ -860,7 +864,7 @@ def build_ui(
             )
 
     def task_job_update(preferred: str | None = None) -> Any:
-        choices = saved_asset_choices()
+        choices = saved_asset_choices(preferred)
         values = {value for _label, value in choices}
         selected = preferred if preferred in values else choices[0][1] if choices else None
         return gr.update(choices=choices, value=selected)
@@ -1040,7 +1044,7 @@ def build_ui(
         )
 
     def reload_saved_asset_catalog(current: str | None) -> tuple[Any, str]:
-        choices = saved_asset_choices()
+        choices = saved_asset_choices(current)
         values = {value for _label, value in choices}
         selected = current if current in values else choices[0][1] if choices else None
         return (
@@ -3314,7 +3318,7 @@ def build_ui(
                     updates[workflow_tabs] = gr.update(selected="generate")
                 return updates
 
-            choices = saved_asset_choices()
+            choices = saved_asset_choices(requested)
             found = requested in {value for _label, value in choices}
             updates = {
                 workflow_tabs: gr.update(selected="assets"),

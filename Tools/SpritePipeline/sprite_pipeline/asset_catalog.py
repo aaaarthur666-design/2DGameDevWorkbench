@@ -16,7 +16,8 @@ class AssetCatalog:
         self.library = ArtworkLibrary(service)
 
     def list(self):
-        summaries = {j["job_id"]: j for j in self.service.list_jobs()}
+        # Use the same durable scope as ArtworkLibrary, including archived jobs.
+        summaries = {j["job_id"]: j for j in self.service.store.list_jobs()}
         rows = []
         for row in self.library.list_artworks():
             job = summaries.get(row.get("job_id"), {})
