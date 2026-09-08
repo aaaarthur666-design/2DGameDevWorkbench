@@ -143,7 +143,7 @@ export function AssetLibrary() {
           height: assetId ? 350 : 170,
           objectFit: 'contain',
           imageRendering: 'pixelated',
-          background: 'var(--wb-bg)',
+          background: 'var(--theme-canvas)',
           borderRadius: 12,
         }}
       />
@@ -275,7 +275,7 @@ export function AssetLibrary() {
                 padding: '10px 14px',
                 background: 'var(--wb-panel)',
                 color: 'var(--wb-text)',
-                border: '1px solid var(--wb-line)',
+                border: '1px solid var(--theme-control-border)',
                 borderRadius: 8,
                 minWidth: 250,
               }}
