@@ -145,7 +145,8 @@ def test_filters_and_pages_preserve_distinct_material_ids():
     assert ArtworkLibrary.filter_page(rows, 'character', '', 4) == ([], 1, 0)
 
 
-def test_gradio_renders_material_cards_and_routes_exact_candidate(library_setup):
+@pytest.mark.parametrize("archived", [False, True])
+def test_gradio_renders_material_cards_and_routes_exact_candidate(library_setup, archived):
     import asyncio
     from functools import partial
     from gradio.state_holder import SessionState
@@ -155,6 +156,9 @@ def test_gradio_renders_material_cards_and_routes_exact_candidate(library_setup)
     job = service.create_job({**fixture.create_request('import'), 'candidate_count': 2})
     fixture.write_sequence(fixture.root / 'inputs')
     service.ingest_candidate(job.job_id, 2, fixture.root / 'inputs')
+    if archived:
+        service.archive_history()
+        assert service.list_jobs() == []
     ui = build_ui(service=service)
     state = SessionState(ui)
     render = next(fn for fn in ui.fns.values() if fn.name == 'apply')
@@ -179,7 +183,8 @@ def test_gradio_renders_material_cards_and_routes_exact_candidate(library_setup)
     assert any('状态已经改变' in str(value) for value in updates.values())
 
 
-def test_workbench_link_opens_visible_details_for_exact_candidate(library_setup):
+@pytest.mark.parametrize("archived", [False, True])
+def test_workbench_link_opens_visible_details_for_exact_candidate(library_setup, archived):
     from types import SimpleNamespace
     from sprite_pipeline.ui import build_ui
 
@@ -187,6 +192,9 @@ def test_workbench_link_opens_visible_details_for_exact_candidate(library_setup)
     job = service.create_job({**fixture.create_request('import'), 'candidate_count': 3})
     fixture.write_sequence(fixture.root / 'inputs')
     service.ingest_candidate(job.job_id, 2, fixture.root / 'inputs')
+    if archived:
+        service.archive_history()
+        assert service.list_jobs() == []
     before = service.get_job(job.job_id).model_dump_json()
     ui = build_ui(service=service)
     try:
@@ -201,6 +209,7 @@ def test_workbench_link_opens_visible_details_for_exact_candidate(library_setup)
         assert updates.get(detail, {}).get('open') is True
         assert updates.get(content, {}).get('open') is True
         assert updates[radio]['value'] == 2
+        assert not any('任务摘要不可用' in str(value) for value in updates.values())
         assert any('地面攻击' in str(value) or '候选 B' in str(value) for value in updates.values())
         gallery = next(c for c in ui.blocks.values() if getattr(c, 'label', None) == '逐帧画面')
         assert len(updates[gallery]) == 4

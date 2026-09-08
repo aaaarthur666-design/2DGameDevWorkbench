@@ -201,7 +201,7 @@ export function MapApiSettingsDialog({
             />
           </label>
           <p className="map-muted">
-            密钥由服务端保管，网页不会回显。此处填写的密钥在当前服务运行期间有效；关闭 API 后停止原图生成与扩图。
+            密钥保存在本机，重启后仍可使用，网页不会回显。留空会保留已保存的密钥；关闭 API 只停用生成，不删除密钥。
           </p>
           <label>
             整体层提示词

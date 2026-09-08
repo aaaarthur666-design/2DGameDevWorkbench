@@ -3,6 +3,12 @@ import type { WorkItem } from './work-items';
 
 const DB = 'workbench-production-v1';
 const CHANGED = 'workbench:items-changed';
+const RESET_KEY = 'workbench.history-generation';
+function historyGeneration() {
+  try { return typeof window === 'undefined' ? '' : window.localStorage?.getItem(RESET_KEY) || ''; }
+  catch { return ''; }
+}
+let generation = historyGeneration();
 async function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB, 1);
@@ -82,9 +88,15 @@ export async function saveWorkspaceDraft(
   items: WorkItem[],
   currentKey?: string,
 ) {
+  if (historyGeneration() !== generation)
+    throw new Error('本机历史已在其他页面清空，请刷新页面后创建新项目。');
   const db = await database();
   try {
     await new Promise<void>((resolve, reject) => {
+      if (historyGeneration() !== generation) {
+        reject(new Error('本机历史已清空，请刷新页面。'));
+        return;
+      }
       const tx = db.transaction(['drafts', 'items'], 'readwrite');
       tx.objectStore('drafts').put(draft, key);
       if (currentKey) tx.objectStore('drafts').put(key, currentKey);
@@ -115,4 +127,33 @@ export function subscribeWorkItems(listener: () => void) {
     window.removeEventListener(CHANGED, listener);
     window.removeEventListener('focus', listener);
   };
+}
+
+export async function clearLocalProjects() {
+  // Prevent stale tabs from autosaving deleted projects back into storage.
+  window.localStorage.setItem(RESET_KEY, crypto.randomUUID());
+  for (const name of [DB, 'workbench-interactable-editor']) {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(name);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('drafts');
+        if (name === DB) request.result.createObjectStore('items', { keyPath: 'id' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      const stores = Array.from(db.objectStoreNames);
+      if (!stores.length) continue;
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(stores, 'readwrite');
+        stores.forEach((store) => tx.objectStore(store).clear());
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('草稿清空中断，请重试。'));
+      });
+    } finally { db.close(); }
+  }
+  generation = historyGeneration();
+  window.dispatchEvent(new Event(CHANGED));
 }

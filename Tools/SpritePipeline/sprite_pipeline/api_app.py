@@ -358,6 +358,10 @@ def create_api(
     def list_jobs() -> dict[str, Any]:
         return {"schema_version": 1, "ok": True, "data": {"jobs": service.list_jobs()}}
 
+    @app.delete("/v1/history")
+    def clear_history(check: bool = False):
+        return service.archive_history(check_only=check)
+
     @app.post("/v1/jobs", status_code=201)
     def create_job(
         body: GenerationRequest,

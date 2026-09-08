@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +38,11 @@ def _default_data_root() -> Path:
     xdg_data_home = os.environ.get("XDG_DATA_HOME")
     if xdg_data_home:
         return Path(xdg_data_home) / APPLICATION_DIRECTORY_NAME
+    if sys.platform == "darwin":
+        legacy = Path.home() / ".local" / "share" / APPLICATION_DIRECTORY_NAME
+        native = Path.home() / "Library" / "Application Support" / APPLICATION_DIRECTORY_NAME
+        # Keep existing standalone installations readable without moving user data.
+        return legacy if legacy.exists() and not native.exists() else native
     return Path.home() / ".local" / "share" / APPLICATION_DIRECTORY_NAME
 
 

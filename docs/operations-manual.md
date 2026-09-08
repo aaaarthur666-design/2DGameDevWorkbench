@@ -91,7 +91,7 @@ npm ci 安装锁定的前端与 Node 依赖。setup 查找 Python，在 Tools/Sp
 | GPT Image 2 | gpt-image-2 | gpt-image-2 | OPENAI_API_KEY |
 | 混元 Image 3.0 | hunyuan-image-3 | hy-image-v3 | TOKENHUB_API_KEY |
 
-在地图设置中选择提供方，填写 Key 并启用图片 API。页面输入的地图 Key 当前只保存在 Runtime Bridge 进程内；关闭网页不一定丢失，重启 Bridge 后会丢失。需要长期使用时，把对应变量保存在本机未提交的 .env，并由项目启动器读取。
+在地图设置中选择提供方，填写 Key 并启用图片 API。页面保存的地图 Key 会持久保存在本机，Windows 使用当前账户加密，macOS 使用钥匙串保护；重启 Bridge 后自动恢复。也可把对应变量保存在本机未提交的 .env，并由项目启动器读取。
 
 首次创建 .env 时参考仓库的 .env.example；已有 .env 时只修改必要字段，不覆盖整份配置。以混元为例，设置 MAP_STITCHER_IMAGE_PROVIDER=hunyuan-image-3，并在 TOKENHUB_API_KEY 填入自己的密钥。不要把实际 Key 发给 Agent 对话或写进任务 JSON。
 

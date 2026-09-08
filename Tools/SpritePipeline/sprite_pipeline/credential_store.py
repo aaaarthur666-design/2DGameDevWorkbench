@@ -4,10 +4,13 @@ import base64
 import ctypes
 import hashlib
 import os
+import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
 from .jsonio import atomic_write_json, read_json
+from . import macos_keychain
 
 
 class CredentialStoreError(RuntimeError):
@@ -18,7 +21,7 @@ class CredentialStore:
     """Small OS-bound secret store.
 
     Windows uses the current user's DPAPI key, so copying credentials.json to
-    another account or machine does not reveal the API token. Other platforms
+    another account or machine does not reveal the API token. macOS uses Keychain. Other platforms
     retain a permission-restricted fallback until a native keyring is added.
     """
 
@@ -28,7 +31,7 @@ class CredentialStore:
 
     @property
     def protection(self) -> str:
-        return "windows-dpapi-current-user" if os.name == "nt" else "restricted-local-file"
+        return "macos-keychain" if sys.platform == "darwin" else "windows-dpapi-current-user" if os.name == "nt" else "restricted-local-file"
 
     def get(self, name: str) -> str | None:
         payload = self._read()
@@ -39,10 +42,19 @@ class CredentialStore:
         if not isinstance(encoded, str) or not encoded:
             return None
         try:
+            protection = record.get("protection")
+            if protection == "macos-keychain":
+                if sys.platform != "darwin":
+                    raise CredentialStoreError("this credential belongs to a macOS keychain")
+                return macos_keychain.get(encoded).decode("utf-8")
+            if protection == "windows-dpapi-current-user" and os.name != "nt":
+                raise CredentialStoreError("this credential belongs to a Windows account")
             protected = base64.b64decode(encoded, validate=True)
             entropy_version = record.get("entropy_version")
             used_legacy_entropy = False
-            if os.name == "nt" and entropy_version != "stable-v1":
+            if sys.platform == "darwin" and protection == "restricted-local-file":
+                clear = protected
+            elif os.name == "nt" and entropy_version != "stable-v1":
                 try:
                     clear = self._unprotect(protected)
                 except Exception:
@@ -55,6 +67,8 @@ class CredentialStore:
             else:
                 clear = self._unprotect(protected)
             value = clear.decode("utf-8")
+            if sys.platform == "darwin" and protection == "restricted-local-file":
+                self.set(name, value)
             if used_legacy_entropy:
                 # Earlier builds tied DPAPI entropy to the absolute data path.
                 # Re-encrypt once with a stable application entropy so Windows
@@ -70,20 +84,42 @@ class CredentialStore:
             raise ValueError("credential name is invalid")
         payload = self._read()
         secrets = payload.setdefault("secrets", {})
+        old_record = secrets.get(name, {})
+        new_reference = None
         if value is None:
             secrets.pop(name, None)
         else:
             clear = value.encode("utf-8")
-            protected = self._protect(clear)
+            if sys.platform == "darwin":
+                reference = str(uuid.uuid4())
+                macos_keychain.put(reference, clear)
+                new_reference = reference
+                protected_value = reference
+            else:
+                protected_value = base64.b64encode(self._protect(clear)).decode("ascii")
             secrets[name] = {
                 "protection": self.protection,
                 "entropy_version": "stable-v1",
-                "value": base64.b64encode(protected).decode("ascii"),
+                "value": protected_value,
             }
         payload["schema_version"] = 1
         payload["protection"] = self.protection
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(self.path, payload)
+        try:
+            atomic_write_json(self.path, payload)
+        except Exception:
+            if new_reference:
+                try:
+                    macos_keychain.delete(new_reference)
+                except Exception:
+                    pass
+            raise
+        if old_record.get("protection") == "macos-keychain" and sys.platform == "darwin":
+            try:
+                macos_keychain.delete(old_record["value"])
+            except Exception:
+                # The new file is committed; a cleanup failure must not report a failed save.
+                pass
         if os.name != "nt":
             try:
                 self.path.chmod(0o600)

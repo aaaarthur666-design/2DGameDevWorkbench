@@ -124,7 +124,7 @@ SceneMaker 的 ground 映射到 surface，整体图由旧视觉层合成，矩�
 
 外部生成后，服务端按模板尺寸回收结果，并逐像素保留模板中 Alpha 大于 0 的内容（含半透明边缘）；只填充完全透明处。明显不匹配的返回宽高比会报错，避免拉伸。此保护不保证新生成内容在视觉上完全无缝。
 
-生成设置只保留已有连接器实际支持的参数：服务选择、密钥、是否激活，以及唯一整体层提示词。Host 和 Model 由 Manifest 定义。密钥仅保存在 Runtime Bridge 进程内存或服务端环境变量中，页面只接收“已配置”状态，状态包和日志不包含密钥。
+生成设置只保留已有连接器实际支持的参数：服务选择、密钥、是否激活，以及唯一整体层提示词。Host 和 Model 由 Manifest 定义。密钥保存在本机受保护的持久配置或服务端环境变量中，页面只接收“已配置”状态，状态包和日志不包含密钥。
 
 地图属于手动前端工作流，不向 MCP / Agent CLI 开放发现或执行。前端通过 `workbench/manifest.json` 和共享 Runtime 调用本地 `compose`、原图 `generate-origin` 和整体层 `generate-layer` 适配器；生产产物写入 `outputs/<task-id>/`。具体输入见 [连接器契约](connector-contract.md)。
 
@@ -154,7 +154,7 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 
 每次任务写入 `generation-diagnostics.json`，包含模板、请求、返回尺寸、实际发送的提示词和处理阶段。API 返回图片后立即保存原始字节为 `provider-response.png`（其他格式按实际扩展名；无法解码为 `.bin`）。合成失败时这两个文件仍列入失败任务产物；不会产生或冒充 `generated-layer.png`。上游未返回图片时只保留诊断文件。尺寸异常不自动发起额外付费重试。
 
-更新服务端适配器后，已经运行的 Runtime Bridge 需重启才能加载新代码；界面填写的密钥只存在该进程内存，重启后需重新填写（环境变量配置的密钥不受影响）。
+更新服务端适配器后，已经运行的 Runtime Bridge 需重启才能加载新代码；界面保存的密钥会从本机受保护配置恢复，无需重新填写。
 
 ## 新建空白项目
 
@@ -177,7 +177,7 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 3. 前往 [API Key 管理](https://console.cloud.tencent.com/tokenhub/apikey)创建在线推理密钥，授权访问混元生图模型。此接口使用 TokenHub 在线推理 Key；Token Plan 编程套餐密钥不适用于这个生图入口。
 4. 在工作台“地图生成设置”选择混元、填写 Key、勾选“激活图片 API”，保存后即可生成。页面不显示已保存的密钥，也不把密钥放入生成记录或浏览器存储。
 
-网页填写的地图 Key 保留在当前 runtime 进程内。要跨重启使用，可在被 Git 忽略的本地 `.env` 中设置 `TOKENHUB_API_KEY`，并设置 `MAP_STITCHER_IMAGE_PROVIDER=hunyuan-image-3`，用 `npm run dev` 启动新服务进程；独立启动 runtime 时用 `node --env-file=.env scripts/workbench-http.mjs`。已有进程需重新启动才会读取环境文件。
+在地图生成设置中点击保存后，各服务的 Key、所选服务和启用状态会保存在本机 `work/config/map-generation.json`，重启后自动恢复。Windows 使用当前账户加密；macOS 使用钥匙串保护加密配置；其他系统使用权限受限的本地文件。网页不回显 Key，留空保持已保存值，停用不会删除 Key。也可通过本地 `.env` 设置 `TOKENHUB_API_KEY` 和 `MAP_STITCHER_IMAGE_PROVIDER=hunyuan-image-3`；网页保存的设置优先。使用 `npm run dev` 启动时读取 `.env`，独立启动 runtime 时用 `node --env-file=.env scripts/workbench-http.mjs`。
 
 ### 接口及限制
 

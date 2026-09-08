@@ -53,7 +53,7 @@
 
 ## Credentials and services
 
-- Credentials come from server-side environment/configuration. PixelLab uses protected service storage; map keys entered in the UI currently live only in Runtime Bridge memory. Root `.env` provides persistent local environment configuration. Never put secrets in client bundles, browser storage, committed files, task records, artifacts, logs or chat. User key entry uses dedicated settings endpoints; responses expose state only.
+- Credentials come from server-side environment/configuration. PixelLab and map keys use protected persistent local storage: Windows DPAPI or macOS Keychain. Map settings live in ignored `work/config/map-generation.json`; root `.env` also provides environment configuration. Never put secrets in client bundles, browser storage, committed files, task records, artifacts, logs or chat. User key entry uses dedicated settings endpoints; responses expose state only.
 - Use `npm ci` for the locked Node dependencies and `npm run sprite-pipeline:setup` for the independent Python environment. Setup installs dependencies; MCP startup tools do not install them.
 - `npm run dev` starts the full local workbench. `npm run dev:interactable` starts Web and Bridge without Python. `npm run sprite-pipeline` serves UI and API; `sprite-pipeline:api` serves API only, so its root 404 is not UI readiness.
 - Check frontend, Bridge, Sprite API compatibility and Sprite UI readiness separately. Healthy API or port presence does not prove a usable UI. Do not kill occupied/unknown processes; inspect ownership and active work before a necessary restart. There is no idle shutdown timer in the project.

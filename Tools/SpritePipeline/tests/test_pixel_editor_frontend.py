@@ -179,9 +179,9 @@ def test_operator_ui_uses_progressive_disclosure_and_shared_visual_system() -> N
     assert 'Path(__file__).resolve().parent / "static" / "workbench.css"' in source
     assert "workbench_theme = gr.themes.Base(" in source
     assert 'text_size="lg"' in source
-    assert 'body_background_fill="#080d19"' in source
-    assert 'body_text_color="#f4f7ff"' in source
-    assert 'body_text_color_subdued="#c1c9dc"' in source
+    assert 'body_background_fill="light-dark(var(--theme-light-bg), #080d19)"' in source
+    assert 'body_text_color="light-dark(var(--theme-light-text), #f4f7ff)"' in source
+    assert 'body_text_color_subdued="light-dark(var(--theme-light-muted), #c1c9dc)"' in source
     assert "demo.sprite_pipeline_theme = workbench_theme" in source
     assert "theme=demo.sprite_pipeline_theme" in source
     assert "font-size: 16px" in styles

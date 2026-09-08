@@ -110,6 +110,46 @@ def test_uncertain_or_missing_service_stops_without_spending(setup):
             s.generate_job(job.job_id)
         assert len(p.requests)==0 and not review.called
 
+
+def test_passing_repair_clears_old_marks_outside_replaced_frames(setup):
+    s,p,_=setup; job=create(setup)
+    report={**FAIL,"issues":[{**FAIL["issues"][0],"frames":[7,10]}]}
+    with patch.object(VisionReviewer,"review",side_effect=[report,PASS]):
+        result=s.generate_job(job.job_id)
+        control=MotionCorrection(s)
+        proposal=control.manual(job.job_id,1,6,result.candidates[0].frames[6].sha256,wait=True)
+        result=control.adopt(job.job_id,proposal["id"],manual=True)
+    assert result.motion_control["state"]=="passed"
+    assert len(p.requests)==2
+    candidate=result.candidates[0]
+    assert candidate.frames[6].active_path.startswith("motion/")
+    assert not candidate.frames[9].active_path.startswith("motion/")
+    assert all(f.review_status!=ReviewStatus.repair_requested for f in candidate.frames)
+    assert candidate.frames[9].review_note==""
+
+
+def test_new_review_preserves_human_marks_and_retains_current_issues(setup):
+    s,_,_=setup; job=create(setup)
+    with patch.object(VisionReviewer,"review",return_value=PASS):
+        s.generate_job(job.job_id)
+    control=MotionCorrection(s)
+    report={**FAIL,"issues":[{**FAIL["issues"][0],"frames":[7,10]}]}
+    control._mark(job.job_id,1,report,"old")
+    # Human review metadata is preserved; automatic motion evidence may refresh.
+    s.review_frame(job.job_id,1,{"frame_index":9,"status":"repair_requested",
+        "issue_type":"weapon_error","note":report["summary"],"reviewer":"artist"})
+    human=s.get_job(job.job_id).candidates[0].frames[9].model_dump(exclude={"motion_tags"})
+    control._mark(job.job_id,1,report,"still-failing")
+    assert s.get_job(job.job_id).candidates[0].frames[9].model_dump(exclude={"motion_tags"})==human
+    control._mark(job.job_id,1,FAIL,"partial")
+    candidate=s.get_job(job.job_id).candidates[0]
+    assert candidate.frames[6].review_status==ReviewStatus.repair_requested
+    assert candidate.frames[9].model_dump(exclude={"motion_tags"})==human
+    control._mark(job.job_id,1,PASS,"pass")
+    candidate=s.get_job(job.job_id).candidates[0]
+    assert candidate.frames[6].review_status==ReviewStatus.pending
+    assert candidate.frames[9].model_dump(exclude={"motion_tags"})==human
+
 def test_low_confidence_never_passes_or_rerolls(setup):
     s,p,_=setup; job=create(setup)
     with patch.object(VisionReviewer,"review",return_value={**PASS,"confidence":0.4}):

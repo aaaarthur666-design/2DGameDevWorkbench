@@ -219,23 +219,45 @@ class MotionCorrection:
     def _mark(self, job_id, candidate_index, report, digest, message=""):
         with self.store.locked_job(job_id) as job:
             c=self._candidate(job,candidate_index)
-            c.motion_review={"report":report,"digest":digest}
-            for f in c.frames:
-                if f.motion_tags and f.reviewed_by is None and f.review_note.startswith("视觉提醒："):
-                    f.review_status=ReviewStatus.pending
-                    f.review_note=""
-                issues=[i for i in report.get("issues",[]) if f.index+1 in i["frames"]]
-                if report["verdict"]=="uncertain" and not report.get("issues") and report.get("review_protocol_version",0)<2:
-                    issues=[{"code":"uncertain","description":report["summary"],"correction":"","phase":"unknown","phase_confidence":0}]
-                f.motion_tags=[{"code":i["code"],"label":ISSUE_LABELS[i["code"]],"description":i["description"],
-                    "correction":i.get("correction",""),"phase":i.get("phase","unknown"),"phase_confidence":i.get("phase_confidence",0),
-                    "evidence_status":i.get("evidence_status","unverified"),"evidence_confidence":i.get("evidence_confidence",0),
-                    "frame_sha256":f.sha256,"review_digest":digest} for i in issues]
-                if issues:
-                    f.review_status=ReviewStatus.repair_requested
-                    if f.reviewed_by is None:
-                        f.review_note="视觉提醒："+"；".join(i["description"] for i in issues)
-            job.touch("motion_review_recorded",candidate_index=candidate_index)
+            self._record_review(job,c,report,digest,message)
+
+    @staticmethod
+    def _record_review(job, candidate, report, digest, message=""):
+        previous=candidate.motion_review or {}
+        previous_report=previous.get("report",{})
+        old_bad={i-1 for issue in previous_report.get("issues",[]) for i in issue["frames"]}
+        if previous_report.get("verdict")=="uncertain" and not old_bad and previous_report.get("review_protocol_version",0)<2:
+            old_bad={f.index for f in candidate.frames}
+        old_note=previous.get("mark_note",previous_report.get("summary"))
+        bad={i-1 for issue in report.get("issues",[]) for i in issue["frames"]}
+        if report["verdict"]=="uncertain" and not bad and report.get("review_protocol_version",0)<2:
+            bad={f.index for f in candidate.frames}
+        note=message or report["summary"]
+        for f in candidate.frames:
+            # Only retire marks owned by the previous automatic review. Human
+            # reviews retain their status and metadata, even with identical notes.
+            human=f.reviewed_by is not None or f.reviewed_at is not None
+            if (not human and f.review_status==ReviewStatus.repair_requested
+                    and f.index in old_bad and f.index not in bad
+                    and (f.review_note==old_note or (f.motion_tags and f.review_note.startswith("视觉提醒：")))):
+                f.review_status=ReviewStatus.pending
+                f.review_note=""
+            issues=[i for i in report.get("issues",[]) if f.index+1 in i["frames"]]
+            if report["verdict"]=="uncertain" and not report.get("issues") and report.get("review_protocol_version",0)<2:
+                issues=[{"code":"uncertain","description":report["summary"],"correction":"","phase":"unknown","phase_confidence":0}]
+            f.motion_tags=[{"code":i["code"],"label":ISSUE_LABELS[i["code"]],"description":i["description"],
+                "correction":i.get("correction",""),"phase":i.get("phase","unknown"),"phase_confidence":i.get("phase_confidence",0),
+                "evidence_status":i.get("evidence_status","unverified"),"evidence_confidence":i.get("evidence_confidence",0),
+                "frame_sha256":f.sha256,"review_digest":digest} for i in issues]
+            if f.index in bad:
+                if human and f.review_status in {ReviewStatus.repair_requested,ReviewStatus.rejected}:
+                    continue
+                f.review_status=ReviewStatus.repair_requested
+                f.review_note=note
+                f.reviewed_by=None
+                f.reviewed_at=None
+        candidate.motion_review={"report":report,"digest":digest,"mark_note":note}
+        job.touch("motion_review_recorded",candidate_index=candidate.candidate_index)
 
     def _stop(self, job_id, message):
         with self.store.locked_job(job_id) as job:
@@ -378,13 +400,12 @@ class MotionCorrection:
                 f.review_status=ReviewStatus.pending
                 f.reviewed_at=None; f.reviewed_by=None; f.review_note=""
             c.status=CandidateStatus.received
-            c.motion_review={"report":a["report"],"digest":a["proposal_digest"]}
+            self._record_review(job,c,a["report"],a["proposal_digest"])
             c.qa_issue_baseline=self.s._successful_qa_baseline(c)
             c.qa_input_sha256=None; c.qa_completed_at=None
             a["state"]="accepted"
             job.touch("motion_proposal_accepted",attempt_id=attempt_id,automatic=not manual)
         self.s.check_candidate(job_id,a["candidate_index"])
-        self._mark(job_id,a["candidate_index"],a["report"],a["proposal_digest"])
         with self.store.locked_job(job_id) as current:
             passed=all(c.motion_review and c.motion_review["report"]["verdict"]=="pass"
                        and c.motion_review["digest"]==self.digest(self._paths(current,c)) for c in current.candidates)

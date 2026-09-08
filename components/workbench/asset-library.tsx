@@ -134,7 +134,7 @@ export function AssetLibrary() {
           height: assetId ? 350 : 170,
           objectFit: 'contain',
           imageRendering: 'pixelated',
-          background: '#0d1019',
+          background: 'var(--theme-canvas)',
           borderRadius: 12,
         }}
       />
@@ -246,8 +246,9 @@ export function AssetLibrary() {
               placeholder="搜索角色、动作或作品名称"
               style={{
                 padding: '10px 14px',
-                background: '#121622',
-                border: '1px solid #303648',
+                background: 'var(--wb-panel)',
+                color: 'var(--wb-text)',
+                border: '1px solid var(--theme-control-border)',
                 borderRadius: 8,
                 minWidth: 250,
               }}
@@ -303,8 +304,8 @@ export function AssetLibrary() {
                   <article
                     key={a.id}
                     style={{
-                      border: '1px solid #2a3040',
-                      background: '#11151f',
+                      border: '1px solid var(--wb-line)',
+                      background: 'var(--wb-panel)',
                       borderRadius: 14,
                       padding: 16,
                     }}

@@ -88,7 +88,29 @@ class SpritePipelineService:
         }
 
     def list_jobs(self) -> list[dict[str, Any]]:
-        return self.store.list_jobs()
+        path = self.settings.config_dir / "archived_jobs.json"
+        archived = set(read_json(path)) if path.exists() else set()
+        return [job for job in self.store.list_jobs() if job["job_id"] not in archived]
+
+    def archive_history(self, *, check_only=False):
+        # Never discard provider IDs, submission allowances or recovery evidence.
+        with self.store.creation_lock(), self.store.submission_lock():
+            jobs = self.store.list_jobs()
+            busy = {"submitting", "submission_unknown", "provider_pending", "saving"}
+            # The production catalog hides offline examples. Their interrupted
+            # local saves are not live provider jobs and must not block clearing.
+            blocked = [job["job_id"] for job in jobs
+                       if job.get("provider") != "fixture" and job.get("character_id") != "diagnostic_dummy"
+                       and (job.get("needs_recovery") or busy.intersection(job.get("candidate_status_counts", {})))]
+            if blocked:
+                raise ConflictError("序列帧仍在生成或需要恢复，请处理完成后再清空：" + "、".join(blocked),
+                                    details={"job_ids": blocked})
+            archive_path = self.settings.config_dir / "archived_jobs.json"
+            archived = set(read_json(archive_path)) if archive_path.exists() else set()
+            count = sum(job["job_id"] not in archived for job in jobs)
+            if not check_only:
+                atomic_write_json(self.settings.config_dir / "archived_jobs.json", [job["job_id"] for job in jobs])
+            return {"count": count}
 
     def create_character_preset(
         self,

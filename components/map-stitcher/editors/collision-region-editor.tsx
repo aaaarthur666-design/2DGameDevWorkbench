@@ -1,5 +1,8 @@
 'use client';
+import { wheelZoomFactor } from '@/lib/workbench/canvas-input';
 
+import { useWorkbenchTheme } from '@/components/workbench/theme-toggle';
+import { themeColor } from '@/lib/workbench/theme';
 import {
   useCallback,
   useEffect,
@@ -55,6 +58,7 @@ export function CollisionRegionEditor({
   onCancel,
   onApply,
 }: CollisionRegionEditorProps) {
+  const theme = useWorkbenchTheme();
   const wrapRef = useRef<HTMLDivElement>(null);
   const displayRef = useRef<HTMLCanvasElement>(null);
   const backgroundRef = useRef<HTMLCanvasElement | null>(null);
@@ -152,7 +156,7 @@ export function CollisionRegionEditor({
     const context = display.getContext('2d');
     if (!context) return;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    context.fillStyle = '#17171d';
+    context.fillStyle = themeColor('canvas', theme);
     context.fillRect(0, 0, viewport.width, viewport.height);
     context.imageSmoothingEnabled = false;
     context.drawImage(background, offset.x, offset.y, width * scale, height * scale);
@@ -184,7 +188,7 @@ export function CollisionRegionEditor({
       context.strokeRect(offset.x + x1 * width * scale, offset.y + y1 * height * scale, (x2 - x1) * width * scale, (y2 - y1) * height * scale);
     }
     context.setLineDash([]);
-  }, [collisions, draft, height, offset, ready, scale, selectedId, viewport, width]);
+  }, [theme, collisions, draft, height, offset, ready, scale, selectedId, viewport, width]);
 
   const clientToNormalized = useCallback((clientX: number, clientY: number): Point | null => {
     const canvas = displayRef.current;
@@ -274,7 +278,7 @@ export function CollisionRegionEditor({
       const mouseY = event.clientY - rect.top;
       const imageX = (mouseX - offset.x) / scale;
       const imageY = (mouseY - offset.y) / scale;
-      const nextScale = clamp(scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), MIN_SCALE, MAX_SCALE);
+      const nextScale = clamp(scale * wheelZoomFactor(event.deltaY, event.deltaMode), MIN_SCALE, MAX_SCALE);
       setScale(nextScale);
       setOffset({ x: mouseX - imageX * nextScale, y: mouseY - imageY * nextScale });
     };

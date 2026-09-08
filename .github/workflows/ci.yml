@@ -90,6 +90,14 @@ jobs:
       - run: npm run sprite-pipeline:setup
       - run: npm run sprite-pipeline:setup
       - run: npm run test:desktop-services
+      - run: npm run test:map-stitcher
+      - run: npm run test:http
+      - run: npm run test:scene-composer
+      - run: npm run test:workbench-shell
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:platform-credentials
       - run: npm run test:dev-supervisor
       - run: npm run test:frontend
       - run: npm run test:agent-acceptance

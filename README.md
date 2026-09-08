@@ -78,4 +78,6 @@ PixelLab Key 在原图或序列帧设置中保存一次，两处共用；由 Spr
 
 `workbench/manifest.json` 是公共能力清单；`lib/workbench/` 提供运行时和适配器；`app/` 与 `components/` 是界面；`features/` 是地图、交互物与场景算法；`Tools/SpritePipeline/` 为集成组件。生产数据 `work/`、`outputs/` 和凭据不提交。
 
+`sprite-pipeline` 适配器把 Manifest 的 camelCase 输入转换成 Python `/v1/jobs` 协议；`map-stitcher` 适配器在本地执行 `compose`，仅在 `generate-layer` 时调用所选官方图片 API。也可以在地图设置窗口保存密钥：它持久保存在被 Git 忽略的本机配置文件中，重启后自动恢复；Windows 使用当前账户加密，macOS 使用钥匙串保护，其他系统使用权限受限的文件。服务端不会把密钥回传给页面，也不会写入任务记录或日志。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
+
 修改前阅读 [贡献指南](CONTRIBUTING.md)、[开发验证矩阵](docs/development.md) 和 [安全策略](SECURITY.md)。本仓库以 [MIT](LICENSE) 发布；组件来源、上游同步基线与 CopyWorms 复用边界见 [第三方声明](THIRD_PARTY_NOTICES.md)。本地集成更新不代表独立上游仓库已同步。

@@ -20,7 +20,8 @@ export function ShapeOutline({
   color: string;
 }) {
   const common = {
-    fill: `${color}18`,
+    fill: color,
+    fillOpacity: 0.095,
     stroke: color,
     strokeWidth: 1,
     vectorEffect: 'non-scaling-stroke' as const,
@@ -135,10 +136,10 @@ export function ObjectArt({
     >
       {shapes && !(preview && completedHidden) && (
         <g pointerEvents="none">
-          <ShapeOutline shape={o.detection.shape} color="#56ddb0" />
-          <ShapeOutline shape={o.pointer} color="#88baff" />
+          <ShapeOutline shape={o.detection.shape} color="var(--theme-success)" />
+          <ShapeOutline shape={o.pointer} color="var(--theme-blue)" />
           {(appearance.solidEnabled ?? o.solid.enabled) && (
-            <ShapeOutline shape={o.solid.shape} color="#ffbc72" />
+            <ShapeOutline shape={o.solid.shape} color="var(--theme-warning)" />
           )}
         </g>
       )}
@@ -183,7 +184,7 @@ export function ObjectArt({
               width={v.dot ? 10 : v.width}
               height={v.dot ? 10 : v.height}
               rx={v.dot ? 5 : 3}
-              fill="#55dcb2"
+              fill="var(--theme-cyan)"
               filter={`url(#scene-tint-${i.id})`}
             />
           )}

@@ -6,7 +6,6 @@ import {
   Box,
   ChevronRight,
   CircleHelp,
-  Cpu,
   ExternalLink,
   Layers3,
   LoaderCircle,
@@ -24,8 +23,8 @@ import { useWorkbench } from './workbench-provider';
 import { workStateLabels, type WorkItem } from '@/lib/workbench/work-items';
 import { ModuleIcon } from './module-icon';
 import manifest from '@/workbench/manifest.json';
-import { TaskResultCard } from './task-result-card';
 import { WorkbenchBrand } from './workbench-brand';
+import { ThemeToggle } from './theme-toggle';
 
 const GUIDE_KEY = 'workbench.onboarding.v1';
 type Guide = { step: number; line: string; dismissed: boolean };
@@ -113,6 +112,7 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
           </a>
         </nav>
         <div className="wb-header-actions">
+          <ThemeToggle />
           <button
             className="wb-button wb-ghost"
             aria-label="新手引导"
@@ -124,10 +124,10 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
           <a
             className="wb-button wb-ghost"
             href="/advanced"
-            aria-label="设置与任务详情"
+            aria-label="工作台管理"
           >
             <Settings2 size={17} />
-            <span>高级工具</span>
+            <span>工作台管理</span>
           </a>
         </div>
       </header>
@@ -322,7 +322,7 @@ function ProductionStatus() {
           )}
         </div>
         {offline && (
-          <a className="wb-status-offline" href="/advanced">
+          <a className="wb-status-offline" href="/advanced?tab=services">
             状态连接中断
           </a>
         )}
@@ -343,6 +343,7 @@ function ProductionStatus() {
             </DialogDescription>
           </DialogHeader>
           <div className="wb-record-tabs">
+            <a className="wb-button wb-ghost" href="/advanced?tab=data">管理本机数据</a>
             <button
               className="wb-button"
               aria-pressed={!history}
@@ -554,138 +555,7 @@ function Onboarding() {
   );
 }
 
-export function WorkbenchAdvanced() {
-  const wb = useWorkbench();
-  const [selected, setSelected] = useState('');
-  useEffect(() => {
-    // oxlint-disable-next-line react/react-compiler -- Hydrate a browser URL selection after SSR.
-    setSelected(new URLSearchParams(location.search).get('task') || '');
-  }, []);
-  const task = selected ? wb.tasks.find((t) => t.id === selected) : wb.tasks[0];
-  const resultTaskId = selected || task?.id;
-  return (
-    <main className="wb-page wb-advanced">
-      <div className="wb-page-heading">
-        <div>
-          <div className="wb-eyebrow">WORKBENCH / ADVANCED</div>
-          <h1>设置与任务详情</h1>
-          <p>查看服务连接、执行记录和产物路径。</p>
-        </div>
-        <button
-          className="wb-button"
-          onClick={() => void wb.refresh()}
-          disabled={wb.refreshing}
-        >
-          {wb.refreshing ? '刷新中…' : '刷新状态'}
-        </button>
-      </div>
-      <div className="wb-connections">
-        <span>
-          <Cpu size={16} />
-          任务服务 · {connectionLabel(wb.runtimeOnline)}
-        </span>
-        <span>
-          <Layers3 size={16} />
-          序列帧服务 · {connectionLabel(wb.spriteOnline)}
-        </span>
-        <button
-          className="wb-button wb-ghost"
-          onClick={() => reopenGuide(wb.setGuideOpen)}
-        >
-          重新查看引导
-        </button>
-      </div>
-      <div className="wb-tool-links">
-        {wb.modules.map((m) => (
-          <a className="wb-button" key={m.id} href={m.href}>
-            {m.name}
-            <ArrowRight size={14} />
-          </a>
-        ))}
-      </div>
-      <p className="wb-notice">
-        图片服务在对应工具中配置。Agent 可继续通过 MCP、CLI
-        或浏览器工具使用工作台。
-      </p>
-      <div className="wb-task-layout">
-        <section aria-label="执行记录">
-          <h2>执行记录</h2>
-          {wb.tasks.map((t) => (
-            <button
-              className="wb-task-button"
-              key={t.id}
-              aria-pressed={task?.id === t.id}
-              onClick={() => setSelected(t.id)}
-            >
-              <strong>
-                {wb.modules.find((m) => m.id === t.capabilityId)?.shortName} ·{' '}
-                {typeof t.input?.operation === 'string'
-                  ? t.input.operation
-                  : '任务'}
-              </strong>
-              <span>
-                {t.status} · {formatTime(t.updatedAt)}
-              </span>
-              <small>{t.id}</small>
-            </button>
-          ))}
-          {!wb.tasks.length && (
-            <p className="wb-muted">
-              {wb.runtimeOnline === false
-                ? '任务服务未连接，记录暂不可读取。'
-                : '尚无后台执行记录。'}
-            </p>
-          )}
-        </section>
-        <section className="wb-task-detail" aria-label="任务详情">
-          <h2>作品与执行详情</h2>
-          {resultTaskId && (
-            <TaskResultCard key={resultTaskId} taskId={resultTaskId} />
-          )}
-          {task ? (
-            <>
-              <details>
-                <summary>技术详情与文件</summary>
-                <code>{task.id}</code>
-                <p>{task.error || task.refreshError || task.status}</p>
-                {task.requiredEnvironment && (
-                  <p className="wb-notice">
-                    需要配置：{task.requiredEnvironment}
-                  </p>
-                )}
-                <h3>输入</h3>
-                <pre>{JSON.stringify(task.input || {}, null, 2)}</pre>
-                <h3>产物</h3>
-                {task.outputs?.map((output) => (
-                  <a
-                    className="wb-artifact"
-                    key={output}
-                    href={`/api/workbench/artifacts?path=${encodeURIComponent(output)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {output}
-                    <ExternalLink size={14} />
-                  </a>
-                ))}
-                {!task.outputs?.length && (
-                  <p className="wb-muted">尚无产物。</p>
-                )}
-              </details>
-            </>
-          ) : (
-            !resultTaskId && (
-              <p className="wb-muted">选择一条执行记录查看详情。</p>
-            )
-          )}
-        </section>
-      </div>
-    </main>
-  );
-}
-function connectionLabel(value: boolean | null) {
-  return value === null ? '正在读取' : value ? '已连接' : '未连接';
-}
+export { WorkbenchManagement as WorkbenchAdvanced } from './workbench-management';
 function formatTime(value?: string) {
   return value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString('zh-CN', {

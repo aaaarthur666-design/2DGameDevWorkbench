@@ -32,7 +32,8 @@ function Outline({
   ...rest
 }: { shape: Shape; color: string } & React.SVGProps<SVGElement>) {
   const common = {
-    fill: `${color}18`,
+    fill: color,
+    fillOpacity: 0.095,
     stroke: color,
     strokeWidth: 1.5,
     strokeDasharray: '5 4',
@@ -254,10 +255,10 @@ export function Preview({
                     />
                   </filter>
                 </defs>
-                <Outline shape={o.detection.shape} color="#55dfb4" />
-                <Outline shape={o.pointer} color="#8bc5ff" />
+                <Outline shape={o.detection.shape} color="var(--theme-success)" />
+                <Outline shape={o.pointer} color="var(--theme-blue)" />
                 {(a.solidEnabled ?? o.solid.enabled) && (
-                  <Outline shape={o.solid.shape} color="#ffbd66" />
+                  <Outline shape={o.solid.shape} color="var(--theme-warning)" />
                 )}
                 <g
                   transform={`translate(${o.visual.offset.x} ${o.visual.offset.y + (o.visual.float ? Math.sin(sim.time * 2) * 5 : 0)}) scale(${o.visual.scale * (o.visual.flipH ? -1 : 1)} ${o.visual.scale * (o.visual.flipV ? -1 : 1)})`}
@@ -295,7 +296,7 @@ export function Preview({
                     />
                   )}
                 </g>
-                <text textAnchor="middle" y={90} fill="#b8c8db" fontSize="14">
+                <text textAnchor="middle" y={90} fill="var(--theme-muted)" fontSize="14">
                   {overlap ? i.id : o.displayName}
                 </text>
                 {sim.focus === i && (
@@ -303,7 +304,7 @@ export function Preview({
                     x={o.content.promptOffset.x}
                     y={o.content.promptOffset.y}
                     textAnchor="middle"
-                    fill="#9dffde"
+                    fill="var(--theme-cyan)"
                     fontSize="16"
                   >
                     {o.content.prompt ||
@@ -317,15 +318,15 @@ export function Preview({
             cx={sim.actor.x}
             cy={sim.actor.y}
             r="12"
-            fill="#dae9ff"
-            stroke="#568fff"
+            fill="var(--theme-panel)"
+            stroke="var(--theme-blue)"
             strokeWidth="3"
           />
           <text
             x={sim.actor.x}
             y={sim.actor.y + 32}
             textAnchor="middle"
-            fill="#a5bad4"
+            fill="var(--theme-muted)"
             fontSize="13"
           >
             交互来源

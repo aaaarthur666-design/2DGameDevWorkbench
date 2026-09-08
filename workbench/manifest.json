@@ -354,7 +354,6 @@
         "entryTitle": "搭建地图",
         "starterHint": "上传地图图片，或先生成中心原图，确认采用后向外扩图。",
         "entryActions": [
-          { "label": "生成地图原图", "href": "/tools/map-stitcher?origin=generate" },
           { "label": "打开地图编辑器", "href": "/tools/map-stitcher" }
         ],
         "stages": ["地图拼接", "检查并导出"],

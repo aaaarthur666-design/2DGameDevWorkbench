@@ -18,6 +18,7 @@ export type MapWorkspaceDraft = {
 export async function loadMapWorkspace(
   id?: string,
 ): Promise<MapWorkspaceDraft | undefined> {
+  if (!id) id = await readWorkspaceDraft<string>('map-current');
   if (id === 'new') return;
   const items = await listWorkItems();
   const item = id

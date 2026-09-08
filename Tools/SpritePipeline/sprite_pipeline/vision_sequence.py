@@ -154,7 +154,7 @@ def assess_sequence(check, poses, action_id, frame_count):
                         or terminal.start_frame>=terminal.end_frame
                         or terminal.motion!='retracting' or not terminal.settled):
                     status='uncertain'
-                    evidence_note='收招证据未覆盖出刀后的实际末尾，或未证实手臂和刀刃回收；不能按已收招通过。' 
+                    evidence_note='收招证据未覆盖出刀后的实际末尾，或未证实手臂和刀刃回收；不能按已收招通过。'
             if action_id=='attack' and name in {'windup','charge'}:
                 raised=[f for f in frames if indexed[f].blade_tip=='behind_high' and indexed[f].grip_height in {'shoulder','overhead'}]
                 if not raised:

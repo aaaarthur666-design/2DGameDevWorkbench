@@ -23,6 +23,7 @@ import {
   RefreshCw,
   FolderOpen,
   Search,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,8 +39,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
+  DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-import { EditorWorkbenchMenu } from '@/components/workbench/editor-chrome';
+import { EditorWorkbenchMenu, EditorDraftControl, EditorTaskSummary } from '@/components/workbench/editor-chrome';
 import {
   listWorkItems,
   readWorkspaceDraft,
@@ -515,6 +517,7 @@ export function SceneComposer() {
     });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
       if (
         (e.target as HTMLElement)?.closest(
           'input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]',
@@ -533,6 +536,7 @@ export function SceneComposer() {
         return;
       }
       if (preview) {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
         if (
           sim.waiting?.type === 'show_text' &&
           ['Enter', ' ', sim.active?.definition.activation.key].includes(e.key)
@@ -556,6 +560,8 @@ export function SceneComposer() {
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicate();
+      } else if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         remove();
@@ -586,6 +592,8 @@ export function SceneComposer() {
           <span>场景组装</span>
         </div>
         <div className="sc-actions">
+          <EditorDraftControl capabilityId="scene-composer" />
+          <EditorTaskSummary compact />
           <Button
             size="sm"
             variant="ghost"
@@ -604,15 +612,16 @@ export function SceneComposer() {
             <FolderOpen />
             打开
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || !ready}
-            onClick={sourceDownload}
-          >
-            <Save />
-            下载源文件
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="更多项目操作" />}>
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem disabled={busy || !ready} onClick={sourceDownload}>
+                <Save /> 下载源文件
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             size="sm"
             disabled={busy || !scene.map || !ready}

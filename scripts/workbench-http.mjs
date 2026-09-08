@@ -16,6 +16,7 @@ import {
 
 import {
   agentRequest,
+  archiveTaskHistory,
   findCapability,
   listTasks,
   loadManifest,
@@ -209,6 +210,12 @@ const server = http.createServer(async (request, response) => {
         task: result.task,
         ...(result.refreshError ? { refreshError: result.refreshError } : {}),
       });
+      return;
+    }
+    if (request.method === 'DELETE' && url.pathname === '/v1/history') {
+      try {
+        sendJson(response, 200, await archiveTaskHistory(await loadManifest(), { checkOnly: url.searchParams.get('check') === 'true' }));
+      } catch (error) { sendJson(response, 409, { error: error.message }); }
       return;
     }
     if (request.method === 'GET' && url.pathname === '/v1/tasks') {

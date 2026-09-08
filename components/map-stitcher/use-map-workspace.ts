@@ -98,7 +98,7 @@ export function useMapWorkspace(c: MapEditorController) {
     };
     const write = chain.current
       .catch(() => undefined)
-      .then(() => saveWorkspaceDraft(draft.id, draft, [storedItem]));
+      .then(() => saveWorkspaceDraft(draft.id, draft, [storedItem], 'map-current'));
     chain.current = write;
     try {
       await write;
@@ -209,6 +209,8 @@ export function useMapWorkspace(c: MapEditorController) {
   }, [loading, c.workspaceId, c.sourceAsset]);
   const newProject = async () => {
     await save();
+    await chain.current;
+    await saveWorkspaceDraft('map-current', 'new', []);
     latest.current.newProject();
     completed.current = '';
     savedRef.current = { fingerprint: '', at: '' };
