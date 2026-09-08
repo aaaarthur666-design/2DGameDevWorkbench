@@ -1,5 +1,8 @@
 'use client';
+import { wheelZoomFactor } from '@/lib/workbench/canvas-input';
 
+import { useWorkbenchTheme } from '@/components/workbench/theme-toggle';
+import { themeColor } from '@/lib/workbench/theme';
 import {
   useCallback,
   useEffect,
@@ -98,6 +101,7 @@ export function ImageFineEditor({
   onCancel,
   onApply,
 }: ImageFineEditorProps) {
+  const theme = useWorkbenchTheme();
   const wrapRef = useRef<HTMLDivElement>(null);
   const displayRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLCanvasElement | null>(null);
@@ -243,13 +247,13 @@ export function ImageFineEditor({
     if (!context) return;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, viewport.width, viewport.height);
-    context.fillStyle = '#242429';
+    context.fillStyle = themeColor('canvas', theme);
     context.fillRect(0, 0, viewport.width, viewport.height);
 
     const checkerSize = clamp(Math.max(6, scale * 4), 6, 24);
     for (let y = 0; y < height * scale; y += checkerSize) {
       for (let x = 0; x < width * scale; x += checkerSize) {
-        context.fillStyle = ((Math.floor(x / checkerSize) + Math.floor(y / checkerSize)) % 2) ? '#d9d2c8' : '#b8aea1';
+        context.fillStyle = ((Math.floor(x / checkerSize) + Math.floor(y / checkerSize)) % 2) ? themeColor('checker-a', theme) : themeColor('checker-b', theme);
         context.fillRect(offset.x + x, offset.y + y, Math.min(checkerSize, width * scale - x), Math.min(checkerSize, height * scale - y));
       }
     }
@@ -265,7 +269,7 @@ export function ImageFineEditor({
       const dx = selection && !marquee ? moveDelta.x : 0;
       const dy = selection && !marquee ? moveDelta.y : 0;
       context.save();
-      context.strokeStyle = marquee ? '#0ea5e9' : '#f59e0b';
+      context.strokeStyle = themeColor(marquee ? 'blue' : 'warning', theme);
       context.lineWidth = 2;
       context.setLineDash([6, 4]);
       context.strokeRect(
@@ -276,7 +280,7 @@ export function ImageFineEditor({
       );
       context.restore();
     }
-  }, [backgroundColor, backgroundEnabled, height, marquee, moveDelta, offset, ready, revision, scale, selection, viewport, width]);
+  }, [theme, backgroundColor, backgroundEnabled, height, marquee, moveDelta, offset, ready, revision, scale, selection, viewport, width]);
 
   const clientToPixel = useCallback((clientX: number, clientY: number, bounded = false): Point | null => {
     const display = displayRef.current;
@@ -475,7 +479,7 @@ export function ImageFineEditor({
       const mouseY = event.clientY - rect.top;
       const imageX = (mouseX - offset.x) / scale;
       const imageY = (mouseY - offset.y) / scale;
-      const nextScale = clamp(scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), MIN_SCALE, MAX_SCALE);
+      const nextScale = clamp(scale * wheelZoomFactor(event.deltaY, event.deltaMode), MIN_SCALE, MAX_SCALE);
       setScale(nextScale);
       setOffset({ x: mouseX - imageX * nextScale, y: mouseY - imageY * nextScale });
     };

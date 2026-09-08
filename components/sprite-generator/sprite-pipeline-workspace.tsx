@@ -15,6 +15,9 @@ import { Button } from '@/components/ui/button';
 import type { WorkbenchModule } from '@/lib/workbench/modules';
 import { useWorkbench } from '@/components/workbench/workbench-provider';
 import { publishEditorSession, removeEditorSession } from '@/lib/workbench/editor-session';
+import { EditorWorkbenchMenu, EditorTaskSummary } from '@/components/workbench/editor-chrome';
+import { useWorkbenchTheme } from '@/components/workbench/theme-toggle';
+import { getTheme } from '@/lib/workbench/theme';
 
 type PipelineStatus = 'checking' | 'ready' | 'offline' | 'api-only';
 
@@ -45,20 +48,37 @@ export function SpritePipelineWorkspace({
   const [pipelineVersion, setPipelineVersion] = useState<string | null>(null);
   const pipelineUrl = normalizedPipelineUrl();
   const iframe = useRef<HTMLIFrameElement>(null);
+  const theme = useWorkbenchTheme();
+  const [initialTheme, setInitialTheme] = useState('');
   const { spriteItems } = useWorkbench();
   const [entryJob, setEntryJob] = useState('');
   const [entryCharacter, setEntryCharacter] = useState('');
   const [activeJob, setActiveJob] = useState('');
   const [parentOrigin, setParentOrigin] = useState('');
   const embedded = new URL(pipelineUrl);
+  embedded.searchParams.set('workbench_embedded', '1');
   if (entryJob) embedded.searchParams.set('workbench_job', entryJob);
   else if (entryCharacter) embedded.searchParams.set('workbench_character', entryCharacter);
   if (parentOrigin) embedded.searchParams.set('workbench_origin', parentOrigin);
+  if (initialTheme) embedded.searchParams.set('workbench_theme', initialTheme);
   const embeddedUrl = embedded.toString();
+  const standalone = new URL(embeddedUrl);
+  standalone.searchParams.delete('workbench_embedded');
+  standalone.searchParams.set('workbench_theme', theme);
+  const sendTheme = () => iframe.current?.contentWindow?.postMessage({ type: 'workbench:theme', theme }, new URL(pipelineUrl).origin);
+  useEffect(() => {
+    const send = () => iframe.current?.contentWindow?.postMessage({ type: 'workbench:theme', theme }, new URL(pipelineUrl).origin);
+    const onReady = (event: MessageEvent) => {
+      if (event.origin === new URL(pipelineUrl).origin && event.source === iframe.current?.contentWindow && event.data?.type === 'workbench:theme-ready') send();
+    };
+    send();
+    window.addEventListener('message', onReady);
+    return () => window.removeEventListener('message', onReady);
+  }, [theme, pipelineUrl]);
   useEffect(() => {
     const job = new URLSearchParams(location.search).get('job') || '';
     // oxlint-disable-next-line react/react-compiler -- Hydrate the browser-only deep link after server rendering.
-    setEntryJob(job); setActiveJob(job); setParentOrigin(location.origin);
+    setEntryJob(job); setActiveJob(job); setParentOrigin(location.origin); setInitialTheme(getTheme());
     setEntryCharacter(new URLSearchParams(location.search).get('character') || '');
     const receive = (event: MessageEvent) => {
       if (event.origin !== new URL(pipelineUrl).origin || event.source !== iframe.current?.contentWindow) return;
@@ -109,32 +129,30 @@ export function SpritePipelineWorkspace({
   }, [checkConnection]);
 
   return (
-    <main className="flex h-full min-h-0 flex-col bg-[#090b10]">
-      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b border-white/8 bg-[#0d1017] px-3 py-2 sm:px-4">
+    <main data-sprite-editor className="flex h-full min-h-0 flex-col bg-background">
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-background px-3 py-2 sm:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-violet-300/20 bg-violet-500/12 text-violet-200">
+          <EditorWorkbenchMenu />
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-[var(--theme-accent)] bg-[var(--theme-accent-soft)] text-[var(--theme-accent)]">
             <Server className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-white/88">
+            <p className="truncate text-sm font-medium text-foreground">
               {module.name}
-            </p>
-            <p className="truncate text-xs text-white/36">
-              NativeFramesGeneration 本地工作区
             </p>
           </div>
         </div>
 
         <div
           aria-live="polite"
-          className="flex items-center gap-1.5 text-xs text-white/48"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
         >
           {status === 'checking' ? (
-            <LoaderCircle className="size-3.5 animate-spin text-violet-300" />
+            <LoaderCircle className="size-3.5 animate-spin text-[var(--theme-accent)]" />
           ) : status === 'ready' ? (
-            <Wifi className="size-3.5 text-emerald-300" />
+            <Wifi className="size-3.5 text-[var(--theme-success)]" />
           ) : (
-            <WifiOff className="size-3.5 text-amber-300" />
+            <WifiOff className="size-3.5 text-[var(--theme-warning)]" />
           )}
           {status === 'checking'
             ? '正在连接'
@@ -144,6 +162,7 @@ export function SpritePipelineWorkspace({
         </div>
 
         <div className="flex items-center gap-1.5">
+          <EditorTaskSummary compact />
           <Button
             type="button"
             variant="ghost"
@@ -152,16 +171,16 @@ export function SpritePipelineWorkspace({
               setStatus('checking');
               void checkConnection();
             }}
-            className="text-white/48 hover:bg-white/6 hover:text-white/82"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <RefreshCw className="size-3.5" />
             重试
           </Button>
           <a
-            href={embeddedUrl}
+            href={standalone.toString()}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-7 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.025] px-2.5 text-[0.8rem] font-medium text-white/56 transition hover:bg-white/6 hover:text-white/88 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+            className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-muted px-2.5 text-[0.8rem] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-accent)]"
           >
             <ExternalLink className="size-3.5" />
             单独打开
@@ -172,24 +191,25 @@ export function SpritePipelineWorkspace({
       {status === 'ready' ? (
         <iframe
           ref={iframe}
+          onLoad={sendTheme}
           key={embeddedUrl}
           src={embeddedUrl}
           title="NativeFramesGeneration 序列帧生成工作区"
-          className="min-h-0 w-full flex-1 border-0 bg-[#11101a]"
+          className="min-h-0 w-full flex-1 border-0 bg-background"
         />
       ) : (
         <section className="grid min-h-0 flex-1 place-items-center overflow-auto px-4 py-8">
-          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#10131a] p-5 shadow-2xl shadow-black/25 sm:p-7">
+          <div className="w-full max-w-2xl rounded-3xl border border-border bg-background p-5 shadow-2xl shadow-black/25 sm:p-7">
             <div className="flex items-start gap-3.5">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-amber-300/18 bg-amber-300/[0.055] text-amber-200">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--theme-warning)] bg-[var(--theme-warning-soft)] text-[var(--theme-warning)]">
                 <TerminalSquare className="size-5" />
               </span>
               <div>
-                <h1 className="text-lg font-semibold text-white/90">
+                <h1 className="text-lg font-semibold text-foreground">
                   本地序列帧管线未就绪
                 </h1>
-                {connectionMessage && <p role="alert" className="mt-2 text-sm text-amber-200">{connectionMessage}</p>}
-                <p className="mt-1.5 text-sm leading-6 text-white/46">
+                {connectionMessage && <p role="alert" className="mt-2 text-sm text-[var(--theme-warning)]">{connectionMessage}</p>}
+                <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
                   完整的生成、播放检查、逐帧修补和 Sprite Sheet
                   导出界面由本项目内置的 Python
                   管线提供。正常情况下它会随 Workbench 自动启动；首次使用只需安装一次依赖。
@@ -197,22 +217,22 @@ export function SpritePipelineWorkspace({
               </div>
             </div>
 
-            <div className="mt-5 space-y-3 rounded-2xl border border-white/8 bg-black/20 p-4 font-mono text-sm">
+            <div className="mt-5 space-y-3 rounded-2xl border border-border bg-muted p-4 font-mono text-sm">
               <div>
-                <p className="mb-1 text-xs font-sans text-white/34">首次安装</p>
-                <code className="select-all text-violet-200/90">
+                <p className="mb-1 text-xs font-sans text-muted-foreground">首次安装</p>
+                <code className="select-all text-[var(--theme-accent)]">
                   npm run sprite-pipeline:setup
                 </code>
               </div>
-              <div className="border-t border-white/7 pt-3">
-                <p className="mb-1 text-xs font-sans text-white/34">仅单独调试管线时</p>
-                <code className="select-all text-cyan-200/90">
+              <div className="border-t border-border pt-3">
+                <p className="mb-1 text-xs font-sans text-muted-foreground">仅单独调试管线时</p>
+                <code className="select-all text-[var(--theme-cyan)]">
                   npm run sprite-pipeline
                 </code>
               </div>
             </div>
 
-            <p className="mt-4 text-xs leading-5 text-white/32">
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">
               服务默认只监听本机 {pipelineUrl}。PixelLab Key 由管线使用当前
               Windows 用户的安全存储管理，不会进入网页项目或 Git。
             </p>

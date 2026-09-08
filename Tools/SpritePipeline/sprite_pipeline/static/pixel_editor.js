@@ -449,6 +449,12 @@ function renderImage() {
   );
 }
 
+function overlayColor(name, alpha = '') {
+  const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  return getComputedStyle(document.documentElement).getPropertyValue(`--theme-${theme}-${name}`).trim() + alpha;
+}
+window.addEventListener('workbench:theme-changed', () => { if (state.loaded) renderOverlay(); });
+
 function renderOverlay() {
   resizeDisplayCanvases();
   overlayContext.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
@@ -459,7 +465,7 @@ function renderOverlay() {
   const right = left + state.width * state.zoom;
   const bottom = top + state.height * state.zoom;
   overlayContext.lineWidth = 1 / state.dpr;
-  overlayContext.strokeStyle = "rgba(225, 218, 255, 0.72)";
+  overlayContext.strokeStyle = overlayColor('control-border');
   overlayContext.strokeRect(crisp(left), crisp(top), right - left, bottom - top);
 
   if (elements.gridToggle.checked && state.zoom >= 8) {
@@ -474,7 +480,7 @@ function renderOverlay() {
       overlayContext.moveTo(left, lineY);
       overlayContext.lineTo(right, lineY);
     }
-    overlayContext.strokeStyle = "rgba(177, 166, 214, 0.25)";
+    overlayContext.strokeStyle = overlayColor('grid', '60');
     overlayContext.stroke();
 
     overlayContext.beginPath();
@@ -489,7 +495,7 @@ function renderOverlay() {
       overlayContext.lineTo(right, lineY);
     }
     overlayContext.lineWidth = Math.max(1 / state.dpr, 1.5 / state.dpr);
-    overlayContext.strokeStyle = "rgba(207, 196, 255, 0.48)";
+    overlayContext.strokeStyle = overlayColor('grid');
     overlayContext.stroke();
   }
 
@@ -506,10 +512,10 @@ function renderOverlay() {
     const hoverY = top + startY * state.zoom;
     const hoverWidth = (endX - startX) * state.zoom;
     const hoverHeight = (endY - startY) * state.zoom;
-    overlayContext.fillStyle = "rgba(99, 223, 201, 0.19)";
+    overlayContext.fillStyle = overlayColor('cyan', '30');
     overlayContext.fillRect(hoverX, hoverY, hoverWidth, hoverHeight);
     overlayContext.lineWidth = Math.max(1 / state.dpr, 2 / state.dpr);
-    overlayContext.strokeStyle = "rgba(99, 223, 201, 0.95)";
+    overlayContext.strokeStyle = overlayColor('cyan');
     overlayContext.strokeRect(
       crisp(hoverX),
       crisp(hoverY),
@@ -524,12 +530,12 @@ function renderOverlay() {
     const selectionWidth = state.selection.width * state.zoom;
     const selectionHeight = state.selection.height * state.zoom;
     overlayContext.save();
-    overlayContext.fillStyle = "rgba(255, 214, 107, 0.08)";
+    overlayContext.fillStyle = overlayColor('warning', '14');
     overlayContext.fillRect(selectionX, selectionY, selectionWidth, selectionHeight);
     overlayContext.setLineDash([6, 4]);
     overlayContext.lineDashOffset = -0.5;
     overlayContext.lineWidth = Math.max(1 / state.dpr, 2 / state.dpr);
-    overlayContext.strokeStyle = "rgba(255, 214, 107, 0.98)";
+    overlayContext.strokeStyle = overlayColor('warning');
     overlayContext.strokeRect(
       crisp(selectionX),
       crisp(selectionY),
@@ -1668,9 +1674,10 @@ elements.downloadDraft.addEventListener("click", downloadDraft);
 elements.discardDraft.addEventListener("click", discardDraft);
 
 window.addEventListener("keydown", (event) => {
+  if (event.isComposing) return;
   const target = event.target;
   const isField = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
-  if (event.code === "Space" && !isField) {
+  if (event.code === "Space" && !isField && !event.ctrlKey && !event.metaKey && !event.altKey) {
     state.spaceDown = true;
     event.preventDefault();
   }
@@ -1687,6 +1694,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   const key = event.key.toLowerCase();
+  if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
   if (key === "b" || key === "p") selectTool("pencil");
   else if (key === "e") selectTool("eraser");
   else if (key === "i") selectTool("eyedropper");

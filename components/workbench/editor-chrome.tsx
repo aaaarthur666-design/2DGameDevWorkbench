@@ -18,11 +18,12 @@ import {
 import { useWorkbench } from './workbench-provider';
 import { WorkbenchBrandIcon } from './workbench-brand';
 import { workbenchBrand } from '@/lib/workbench/brand';
+import { ThemeToggle } from './theme-toggle';
 
 export function EditorWorkbenchMenu() {
   const wb = useWorkbench();
   return (
-    <DropdownMenu>
+    <><ThemeToggle compact /><DropdownMenu>
       <DropdownMenuTrigger
         render={<Button variant="ghost" size="sm" aria-label={`${workbenchBrand.name} · 工作台导航`} />}
       >
@@ -47,7 +48,7 @@ export function EditorWorkbenchMenu() {
           制作记录
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => void wb.navigate('/advanced')}>
-          高级工具与服务状态
+          工作台管理
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
@@ -59,7 +60,7 @@ export function EditorWorkbenchMenu() {
           新手引导
         </DropdownMenuItem>
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenu></>
   );
 }
 

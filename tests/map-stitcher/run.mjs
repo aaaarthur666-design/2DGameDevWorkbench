@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createTestViteServer as createServer } from '../helpers/vite-server.mjs';
 import { registerEditorTests } from './editor-behavior.mjs';
 import { registerGenerationPersistenceTests } from './generation-persistence.mjs';
+import { registerApiSettingsTests } from './api-settings.mjs';
 
 const server = await createServer({
   root: process.cwd(),
@@ -14,8 +15,18 @@ const server = await createServer({
 let passed = 0;
 const tests = [];
 const test = (name, run) => tests.push({ name, run });
+registerApiSettingsTests(test);
 
 try {
+  const { wheelZoomFactor } = await server.ssrLoadModule('/lib/workbench/canvas-input.ts');
+  test('trackpad zoom scales with motion and normalizes wheel units without zooming on horizontal scroll', () => {
+    assert.equal(wheelZoomFactor(0), 1);
+    assert.equal(wheelZoomFactor(NaN), 1);
+    assert.equal(wheelZoomFactor(3, 1), wheelZoomFactor(48));
+    assert.ok(Math.abs(wheelZoomFactor(1) ** 100 - wheelZoomFactor(100)) < 1e-12);
+    assert.ok(wheelZoomFactor(-100) > wheelZoomFactor(-1));
+    assert.equal(wheelZoomFactor(10000), wheelZoomFactor(120));
+  });
   const types = await server.ssrLoadModule(
     '/features/map-stitcher/frame-ronin-types.ts',
   );

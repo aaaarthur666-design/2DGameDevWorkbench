@@ -69,7 +69,9 @@ npm run sprite-pipeline:setup
 | `GEMINI_API_KEY` | Nano Banana 2 提供方凭据 |
 | `OPENAI_API_KEY` | GPT Image 2 提供方凭据 |
 
-地图编辑器也允许把 key 只保存在当前本地 runtime 进程中；进程退出后该临时设置消失。任何密钥都不能写入客户端组件、任务记录或日志。
+地图编辑器会把网页保存的密钥、所选服务和启用状态持久保存在被 Git 忽略的 `work/config/map-generation.json`。Windows 使用当前账户 DPAPI 加密；macOS 使用钥匙串保存加密密钥，以 AES-GCM 加密本地配置；其他系统使用权限受限的本地文件。重启后自动恢复，密钥留空保持原值，停用不删除密钥；已保存密钥优先于同名环境变量。任何密钥都不能写入客户端组件、浏览器存储、任务记录或日志。测试使用 `work/test-runs/<run-id>/config/` 隔离配置。
+
+macOS 序列帧与原图凭据使用系统钥匙串，本地 `credentials.json` 只记录凭据引用。旧 macOS 普通本地凭据在读取时迁移；钥匙串拒绝访问时保存失败，不降级为明文。跨系统或账户复制项目不包含可用凭据，需要在目标机器重新配置。双平台检查范围和实机验收项见 [Windows / macOS 兼容性](desktop-compatibility.md)。
 
 ## 4. 命令行与诊断
 
@@ -178,3 +180,14 @@ npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健�
 使用 Vite 加载 TypeScript 的测试必须通过 `tests/helpers/vite-server.mjs` 创建服务器。每次测试使用 `work/test-runs/vite-<uuid>/cache`，不可与开发前端共用 `node_modules/.vite`。否则测试服务器会替换依赖索引，让仍在运行的网页请求旧模块时得到 `504 Outdated Optimize Dep`，表现为 `Failed to fetch dynamically imported module`。
 
 排查时同时检查页面入口和其 JavaScript 依赖的 HTTP 状态；入口返回 200 不代表整个页面可以加载。修复缓存后重启前端，再刷新旧页面；不要清空浏览器草稿或素材目录。服务没有闲置自动关闭机制，但关闭启动终端或某个受管理进程意外退出会影响服务。
+
+
+### 深浅主题
+
+工作台顶栏和紧凑编辑器顶栏提供深浅切换。首次打开跟随系统，手动选择保存在 `workbench.theme`，随后刷新、跳转和同源标签页会继续使用该选择；浏览器拒绝存储时仍可切换当前页面。
+
+配色的唯一来源是 [theme-palette.json](../lib/workbench/theme-palette.json)。修改后运行 `npm run theme:sync`，同步生成 Web 与 SpritePipeline 使用的 `theme-tokens.css`；`npm run theme:check` 检查两份生成文件是否与源一致。样式用语义变量定义浅色，并通过 `light-dark()` 保留编辑器原有深色配色；新控件优先使用 `--theme-*`。不要把素材 tint、画笔颜色或导出像素替换为主题变量。
+
+序列帧首次加载通过 URL 接收主题，后续以校验 origin 和 source 的消息同步，不能通过改变 iframe 的 key 或 src 切换主题。像素修补页使用相同配色并只重绘辅助覆盖层。修改 Python 服务样式或主题脚本后需重启对应本机服务。
+
+主题验证：`npm run test:theme`、`npm run test:workbench-shell`、`npm run lint`、`npm run typecheck`、`npm run build`。人工检查全部入口的两种主题、弹窗/菜单、加载与错误状态，以及序列帧输入在切换后仍保留。

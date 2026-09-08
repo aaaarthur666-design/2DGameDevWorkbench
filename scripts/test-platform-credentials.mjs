@@ -1,0 +1,9 @@
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+const root = fileURLToPath(new URL('../', import.meta.url));
+const pipeline = path.join(root, 'Tools', 'SpritePipeline');
+const python = path.join(pipeline, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+const result = spawnSync(python, ['-m', 'pytest', '-q', 'tests/test_macos_credentials.py', 'tests/test_workbench_credentials.py', 'tests/test_backend_capabilities.py'], { cwd: pipeline, stdio: 'inherit', windowsHide: true });
+if (result.error) console.error('Credential tests could not start. Run npm run sprite-pipeline:setup first.');
+process.exitCode = result.status ?? 1;

@@ -97,7 +97,7 @@ get/status: running ───→ 刷新同一上游任务后保持或进入终�
 | `POST /v1/tasks` | 接收 `{capabilityId,input}` 并直接运行授权任务 |
 | `GET /v1/artifacts?path=outputs/...` | 下载 `outputs/` 内的真实文件 |
 | `GET /v1/map-stitcher/settings` | 返回不含 key 的 provider 就绪状态 |
-| `POST /v1/map-stitcher/settings` | 更新当前进程内的地图 provider/key 设置 |
+| `POST /v1/map-stitcher/settings` | 持久保存本机地图 provider/key 与启用状态，响应仅含公开配置状态 |
 | `GET /v1/interactable-assets?path=...` | 预览允许的本地交互物素材 |
 | `POST /v1/interactable-assets` | 上传交互物图像或音频到受控目录 |
 

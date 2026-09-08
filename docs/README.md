@@ -21,6 +21,7 @@
 | [项目 README](../README.md) | 产品定位、快速开始、能力概览和入口导航 |
 | [系统架构](architecture.md) | Agent、MCP/CLI、运行时、Web、适配器和数据流 |
 | [开发与验证](development.md) | 环境、启动方式、测试矩阵、扩展和发布检查 |
+| [Windows / macOS 兼容性](desktop-compatibility.md) | 双平台凭据、数据目录、输入、验证范围与实机检查 |
 | [Agent 客户端接入](agent-clients.md) | Codex、WorkBuddy 类客户端的 MCP 配置和调用流程 |
 | [连接器与任务契约](connector-contract.md) | 公共任务协议、状态机、HTTP 边界和安全规则 |
 | [Web 工作台界面](workbench-interface.md) | 页面职责、路由、本地草稿、任务聚合和部署边界 |

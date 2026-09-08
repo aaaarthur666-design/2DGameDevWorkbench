@@ -18,29 +18,33 @@ from .sheet_inspection import build_grid_overlay, extract_character_reference_fr
 
 
 BASE_UI_CSS = r"""
-:root{--muted:#aaa6b8;--panel:rgba(27,25,38,.88);--border:rgba(170,157,255,.24);--accent:#9f83ff;--mint:#63dfc9;--warn:#ffc76b}
+:root{--muted:light-dark(var(--theme-light-muted), #aaa6b8);--panel:light-dark(var(--theme-light-panel), rgba(27,25,38,.88));--border:light-dark(var(--theme-light-border), rgba(170,157,255,.24));--accent:light-dark(var(--theme-light-accent), #9f83ff);--mint:light-dark(var(--theme-light-success), #63dfc9);--warn:light-dark(var(--theme-light-warning), #ffc76b)}
 .gradio-container{max-width:1220px!important;margin:0 auto!important;padding-bottom:60px!important}
-#sprite-hero{padding:25px 28px;margin:8px 0 14px;border:1px solid var(--border);border-radius:22px;background:radial-gradient(circle at 86% 8%,rgba(159,131,255,.23),transparent 35%),linear-gradient(145deg,rgba(31,28,46,.98),rgba(19,18,28,.98));box-shadow:0 18px 60px rgba(0,0,0,.2)}
+#sprite-hero{padding:25px 28px;margin:8px 0 14px;border:1px solid var(--border);border-radius:22px;background:radial-gradient(circle at 86% 8%,light-dark(var(--theme-light-surface), rgba(159,131,255,.23)),transparent 35%),linear-gradient(145deg,light-dark(var(--theme-light-panel), rgba(31,28,46,.98)),light-dark(var(--theme-light-panel), rgba(19,18,28,.98)));box-shadow:0 18px 60px light-dark(var(--theme-light-shadow), rgba(0,0,0,.2))}
 #sprite-hero h1{margin:0 0 7px;font-size:clamp(28px,4vw,44px);letter-spacing:-.035em}#sprite-hero p{margin:0;color:var(--muted);line-height:1.65;max-width:920px}
-.flow-map{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:stretch;margin-top:18px}.flow-box{padding:9px 8px;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.04);color:#e9e4f6;text-align:center}.flow-box small{display:block;color:var(--mint);font-weight:800;margin-bottom:3px}
-.status-bar{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 16px;padding:12px 15px;border:1px solid var(--border);border-radius:14px;background:var(--panel)}.status-bar span{color:var(--muted)}.status-bar b{color:#f0ecfa}
+.flow-map{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:stretch;margin-top:18px}.flow-box{padding:9px 8px;border:1px solid var(--border);border-radius:11px;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.04));color:light-dark(var(--theme-light-text), #e9e4f6);text-align:center}.flow-box small{display:block;color:var(--mint);font-weight:800;margin-bottom:3px}
+.status-bar{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 16px;padding:12px 15px;border:1px solid var(--border);border-radius:14px;background:var(--panel)}.status-bar span{color:var(--muted)}.status-bar b{color:light-dark(var(--theme-light-text), #f0ecfa)}
 .section-intro{padding:18px 20px;border:1px solid var(--border);border-radius:16px;background:var(--panel);margin:4px 0 15px}.section-intro h2,.section-intro h3{margin:0 0 7px}.section-intro p{margin:0;color:var(--muted);line-height:1.65}
-.notice{padding:14px 17px;border-radius:13px;margin:7px 0 13px;line-height:1.6}.notice strong{display:block;margin-bottom:2px}.notice.info{border:1px solid var(--border);background:rgba(159,131,255,.08)}.notice.ok{border:1px solid rgba(99,223,201,.36);background:rgba(99,223,201,.08)}.notice.warn{border:1px solid rgba(255,199,107,.38);background:rgba(255,199,107,.08)}.notice.error{border:1px solid rgba(255,140,164,.42);background:rgba(255,140,164,.09)}
-.safety-card{padding:15px 16px;margin:9px 0;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.03)}.safety-card h4{margin:0 0 8px}.safety-card p{margin:4px 0;color:var(--muted);line-height:1.55}.safety-track{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:10px}.safety-step{padding:8px 7px;border-radius:9px;background:rgba(255,255,255,.04);text-align:center;color:var(--muted);font-size:12px}.safety-step.done{background:rgba(99,223,201,.12);color:var(--mint)}.safety-step.current{background:rgba(159,131,255,.16);color:#e7defe}.safety-step.problem{background:rgba(255,140,164,.12);color:#ff9caf}.path-list code{user-select:text!important;cursor:text!important;caret-color:auto!important}
-.contract-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.contract-card{padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.035)}.contract-card small{display:block;color:var(--muted);margin-bottom:4px}.contract-card b{color:#f2eefb}
-.qa-counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.qa-count{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05)}.qa-count.hard{color:#ff9caf}.qa-count.warn{color:#ffd486}.diagnostic-badge{display:inline-block;margin-top:8px;padding:4px 9px;border-radius:999px;color:#2a210f;background:var(--warn);font-size:12px;font-weight:800}
-.qa-change{padding:13px 16px;margin:9px 0 14px;border:1px solid var(--border);border-radius:13px;background:rgba(255,255,255,.025)}.qa-change h4{margin:0 0 8px}.qa-change p{margin:5px 0;color:var(--muted)}.qa-change .resolved{color:var(--mint)}.qa-change .new{color:#ff9caf}.qa-change .persisting{color:#ffd486}.qa-change details{margin-top:7px}.qa-change li{margin:4px 0;color:var(--muted)}
-.project-table{width:100%;border-collapse:collapse;margin-top:12px}.project-table th,.project-table td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:left}.project-table th{color:#dcd5ef}.project-table td{color:var(--muted)}
-.choice-cards,.static-choice,.workflow-tabs{caret-color:transparent!important}.choice-cards label,.choice-cards label *,.static-choice label,.static-choice label *,.workflow-tabs button,.workflow-tabs button *{cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;caret-color:transparent!important}.static-choice input[role="combobox"],.static-choice input[readonly]{cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;caret-color:transparent!important}.choice-cards>div>div{gap:9px!important}.choice-cards label{padding:11px 13px!important;border:1px solid var(--border)!important;border-radius:13px!important;background:rgba(255,255,255,.025)!important}.choice-cards label:hover{border-color:rgba(159,131,255,.72)!important;background:rgba(159,131,255,.09)!important}.choice-cards label:has(input:checked){border-color:var(--accent)!important;background:rgba(159,131,255,.14)!important}
+.notice{padding:14px 17px;border-radius:13px;margin:7px 0 13px;line-height:1.6}.notice strong{display:block;margin-bottom:2px}.notice.info{border:1px solid var(--border);background:light-dark(var(--theme-light-warning-soft), rgba(159,131,255,.08))}.notice.ok{border:1px solid light-dark(var(--theme-light-warning), rgba(99,223,201,.36));background:light-dark(var(--theme-light-warning-soft), rgba(99,223,201,.08))}.notice.warn{border:1px solid light-dark(var(--theme-light-warning), rgba(255,199,107,.38));background:light-dark(var(--theme-light-warning-soft), rgba(255,199,107,.08))}.notice.error{border:1px solid light-dark(var(--theme-light-danger), rgba(255,140,164,.42));background:light-dark(var(--theme-light-danger-soft), rgba(255,140,164,.09))}
+.safety-card{padding:15px 16px;margin:9px 0;border:1px solid var(--border);border-radius:14px;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.03))}.safety-card h4{margin:0 0 8px}.safety-card p{margin:4px 0;color:var(--muted);line-height:1.55}.safety-track{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:10px}.safety-step{padding:8px 7px;border-radius:9px;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.04));text-align:center;color:var(--muted);font-size:12px}.safety-step.done{background:light-dark(var(--theme-light-cyan-soft), rgba(99,223,201,.12));color:var(--mint)}.safety-step.current{background:light-dark(var(--theme-light-surface), rgba(159,131,255,.16));color:light-dark(var(--theme-light-text), #e7defe)}.safety-step.problem{background:light-dark(var(--theme-light-danger-soft), rgba(255,140,164,.12));color:light-dark(var(--theme-light-danger), #ff9caf)}.path-list code{user-select:text!important;cursor:text!important;caret-color:auto!important}
+.contract-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.contract-card{padding:12px 14px;border-radius:12px;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.035))}.contract-card small{display:block;color:var(--muted);margin-bottom:4px}.contract-card b{color:light-dark(var(--theme-light-text), #f2eefb)}
+.qa-counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.qa-count{padding:6px 10px;border-radius:999px;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.05))}.qa-count.hard{color:light-dark(var(--theme-light-danger), #ff9caf)}.qa-count.warn{color:light-dark(var(--theme-light-warning), #ffd486)}.diagnostic-badge{display:inline-block;margin-top:8px;padding:4px 9px;border-radius:999px;color:light-dark(var(--theme-light-muted), #2a210f);background:var(--warn);font-size:12px;font-weight:800}
+.qa-change{padding:13px 16px;margin:9px 0 14px;border:1px solid var(--border);border-radius:13px;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.025))}.qa-change h4{margin:0 0 8px}.qa-change p{margin:5px 0;color:var(--muted)}.qa-change .resolved{color:var(--mint)}.qa-change .new{color:light-dark(var(--theme-light-danger), #ff9caf)}.qa-change .persisting{color:light-dark(var(--theme-light-warning), #ffd486)}.qa-change details{margin-top:7px}.qa-change li{margin:4px 0;color:var(--muted)}
+.project-table{width:100%;border-collapse:collapse;margin-top:12px}.project-table th,.project-table td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:left}.project-table th{color:light-dark(var(--theme-light-text), #dcd5ef)}.project-table td{color:var(--muted)}
+.choice-cards,.static-choice,.workflow-tabs{caret-color:transparent!important}.choice-cards label,.choice-cards label *,.static-choice label,.static-choice label *,.workflow-tabs button,.workflow-tabs button *{cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;caret-color:transparent!important}.static-choice input[role="combobox"],.static-choice input[readonly]{cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;caret-color:transparent!important}.choice-cards>div>div{gap:9px!important}.choice-cards label{padding:11px 13px!important;border:1px solid var(--border)!important;border-radius:13px!important;background:light-dark(var(--theme-light-surface), rgba(255,255,255,.025))!important}.choice-cards label:hover{border-color:light-dark(var(--theme-light-accent), rgba(159,131,255,.72))!important;background:light-dark(var(--theme-light-surface), rgba(159,131,255,.09))!important}.choice-cards label:has(input:checked){border-color:var(--accent)!important;background:light-dark(var(--theme-light-accent-soft), rgba(159,131,255,.14))!important}
 .primary-action button{min-height:48px;font-weight:750;border-radius:13px!important}.pixel-preview img,.frame-gallery img,.sheet-preview img{image-rendering:pixelated!important}
-.step-actions{padding:13px 15px;margin-top:14px;border:1px solid var(--border);border-radius:14px;background:rgba(159,131,255,.06)}.step-actions button{min-height:46px;font-weight:750}.replay-action button{min-height:42px}
-.pixel-editor-frame{display:block;width:100%;height:1160px;border:1px solid var(--border);border-radius:16px;background:#15131d}
+.step-actions{padding:13px 15px;margin-top:14px;border:1px solid var(--border);border-radius:14px;background:light-dark(var(--theme-light-surface), rgba(159,131,255,.06))}.step-actions button{min-height:46px;font-weight:750}.replay-action button{min-height:42px}
+.pixel-editor-frame{display:block;width:100%;height:1160px;border:1px solid var(--border);border-radius:16px;background:light-dark(var(--theme-light-panel), #15131d)}
 @media(max-width:760px){.flow-map{grid-template-columns:repeat(2,minmax(0,1fr))}.contract-grid,.safety-track{grid-template-columns:1fr}#sprite-hero{padding:21px 19px}}
 """
 
 UI_CSS = BASE_UI_CSS + "\n" + (
     Path(__file__).resolve().parent / "static" / "workbench.css"
 ).read_text(encoding="utf-8")
+THEME_CSS = (Path(__file__).resolve().parent / "static" / "theme-tokens.css").read_text(encoding="utf-8")
+THEME_JS = (Path(__file__).resolve().parent / "static" / "theme.js").read_text(encoding="utf-8")
+UI_CSS = THEME_CSS + "\n" + UI_CSS
+
 
 
 PIXEL_EDITOR_BRIDGE_JS = r"""
@@ -2278,107 +2282,108 @@ def build_ui(
         font=("Segoe UI", "Microsoft YaHei UI", "PingFang SC", "sans-serif"),
         font_mono=("Cascadia Mono", "Consolas", "monospace"),
     ).set(
-        body_background_fill="#080d19",
-        body_background_fill_dark="#080d19",
-        body_text_color="#f4f7ff",
-        body_text_color_dark="#f4f7ff",
-        body_text_color_subdued="#c1c9dc",
-        body_text_color_subdued_dark="#c1c9dc",
+        body_background_fill="light-dark(var(--theme-light-bg), #080d19)",
+        body_background_fill_dark="light-dark(var(--theme-light-bg), #080d19)",
+        body_text_color="light-dark(var(--theme-light-text), #f4f7ff)",
+        body_text_color_dark="light-dark(var(--theme-light-text), #f4f7ff)",
+        body_text_color_subdued="light-dark(var(--theme-light-muted), #c1c9dc)",
+        body_text_color_subdued_dark="light-dark(var(--theme-light-muted), #c1c9dc)",
         body_text_size="16px",
-        background_fill_primary="#080d19",
-        background_fill_primary_dark="#080d19",
-        background_fill_secondary="#0e1729",
-        background_fill_secondary_dark="#0e1729",
-        border_color_primary="#2d3c5a",
-        border_color_primary_dark="#2d3c5a",
-        border_color_accent="#a894ff",
-        border_color_accent_dark="#a894ff",
-        color_accent="#a894ff",
-        color_accent_soft="rgba(168, 148, 255, .16)",
-        color_accent_soft_dark="rgba(168, 148, 255, .16)",
-        link_text_color="#70d8ff",
-        link_text_color_dark="#70d8ff",
-        link_text_color_hover="#a7e8ff",
-        link_text_color_hover_dark="#a7e8ff",
+        background_fill_primary="light-dark(var(--theme-light-bg), #080d19)",
+        background_fill_primary_dark="light-dark(var(--theme-light-bg), #080d19)",
+        background_fill_secondary="light-dark(var(--theme-light-surface), #0e1729)",
+        background_fill_secondary_dark="light-dark(var(--theme-light-surface), #0e1729)",
+        border_color_primary="light-dark(var(--theme-light-border), #2d3c5a)",
+        border_color_primary_dark="light-dark(var(--theme-light-border), #2d3c5a)",
+        border_color_accent="light-dark(var(--theme-light-accent), #a894ff)",
+        border_color_accent_dark="light-dark(var(--theme-light-accent), #a894ff)",
+        color_accent="light-dark(var(--theme-light-accent), #a894ff)",
+        color_accent_soft="light-dark(var(--theme-light-accent-soft), rgba(168, 148, 255, .16))",
+        color_accent_soft_dark="light-dark(var(--theme-light-accent-soft), rgba(168, 148, 255, .16))",
+        link_text_color="light-dark(var(--theme-light-text), #70d8ff)",
+        link_text_color_dark="light-dark(var(--theme-light-text), #70d8ff)",
+        link_text_color_hover="light-dark(var(--theme-light-text), #a7e8ff)",
+        link_text_color_hover_dark="light-dark(var(--theme-light-text), #a7e8ff)",
         prose_text_size="16px",
-        block_background_fill="#111b2f",
-        block_background_fill_dark="#111b2f",
-        block_border_color="#2d3c5a",
-        block_border_color_dark="#2d3c5a",
-        block_info_text_color="#c1c9dc",
-        block_info_text_color_dark="#c1c9dc",
+        block_background_fill="light-dark(var(--theme-light-panel), #111b2f)",
+        block_background_fill_dark="light-dark(var(--theme-light-panel), #111b2f)",
+        block_border_color="light-dark(var(--theme-light-border), #2d3c5a)",
+        block_border_color_dark="light-dark(var(--theme-light-border), #2d3c5a)",
+        block_info_text_color="light-dark(var(--theme-light-muted), #c1c9dc)",
+        block_info_text_color_dark="light-dark(var(--theme-light-muted), #c1c9dc)",
         block_info_text_size="15px",
-        block_label_background_fill="#111b2f",
-        block_label_background_fill_dark="#111b2f",
-        block_label_border_color="#2d3c5a",
-        block_label_border_color_dark="#2d3c5a",
-        block_label_text_color="#e3e9f8",
-        block_label_text_color_dark="#e3e9f8",
+        block_label_background_fill="light-dark(var(--theme-light-panel), #111b2f)",
+        block_label_background_fill_dark="light-dark(var(--theme-light-panel), #111b2f)",
+        block_label_border_color="light-dark(var(--theme-light-border), #2d3c5a)",
+        block_label_border_color_dark="light-dark(var(--theme-light-border), #2d3c5a)",
+        block_label_text_color="light-dark(var(--theme-light-text), #e3e9f8)",
+        block_label_text_color_dark="light-dark(var(--theme-light-text), #e3e9f8)",
         block_label_text_size="15px",
-        panel_background_fill="#0e1729",
-        panel_background_fill_dark="#0e1729",
-        panel_border_color="#2d3c5a",
-        panel_border_color_dark="#2d3c5a",
-        accordion_text_color="#e3e9f8",
-        accordion_text_color_dark="#e3e9f8",
-        table_text_color="#edf2ff",
-        table_text_color_dark="#edf2ff",
-        input_background_fill="#0b1425",
-        input_background_fill_dark="#0b1425",
-        input_background_fill_focus="#111f36",
-        input_background_fill_focus_dark="#111f36",
-        input_background_fill_hover="#0f1b30",
-        input_background_fill_hover_dark="#0f1b30",
-        input_border_color="#3a4968",
-        input_border_color_dark="#3a4968",
-        input_border_color_focus="#a894ff",
-        input_border_color_focus_dark="#a894ff",
-        input_border_color_hover="#5c6e94",
-        input_border_color_hover_dark="#5c6e94",
-        input_placeholder_color="#919db8",
-        input_placeholder_color_dark="#919db8",
+        panel_background_fill="light-dark(var(--theme-light-surface), #0e1729)",
+        panel_background_fill_dark="light-dark(var(--theme-light-surface), #0e1729)",
+        panel_border_color="light-dark(var(--theme-light-border), #2d3c5a)",
+        panel_border_color_dark="light-dark(var(--theme-light-border), #2d3c5a)",
+        accordion_text_color="light-dark(var(--theme-light-text), #e3e9f8)",
+        accordion_text_color_dark="light-dark(var(--theme-light-text), #e3e9f8)",
+        table_text_color="light-dark(var(--theme-light-text), #edf2ff)",
+        table_text_color_dark="light-dark(var(--theme-light-text), #edf2ff)",
+        input_background_fill="light-dark(var(--theme-light-panel), #0b1425)",
+        input_background_fill_dark="light-dark(var(--theme-light-panel), #0b1425)",
+        input_background_fill_focus="light-dark(var(--theme-light-panel), #111f36)",
+        input_background_fill_focus_dark="light-dark(var(--theme-light-panel), #111f36)",
+        input_background_fill_hover="light-dark(var(--theme-light-surface), #0f1b30)",
+        input_background_fill_hover_dark="light-dark(var(--theme-light-surface), #0f1b30)",
+        input_border_color="light-dark(var(--theme-light-control-border), #3a4968)",
+        input_border_color_dark="light-dark(var(--theme-light-control-border), #3a4968)",
+        input_border_color_focus="light-dark(var(--theme-light-accent), #a894ff)",
+        input_border_color_focus_dark="light-dark(var(--theme-light-accent), #a894ff)",
+        input_border_color_hover="light-dark(var(--theme-light-control-border), #5c6e94)",
+        input_border_color_hover_dark="light-dark(var(--theme-light-control-border), #5c6e94)",
+        input_placeholder_color="light-dark(var(--theme-light-placeholder), #919db8)",
+        input_placeholder_color_dark="light-dark(var(--theme-light-placeholder), #919db8)",
         input_text_size="16px",
-        checkbox_label_text_color="#e3e9f8",
-        checkbox_label_text_color_dark="#e3e9f8",
-        checkbox_label_text_color_selected="#ffffff",
-        checkbox_label_text_color_selected_dark="#ffffff",
+        checkbox_label_text_color="light-dark(var(--theme-light-text), #e3e9f8)",
+        checkbox_label_text_color_dark="light-dark(var(--theme-light-text), #e3e9f8)",
+        checkbox_label_text_color_selected="light-dark(var(--theme-light-text), #ffffff)",
+        checkbox_label_text_color_selected_dark="light-dark(var(--theme-light-text), #ffffff)",
         checkbox_label_text_size="16px",
         button_medium_text_size="16px",
         button_large_text_size="17px",
-        button_primary_background_fill="#765cf2",
-        button_primary_background_fill_dark="#765cf2",
-        button_primary_background_fill_hover="#8b74ff",
-        button_primary_background_fill_hover_dark="#8b74ff",
-        button_primary_border_color="#a894ff",
-        button_primary_border_color_dark="#a894ff",
-        button_primary_text_color="#ffffff",
-        button_primary_text_color_dark="#ffffff",
-        button_primary_text_color_hover="#ffffff",
-        button_primary_text_color_hover_dark="#ffffff",
-        button_secondary_background_fill="#182641",
-        button_secondary_background_fill_dark="#182641",
-        button_secondary_background_fill_hover="#233454",
-        button_secondary_background_fill_hover_dark="#233454",
-        button_secondary_border_color="#3a4b6d",
-        button_secondary_border_color_dark="#3a4b6d",
-        button_secondary_text_color="#f0f4ff",
-        button_secondary_text_color_dark="#f0f4ff",
-        button_secondary_text_color_hover="#ffffff",
-        button_secondary_text_color_hover_dark="#ffffff",
-        button_cancel_background_fill="#321b29",
-        button_cancel_background_fill_dark="#321b29",
-        button_cancel_background_fill_hover="#482337",
-        button_cancel_background_fill_hover_dark="#482337",
-        button_cancel_border_color="#87415a",
-        button_cancel_border_color_dark="#87415a",
-        button_cancel_text_color="#ffb3c2",
-        button_cancel_text_color_dark="#ffb3c2",
-        button_cancel_text_color_hover="#ffd3dc",
-        button_cancel_text_color_hover_dark="#ffd3dc",
+        button_primary_background_fill="light-dark(var(--theme-light-primary), #765cf2)",
+        button_primary_background_fill_dark="light-dark(var(--theme-light-primary), #765cf2)",
+        button_primary_background_fill_hover="light-dark(var(--theme-light-primary-hover), #8b74ff)",
+        button_primary_background_fill_hover_dark="light-dark(var(--theme-light-primary-hover), #8b74ff)",
+        button_primary_border_color="light-dark(var(--theme-light-border), #a894ff)",
+        button_primary_border_color_dark="light-dark(var(--theme-light-border), #a894ff)",
+        button_primary_text_color="light-dark(var(--theme-light-on-primary), #ffffff)",
+        button_primary_text_color_dark="light-dark(var(--theme-light-on-primary), #ffffff)",
+        button_primary_text_color_hover="light-dark(var(--theme-light-on-primary), #ffffff)",
+        button_primary_text_color_hover_dark="light-dark(var(--theme-light-on-primary), #ffffff)",
+        button_secondary_background_fill="light-dark(var(--theme-light-surface), #182641)",
+        button_secondary_background_fill_dark="light-dark(var(--theme-light-surface), #182641)",
+        button_secondary_background_fill_hover="light-dark(var(--theme-light-surface), #233454)",
+        button_secondary_background_fill_hover_dark="light-dark(var(--theme-light-surface), #233454)",
+        button_secondary_border_color="light-dark(var(--theme-light-border), #3a4b6d)",
+        button_secondary_border_color_dark="light-dark(var(--theme-light-border), #3a4b6d)",
+        button_secondary_text_color="light-dark(var(--theme-light-text), #f0f4ff)",
+        button_secondary_text_color_dark="light-dark(var(--theme-light-text), #f0f4ff)",
+        button_secondary_text_color_hover="light-dark(var(--theme-light-text), #ffffff)",
+        button_secondary_text_color_hover_dark="light-dark(var(--theme-light-text), #ffffff)",
+        button_cancel_background_fill="light-dark(var(--theme-light-danger-soft), #321b29)",
+        button_cancel_background_fill_dark="light-dark(var(--theme-light-danger-soft), #321b29)",
+        button_cancel_background_fill_hover="light-dark(var(--theme-light-danger-soft), #482337)",
+        button_cancel_background_fill_hover_dark="light-dark(var(--theme-light-danger-soft), #482337)",
+        button_cancel_border_color="light-dark(var(--theme-light-border), #87415a)",
+        button_cancel_border_color_dark="light-dark(var(--theme-light-border), #87415a)",
+        button_cancel_text_color="light-dark(var(--theme-light-danger), #ffb3c2)",
+        button_cancel_text_color_dark="light-dark(var(--theme-light-danger), #ffb3c2)",
+        button_cancel_text_color_hover="light-dark(var(--theme-light-danger), #ffd3dc)",
+        button_cancel_text_color_hover_dark="light-dark(var(--theme-light-danger), #ffd3dc)",
     )
 
     with gr.Blocks(title="像素角色动画工作台", fill_width=True) as demo:
         gr.HTML(
+            '<button id="sprite-theme-toggle" type="button">切换深浅模式</button>'
             '<div id="sprite-hero"><div class="product-row"><div class="product-copy">'
             '<span class="product-eyebrow">SPRITE PIPELINE</span><h1>像素角色动画工作台</h1>'
             '<p>一次只处理眼前这一步。角色原图与提示词进入生成，结果依次经过播放检查、可选修补和确定性导出。</p>'
@@ -2861,7 +2866,8 @@ def build_ui(
                 _notice("warn", "找不到所选任务", "请在此服务的已保存资产目录中选择任务；没有创建或重新提交生成。")
                 if requested else catalog[1]
             )
-            return gr.update(), catalog[0], message, *[gr.update() for _ in [*asset_outputs, *task_outputs]]
+            entry_tab = gr.update(selected="generate") if request and request.query_params.get("workbench_embedded") == "1" and not requested else gr.update()
+            return entry_tab, catalog[0], message, *[gr.update() for _ in [*asset_outputs, *task_outputs]]
 
         demo.load(
             load_workbench_entry,
@@ -2925,6 +2931,10 @@ def build_ui(
             outputs=[task_job, asset_catalog_status],
             queue=False,
         )
+        demo.load(fn=None, js="""() => {
+            document.documentElement.classList.toggle('workbench-embedded',
+                new URLSearchParams(location.search).get('workbench_embedded') === '1');
+        }""", queue=False)
         task_timer.tick(
             generation_continue_projection,
             inputs=review_job,
@@ -3096,6 +3106,7 @@ def create_ui_app(
         server_port=port,
         theme=demo.sprite_pipeline_theme,
         css=UI_CSS,
+        head="<style>" + THEME_CSS + "</style><script>" + THEME_JS + "</script>",
         footer_links=[],
         max_file_size="32mb",
     )

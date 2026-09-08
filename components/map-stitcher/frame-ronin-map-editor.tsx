@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   FilePlus2,
-  Sparkles,
   CircleHelp,
   Download,
   FolderOpen,
@@ -226,9 +225,6 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
           role="toolbar"
           aria-label="地图编辑工具栏"
         >
-          <Button variant="outline" size="sm" disabled={c.busy || workspace.loading || creating} onClick={() => setOriginOpen(true)}>
-            <Sparkles /> 生成原图
-          </Button>
           <fieldset className="map-primary-views" aria-label="图片视图">
             {(['overall', 'surface', 'object'] as const).map((layer) => (
               <Button

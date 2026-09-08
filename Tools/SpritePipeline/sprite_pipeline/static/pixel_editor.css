@@ -1,14 +1,14 @@
 :root {
-  color-scheme: dark;
-  --bg: #15131d;
-  --panel: #211e2d;
-  --panel-2: #292539;
-  --line: rgba(190, 178, 255, 0.25);
-  --text: #f2effb;
-  --muted: #aaa5bb;
-  --accent: #a58cff;
-  --mint: #63dfc9;
-  --danger: #ff8ca4;
+  color-scheme: inherit;
+  --bg: light-dark(var(--theme-light-bg), #15131d);
+  --panel: light-dark(var(--theme-light-panel), #211e2d);
+  --panel-2: light-dark(var(--theme-light-surface), #292539);
+  --line: light-dark(var(--theme-light-border), rgba(190, 178, 255, 0.25));
+  --text: light-dark(var(--theme-light-text), #f2effb);
+  --muted: light-dark(var(--theme-light-muted), #aaa5bb);
+  --accent: light-dark(var(--theme-light-accent), #a58cff);
+  --mint: light-dark(var(--theme-light-success), #63dfc9);
+  --danger: light-dark(var(--theme-light-danger), #ff8ca4);
 }
 
 * {
@@ -22,7 +22,7 @@ body {
   overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
 }
 
 body,
@@ -47,7 +47,7 @@ input[type="color"],
 input[type="number"] {
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.055);
+  background: light-dark(var(--theme-light-panel), rgba(255, 255, 255, 0.055));
   color: var(--text);
 }
 
@@ -59,7 +59,7 @@ button {
 
 button:hover:not(:disabled) {
   border-color: var(--accent);
-  background: rgba(165, 140, 255, 0.14);
+  background: light-dark(var(--theme-light-surface), rgba(165, 140, 255, 0.14));
 }
 
 button:focus-visible,
@@ -127,7 +127,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 11px;
   color: var(--muted);
-  background: rgba(165, 140, 255, 0.07);
+  background: light-dark(var(--theme-light-surface), rgba(165, 140, 255, 0.07));
 }
 
 .message {
@@ -146,21 +146,21 @@ button:disabled {
 }
 
 .message--ok {
-  border-color: rgba(99, 223, 201, 0.42);
-  color: #bdf8ed;
-  background: rgba(99, 223, 201, 0.08);
+  border-color: light-dark(var(--theme-light-cyan), rgba(99, 223, 201, 0.42));
+  color: light-dark(var(--theme-light-cyan), #bdf8ed);
+  background: light-dark(var(--theme-light-cyan-soft), rgba(99, 223, 201, 0.08));
 }
 
 .message--error {
-  border-color: rgba(255, 140, 164, 0.48);
-  color: #ffc4d0;
-  background: rgba(255, 140, 164, 0.08);
+  border-color: light-dark(var(--theme-light-danger), rgba(255, 140, 164, 0.48));
+  color: light-dark(var(--theme-light-danger), #ffc4d0);
+  background: light-dark(var(--theme-light-danger-soft), rgba(255, 140, 164, 0.08));
 }
 
 .recovery {
-  color: #ffe3a6;
-  border-color: rgba(255, 199, 107, 0.45);
-  background: rgba(255, 199, 107, 0.08);
+  color: light-dark(var(--theme-light-warning), #ffe3a6);
+  border-color: light-dark(var(--theme-light-warning), rgba(255, 199, 107, 0.45));
+  background: light-dark(var(--theme-light-surface), rgba(255, 199, 107, 0.08));
 }
 
 .toolbar {
@@ -187,8 +187,8 @@ button:disabled {
 
 .tool.is-active {
   border-color: var(--accent);
-  color: white;
-  background: rgba(165, 140, 255, 0.22);
+  color: light-dark(var(--theme-light-text), white);
+  background: light-dark(var(--theme-light-accent-soft), rgba(165, 140, 255, 0.22));
 }
 
 .square-button {
@@ -247,11 +247,11 @@ input[type="number"] {
 }
 
 .onion-previous {
-  color: #ff9ac9;
+  color: light-dark(var(--theme-light-danger), #ff9ac9);
 }
 
 .onion-next {
-  color: #8cecff;
+  color: light-dark(var(--theme-light-cyan), #8cecff);
 }
 
 .workspace {
@@ -270,12 +270,12 @@ input[type="number"] {
   border-radius: 14px;
   cursor: crosshair;
   touch-action: none;
-  background-color: #262332;
+  background-color: light-dark(var(--theme-light-checker-a), #262332);
   background-image:
-    linear-gradient(45deg, #332f40 25%, transparent 25%),
-    linear-gradient(-45deg, #332f40 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #332f40 75%),
-    linear-gradient(-45deg, transparent 75%, #332f40 75%);
+    linear-gradient(45deg, light-dark(var(--theme-light-checker-b), #332f40) 25%, transparent 25%),
+    linear-gradient(-45deg, light-dark(var(--theme-light-checker-b), #332f40) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, light-dark(var(--theme-light-checker-b), #332f40) 75%),
+    linear-gradient(-45deg, transparent 75%, light-dark(var(--theme-light-checker-b), #332f40) 75%);
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-size: 16px 16px;
 }
@@ -320,7 +320,7 @@ input[type="number"] {
   display: grid;
   place-items: center;
   color: var(--muted);
-  background: rgba(21, 19, 29, 0.75);
+  background: light-dark(var(--theme-light-panel), rgba(21, 19, 29, 0.75));
 }
 
 /* Author CSS wins over the browser's built-in [hidden] rule. Without this
@@ -368,7 +368,7 @@ input[type="number"] {
 
 .inspector dd {
   margin: 0;
-  font-family: Consolas, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
 }
 
@@ -386,12 +386,12 @@ input[type="number"] {
   margin: 10px 0 7px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background-color: white;
+  background-color: light-dark(var(--theme-light-surface), white);
   background-image:
-    linear-gradient(45deg, rgba(80, 75, 96, 0.55) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(80, 75, 96, 0.55) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(80, 75, 96, 0.55) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(80, 75, 96, 0.55) 75%);
+    linear-gradient(45deg, light-dark(var(--theme-light-checker-b), rgba(80, 75, 96, 0.55)) 25%, transparent 25%),
+    linear-gradient(-45deg, light-dark(var(--theme-light-checker-b), rgba(80, 75, 96, 0.55)) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, light-dark(var(--theme-light-checker-b), rgba(80, 75, 96, 0.55)) 75%),
+    linear-gradient(-45deg, transparent 75%, light-dark(var(--theme-light-checker-b), rgba(80, 75, 96, 0.55)) 75%);
   background-position: 0 0, 0 6px, 6px -6px, -6px 0;
   background-size: 12px 12px;
 }
@@ -400,7 +400,7 @@ input[type="number"] {
   position: absolute;
   content: "";
   inset: 0;
-  background: var(--paint-color, white);
+  background: var(--paint-color, light-dark(var(--theme-light-surface), white));
 }
 
 .inspector code {
@@ -443,15 +443,15 @@ kbd {
 }
 
 .dirty-indicator.is-dirty {
-  color: #ffe3a6;
-  border-color: rgba(255, 199, 107, 0.45);
+  color: light-dark(var(--theme-light-warning), #ffe3a6);
+  border-color: light-dark(var(--theme-light-warning), rgba(255, 199, 107, 0.45));
 }
 
 .button--primary {
   min-height: 42px;
   border-color: var(--accent);
   font-weight: 750;
-  background: linear-gradient(135deg, #8267e8, #a58cff);
+  background: linear-gradient(135deg, light-dark(var(--theme-light-primary), #8267e8), light-dark(var(--theme-light-primary), #a58cff));
 }
 
 .button--quiet {

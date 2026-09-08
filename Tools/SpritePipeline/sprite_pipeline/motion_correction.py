@@ -177,15 +177,37 @@ class MotionCorrection:
     def _mark(self, job_id, candidate_index, report, digest, message=""):
         with self.store.locked_job(job_id) as job:
             c=self._candidate(job,candidate_index)
-            c.motion_review={"report":report,"digest":digest}
-            bad={i-1 for issue in report.get("issues",[]) for i in issue["frames"]}
-            if report["verdict"]=="uncertain" and not bad:
-                bad={f.index for f in c.frames}
-            for f in c.frames:
-                if f.index in bad:
-                    f.review_status=ReviewStatus.repair_requested
-                    f.review_note=message or report["summary"]
-            job.touch("motion_review_recorded",candidate_index=candidate_index)
+            self._record_review(job,c,report,digest,message)
+
+    @staticmethod
+    def _record_review(job, candidate, report, digest, message=""):
+        previous=candidate.motion_review or {}
+        previous_report=previous.get("report",{})
+        old_bad={i-1 for issue in previous_report.get("issues",[]) for i in issue["frames"]}
+        if previous_report.get("verdict")=="uncertain" and not old_bad:
+            old_bad={f.index for f in candidate.frames}
+        old_note=previous.get("mark_note",previous_report.get("summary"))
+        bad={i-1 for issue in report.get("issues",[]) for i in issue["frames"]}
+        if report["verdict"]=="uncertain" and not bad:
+            bad={f.index for f in candidate.frames}
+        note=message or report["summary"]
+        for f in candidate.frames:
+            # Only retire marks owned by the previous automatic review. Human
+            # reviews retain their status and metadata, even with identical notes.
+            human=f.reviewed_by is not None or f.reviewed_at is not None
+            if (not human and f.review_status==ReviewStatus.repair_requested
+                    and f.index in old_bad and f.index not in bad and f.review_note==old_note):
+                f.review_status=ReviewStatus.pending
+                f.review_note=""
+            if f.index in bad:
+                if human and f.review_status in {ReviewStatus.repair_requested,ReviewStatus.rejected}:
+                    continue
+                f.review_status=ReviewStatus.repair_requested
+                f.review_note=note
+                f.reviewed_by=None
+                f.reviewed_at=None
+        candidate.motion_review={"report":report,"digest":digest,"mark_note":note}
+        job.touch("motion_review_recorded",candidate_index=candidate.candidate_index)
 
     def _stop(self, job_id, message):
         with self.store.locked_job(job_id) as job:
@@ -325,13 +347,12 @@ class MotionCorrection:
                 f.review_status=ReviewStatus.pending
                 f.reviewed_at=None; f.reviewed_by=None; f.review_note=""
             c.status=CandidateStatus.received
-            c.motion_review={"report":a["report"],"digest":a["proposal_digest"]}
+            self._record_review(job,c,a["report"],a["proposal_digest"])
             c.qa_issue_baseline=self.s._successful_qa_baseline(c)
             c.qa_input_sha256=None; c.qa_completed_at=None
             a["state"]="accepted"
             job.touch("motion_proposal_accepted",attempt_id=attempt_id,automatic=not manual)
         self.s.check_candidate(job_id,a["candidate_index"])
-        self._mark(job_id,a["candidate_index"],a["report"],a["proposal_digest"])
         return self.store.load(job_id)
 
     def advance(self,job_id,*,wait=False):

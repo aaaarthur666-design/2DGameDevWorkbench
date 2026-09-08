@@ -1,4 +1,9 @@
 import type { WorkbenchModule } from './modules';
+export function operationLabel(operation: unknown): string {
+  const labels: Record<string, string> = { generate: '生成素材', transfer: '导入角色', 'save-project': '保存项目', 'export-godot': '导出 Godot', create: '创建作业', submit: '提交生成', get: '更新状态', review: '检查素材', export: '导出素材', approve: '确认素材', prepare: '准备输入' };
+  return typeof operation === 'string' ? labels[operation] || '制作步骤' : '制作';
+}
+
 
 export type WorkItemState =
   | 'saved'
@@ -147,10 +152,10 @@ export function taskWorkItems(
                 id: jobId ? `sprite:${jobId}` : `task:${task.id}`,
                 title: jobId
                   ? `角色动画 · ${jobId}`
-                  : `${capabilityModule.entryTitle} · ${typeof input.operation === 'string' ? input.operation : '制作'}`,
+                  : `${capabilityModule.entryTitle} · ${operationLabel(input.operation)}`,
                 href: jobId
                   ? `${capabilityModule.href}?job=${encodeURIComponent(jobId)}`
-                  : `/advanced?task=${encodeURIComponent(task.id)}`,
+                  : `/advanced?tab=records&task=${encodeURIComponent(task.id)}`,
               },
             ];
     const state: WorkItemState =

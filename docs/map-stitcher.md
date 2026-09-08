@@ -177,7 +177,7 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 3. 前往 [API Key 管理](https://console.cloud.tencent.com/tokenhub/apikey)创建在线推理密钥，授权访问混元生图模型。此接口使用 TokenHub 在线推理 Key；Token Plan 编程套餐密钥不适用于这个生图入口。
 4. 在工作台“地图生成设置”选择混元、填写 Key、勾选“激活图片 API”，保存后即可生成。页面不显示已保存的密钥，也不把密钥放入生成记录或浏览器存储。
 
-网页填写的地图 Key 保留在当前 runtime 进程内。要跨重启使用，可在被 Git 忽略的本地 `.env` 中设置 `TOKENHUB_API_KEY`，并设置 `MAP_STITCHER_IMAGE_PROVIDER=hunyuan-image-3`，用 `npm run dev` 启动新服务进程；独立启动 runtime 时用 `node --env-file=.env scripts/workbench-http.mjs`。已有进程需重新启动才会读取环境文件。
+在地图生成设置中点击保存后，各服务的 Key、所选服务和启用状态会保存在本机 `work/config/map-generation.json`，重启后自动恢复。Windows 使用当前账户加密；macOS 使用钥匙串保护加密配置；其他系统使用权限受限的本地文件。网页不回显 Key，留空保持已保存值，停用不会删除 Key。也可通过本地 `.env` 设置 `TOKENHUB_API_KEY` 和 `MAP_STITCHER_IMAGE_PROVIDER=hunyuan-image-3`；网页保存的设置优先。使用 `npm run dev` 启动时读取 `.env`，独立启动 runtime 时用 `node --env-file=.env scripts/workbench-http.mjs`。
 
 ### 接口及限制
 

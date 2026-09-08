@@ -228,6 +228,7 @@ function useWorkbenchState() {
     items,
     tasks,
     spriteItems: sprites,
+    localItems,
     sessions,
     runtimeOnline,
     spriteOnline,

@@ -6,8 +6,8 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent,
-  type WheelEvent,
 } from 'react';
+import { wheelZoomFactor } from '@/lib/workbench/canvas-input';
 import { Hand, Maximize, Minus, Plus, Upload, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -272,6 +272,7 @@ export function MapCanvas({
   };
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
       if (
         disabled ||
         isTypingTarget(event.target) ||
@@ -282,6 +283,7 @@ export function MapCanvas({
         return;
       if (
         event.code === 'Space' &&
+        !event.ctrlKey && !event.metaKey && !event.altKey &&
         !(event.target instanceof Element && event.target.closest('button'))
       ) {
         event.preventDefault();
@@ -296,6 +298,7 @@ export function MapCanvas({
         else if (!draftRef.current?.undoPoint()) c.undo();
         return;
       }
+      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         if (draftRef.current?.cancel()) c.setHint('已取消当前草稿。');
@@ -377,7 +380,7 @@ export function MapCanvas({
     )
       event.currentTarget.focus({ preventScroll: true });
   };
-  const wheel = (event: WheelEvent<HTMLDivElement>) => {
+  const wheel = useEffectEvent((event: WheelEvent) => {
     if (
       disabled ||
       (event.target instanceof Element &&
@@ -385,16 +388,23 @@ export function MapCanvas({
     )
       return;
     event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = canvasRef.current!.getBoundingClientRect();
     const x = event.clientX - rect.left - rect.width / 2,
       y = event.clientY - rect.top - rect.height / 2;
-    const zoom = clamp(c.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12), 0.05, 8);
+    const zoom = clamp(c.zoom * wheelZoomFactor(event.deltaY, event.deltaMode), 0.05, 8);
     c.setPan({
       x: x - ((x - c.pan.x) / c.zoom) * zoom,
       y: y - ((y - c.pan.y) / c.zoom) * zoom,
     });
     c.setZoom(zoom);
-  };
+  });
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) return;
+    const listener = (event: WheelEvent) => wheel(event);
+    element.addEventListener('wheel', listener, { passive: false });
+    return () => element.removeEventListener('wheel', listener);
+  }, []);
   // A coordinate editor needs its own keyboard focus; named controls are exposed alongside it.
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
@@ -441,7 +451,6 @@ export function MapCanvas({
       onLostPointerCapture={() => {
         if (drag.current) stopPan();
       }}
-      onWheel={wheel}
       onContextMenu={(event) => event.preventDefault()}
       onDragOver={(event) => {
         event.preventDefault();

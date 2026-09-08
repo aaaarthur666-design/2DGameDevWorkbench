@@ -258,12 +258,12 @@ export function SceneCanvas(p: Props) {
       return (
         view.showActor && (
           <g key={id} transform={`translate(${sim.actor.x} ${sim.actor.y})`}>
-            <circle r={12} fill="#e5f2ff" stroke="#68a6ff" strokeWidth={2} />
+            <circle r={12} fill="var(--theme-panel)" stroke="var(--theme-blue)" strokeWidth={2} />
             <text
               x={0}
               y={-20}
               textAnchor="middle"
-              fill="#c5dcf4"
+              fill="var(--theme-muted)"
               fontSize={12 / view.zoom}
             >
               交互来源
@@ -380,7 +380,7 @@ export function SceneCanvas(p: Props) {
               <path
                 d={`M ${Math.max(8, view.grid)} 0 L 0 0 0 ${Math.max(8, view.grid)}`}
                 fill="none"
-                stroke="#476070"
+                stroke="var(--theme-grid)"
                 strokeWidth={0.5 / view.zoom}
               />
             </pattern>
@@ -410,8 +410,8 @@ export function SceneCanvas(p: Props) {
                           `${q.x + scene.map!.offset.x},${q.y + scene.map!.offset.y}`,
                       )
                       .join(' ')}
-                    fill="#ffbc7218"
-                    stroke="#ffbc72"
+                    fill="var(--theme-warning)" fillOpacity={0.095}
+                    stroke="var(--theme-warning)"
                     strokeWidth={1 / view.zoom}
                   />
                 ))}
@@ -455,12 +455,12 @@ export function SceneCanvas(p: Props) {
                           <rect
                             {...r}
                             fill="none"
-                            stroke="#67ebcb"
+                            stroke="var(--theme-cyan)"
                             strokeWidth={1.5 / view.zoom}
                           />
                           <path
                             d={`M ${i.x - 5 / view.zoom} ${i.y} h ${10 / view.zoom} M ${i.x} ${i.y - 5 / view.zoom} v ${10 / view.zoom}`}
-                            stroke="#67ebcb"
+                            stroke="var(--theme-cyan)"
                             strokeWidth={1 / view.zoom}
                           />
                         </>
@@ -470,9 +470,9 @@ export function SceneCanvas(p: Props) {
                           x={r.x}
                           y={r.y - 6 / view.zoom}
                           fontSize={12 / view.zoom}
-                          fill={active ? '#99ffe1' : '#e8f3fa'}
+                          fill={active ? 'var(--theme-cyan)' : 'var(--theme-panel)'}
                           paintOrder="stroke"
-                          stroke="#101c26"
+                          stroke="var(--theme-text)"
                           strokeWidth={3 / view.zoom}
                         >
                           {i.name}
@@ -495,7 +495,7 @@ export function SceneCanvas(p: Props) {
                     x={origin.x + o.content.promptOffset.x * instance.scale}
                     y={origin.y + o.content.promptOffset.y * instance.scale}
                     textAnchor="middle"
-                    fill="#95ffe0"
+                    fill="var(--theme-cyan)"
                     fontSize={14 / view.zoom}
                   >
                     {o.content.prompt ||
@@ -509,8 +509,8 @@ export function SceneCanvas(p: Props) {
                 y={Math.min(box.start.y, box.end.y)}
                 width={Math.abs(box.end.x - box.start.x)}
                 height={Math.abs(box.end.y - box.start.y)}
-                fill="#67ebcb18"
-                stroke="#67ebcb"
+                fill="var(--theme-cyan)" fillOpacity={0.095}
+                stroke="var(--theme-cyan)"
                 strokeWidth={1 / view.zoom}
               />
             )}

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { workbenchBrand, workbenchTitle } from '@/lib/workbench/brand';
+import { themeBootstrap } from '@/lib/workbench/theme';
 
 export const metadata: Metadata = {
   title: workbenchTitle,
@@ -15,7 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-theme="dark" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head>
       <body>{children}</body>
     </html>
   );

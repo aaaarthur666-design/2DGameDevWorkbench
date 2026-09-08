@@ -9,7 +9,7 @@
   max-width: 1320px;
   margin: 0 auto;
   padding: 32px 32px 70px;
-  color: #edf0fb;
+  color: light-dark(var(--theme-light-text), #edf0fb);
   font-size: 16px;
 }
 .ra-header {
@@ -22,14 +22,14 @@
 .ra-kicker {
   font-size: 12px;
   letter-spacing: 0.16em;
-  color: #b3a5e7;
+  color: light-dark(var(--theme-light-accent), #b3a5e7);
 }
 .ra-header h1 {
   font-size: 32px;
   margin: 8px 0;
 }
 .ra-header p {
-  color: #aab3c8;
+  color: light-dark(var(--theme-light-muted), #aab3c8);
   margin: 0;
   line-height: 1.6;
 }
@@ -40,9 +40,9 @@
 }
 .ra-controls,
 .ra-result {
-  border: 1px solid #293044;
+  border: 1px solid light-dark(var(--theme-light-border), #293044);
   border-radius: 18px;
-  background: #111623;
+  background: light-dark(var(--theme-light-panel), #111623);
   padding: 24px;
   min-width: 0;
 }
@@ -50,14 +50,14 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #bfa7ff;
+  color: light-dark(var(--theme-light-accent), #bfa7ff);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.06em;
   margin-bottom: 22px;
 }
 .ra-step span {
-  color: #edf0fb;
+  color: light-dark(var(--theme-light-text), #edf0fb);
   font-size: 18px;
   letter-spacing: 0;
 }
@@ -65,10 +65,10 @@
   display: block;
   font-size: 14px;
   margin: 18px 0 8px;
-  color: #d9dfed;
+  color: light-dark(var(--theme-light-muted), #d9dfed);
 }
 .ra-controls label span {
-  color: #94a0ba;
+  color: light-dark(var(--theme-light-muted), #94a0ba);
   font-size: 12px;
 }
 .ra-controls input,
@@ -76,10 +76,10 @@
 .ra-controls select {
   height: auto;
   width: 100%;
-  border: 1px solid #39425b;
+  border: 1px solid light-dark(var(--theme-light-control-border), #39425b);
   border-radius: 9px;
-  background: #0b101b;
-  color: #edf0fb;
+  background: light-dark(var(--theme-light-panel), #0b101b);
+  color: light-dark(var(--theme-light-text), #edf0fb);
   padding: 11px 12px;
   font: inherit;
   line-height: 1.55;
@@ -94,12 +94,12 @@
 .ra-controls select:focus-visible,
 .ra-workspace button:focus-visible,
 .ra-settings summary:focus-visible {
-  outline: 2px solid #b6a0ff;
+  outline: 2px solid light-dark(var(--theme-light-accent), #b6a0ff);
   outline-offset: 3px;
 }
 .ra-controls input::placeholder,
 .ra-controls textarea::placeholder {
-  color: #929fb8;
+  color: light-dark(var(--theme-light-placeholder), #929fb8);
 }
 .ra-form-row {
   display: grid;
@@ -108,7 +108,7 @@
 }
 .ra-spec {
   font-size: 14px;
-  color: #adb8cd;
+  color: light-dark(var(--theme-light-text), #adb8cd);
   margin: 0;
   padding: 13px 0;
 }
@@ -120,12 +120,12 @@
 }
 .ra-note {
   font-size: 14px;
-  color: #a7b1c7;
+  color: light-dark(var(--theme-light-muted), #a7b1c7);
   line-height: 1.7;
   margin: 14px 0;
 }
 .ra-settings {
-  border-top: 1px solid #2d3549;
+  border-top: 1px solid light-dark(var(--theme-light-border), #2d3549);
   margin-top: 22px;
   padding-top: 18px;
 }
@@ -138,11 +138,11 @@
 }
 .ra-settings summary span {
   margin-left: auto;
-  color: #b7a4f5;
+  color: light-dark(var(--theme-light-accent), #b7a4f5);
 }
 .ra-settings p {
   font-size: 14px;
-  color: #a7b1c7;
+  color: light-dark(var(--theme-light-muted), #a7b1c7);
   line-height: 1.6;
 }
 .ra-preview-heading {
@@ -154,20 +154,20 @@
 }
 .ra-status {
   font-size: 14px;
-  color: #bdc8df;
+  color: light-dark(var(--theme-light-text), #bdc8df);
 }
 .ra-canvas {
   display: grid;
   place-items: center;
   min-height: 400px;
   border-radius: 12px;
-  border: 1px solid #323c53;
-  background-color: #171d2b;
+  border: 1px solid light-dark(var(--theme-light-border), #323c53);
+  background-color: light-dark(var(--theme-light-checker-a), #171d2b);
   background-image:
-    linear-gradient(45deg, #222a3b 25%, transparent 25%),
-    linear-gradient(-45deg, #222a3b 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #222a3b 75%),
-    linear-gradient(-45deg, transparent 75%, #222a3b 75%);
+    linear-gradient(45deg, light-dark(var(--theme-light-checker-b), #222a3b) 25%, transparent 25%),
+    linear-gradient(-45deg, light-dark(var(--theme-light-checker-b), #222a3b) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, light-dark(var(--theme-light-checker-b), #222a3b) 75%),
+    linear-gradient(-45deg, transparent 75%, light-dark(var(--theme-light-checker-b), #222a3b) 75%);
   background-size: 24px 24px;
   background-position:
     0 0,
@@ -187,11 +187,11 @@
   align-items: center;
   text-align: center;
   padding: 36px;
-  color: #b1bad0;
+  color: light-dark(var(--theme-light-text), #b1bad0);
   gap: 20px;
 }
 .ra-empty strong {
-  color: #dfe5f2;
+  color: light-dark(var(--theme-light-text), #dfe5f2);
   font-size: 18px;
 }
 .ra-empty p {
@@ -216,10 +216,10 @@
 }
 .ra-notice {
   padding: 13px 15px;
-  border: 1px solid #524569;
-  background: #221e32;
+  border: 1px solid light-dark(var(--theme-light-warning), #524569);
+  background: light-dark(var(--theme-light-warning-soft), #221e32);
   border-radius: 10px;
-  color: #e4d5ff;
+  color: light-dark(var(--theme-light-warning), #e4d5ff);
   font-size: 14px;
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -238,14 +238,14 @@
 .ra-history-item {
   text-align: left;
   padding: 16px;
-  background: #111623;
-  border: 1px solid #293044;
+  background: light-dark(var(--theme-light-panel), #111623);
+  border: 1px solid light-dark(var(--theme-light-border), #293044);
   border-radius: 12px;
-  color: #dfe5f2;
+  color: light-dark(var(--theme-light-text), #dfe5f2);
   cursor: pointer;
 }
 .ra-history-item[aria-pressed='true'] {
-  border-color: #bca1ff;
+  border-color: light-dark(var(--theme-light-accent), #bca1ff);
 }
 .ra-history-item strong {
   display: block;
@@ -254,11 +254,11 @@
 }
 .ra-history-item span {
   font-size: 12px;
-  color: #bca1ff;
+  color: light-dark(var(--theme-light-accent), #bca1ff);
 }
 .ra-history-item p {
   font-size: 14px;
-  color: #a7b1c7;
+  color: light-dark(var(--theme-light-muted), #a7b1c7);
   line-height: 1.6;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -315,7 +315,7 @@
   display: block;
   font-size: 14px;
   margin: 18px 0 8px;
-  color: #d9dfed;
+  color: light-dark(var(--theme-light-muted), #d9dfed);
 }
 output.ra-notice {
   display: block;

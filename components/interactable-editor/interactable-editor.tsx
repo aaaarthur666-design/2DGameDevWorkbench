@@ -361,7 +361,7 @@ export function InteractableEditor() {
         <output className="wb-loading-veil">正在恢复交互物草稿…</output>
       )}
       <header className="ie-toolbar">
-        <Box color="#55dfb4" />
+        <Box color="var(--theme-cyan)" />
         <strong>交互物编辑器</strong>
         <input
           aria-label="项目名称"
