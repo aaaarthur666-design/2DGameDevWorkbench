@@ -82,11 +82,14 @@ SPRITE_PIPELINE_API_TOKEN=optional-bearer-token
 | `create-and-generate` | 新建并启动生成 | 通常先返回 `running` |
 | `generate-existing` | 为已有 `jobId` 启动生成 | 复用已有 job |
 | `get` | 查询已有 `jobId` | 不创建第二个生成请求 |
-| `export` | 导出指定候选与排列 | 返回真实 Sheet/预览等文件 |
+| `export` | 导出已通过门禁的指定候选与排列 | 返回 Sheet、预览和现有服务生成的 Godot ZIP |
+| `check` / `safety` | 当前候选 QA 与安全检查 | 检查结果，不代表已采用 |
+| `review-frame` / `approve` / `reject` | 逐帧审查与候选采用/拒绝 | 保留说明并执行底层门禁 |
+| `recover` / `attach-provider-job` | 恢复已存在的远端作业 | 不提交新生成；使用真实已知 ID |
 
-用户只要求校验，或外部生成尚未授权时使用 `workbench_prepare_task`；已明确要求执行时使用 `workbench_run_task`。异步生成返回 `running` 后，重复调用 `workbench_get_task` 会轮询同一个上游作业，不会再次提交付费生成。候选帧以及导出的 Sheet/预览会被复制到 `outputs/<task-id>/`，任务只有在记录中的每个输出文件真实存在时才会持久化为相应状态。健康指示灯通过同源 `/api/workbench/sprite-pipeline/health` 代理验证 `ok` 与 `version`，端口上其他服务或 404 不会被误报为已连接。
+用户明确要求输入校验时使用 `workbench_prepare_task`；讨论或等待授权不创建记录；已明确要求执行时使用 `workbench_run_task`。异步生成返回 `running` 后，重复调用 `workbench_get_task` 会轮询同一个上游作业，不会再次提交付费生成。候选帧以及导出的 Sheet/预览会被复制到 `outputs/<task-id>/`，任务只有在记录中的每个输出文件真实存在时才会持久化为相应状态。健康指示灯通过同源 `/api/workbench/sprite-pipeline/health` 代理验证 `ok` 与 `version`，端口上其他服务或 404 不会被误报为已连接。
 
-标准输出类别为 `jobRecord`、`orderedFrames`、`spriteSheet`、`preview` 和 `metadata`。实际 operation 不一定一次产生所有类别；只报告任务 `outputs` 中真实存在的路径。`created`、`review_required`、`approved` 是 SpritePipeline job 阶段，仓库任务仍以 `running/completed/failed` 等状态报告；只有实际导出后才能把可交付文件描述为完成。
+标准输出类别为 `jobRecord`、`orderedFrames`、`spriteSheet`、`godotPackage`、`preview` 和 `metadata`。实际 operation 不一定一次产生所有类别；只报告任务 `outputs` 中真实存在的路径。`created`、`review_required`、`approved` 是 SpritePipeline job 阶段，仓库任务仍以 `running/completed/failed` 等状态报告；只有实际导出后才能把可交付文件描述为完成。
 
 如需无网络、无付费地验证整条 Agent 接线，可运行 `examples/requests/sprite-generator-fixture.json`；其 `diagnostic_dummy` 产物仅用于诊断，不是可交付美术资源。
 
@@ -131,3 +134,15 @@ npm run workbench -- doctor --json
 旧版在发送前停止的检查可点击“继续视觉检查”，或调用 `POST /jobs/{job_id}/motion-review/resume`；它只复用原帧检查并打 tag，不自动重新生成。人工修补接口 `POST /jobs/{job_id}/candidates/{candidate_index}/frames/{frame_index}/ai-repair` 可传入 `phase`（默认 `auto`）；可用阶段为 `prepare`、`windup`、`charge`、`strike`、`extend`、`follow_through`、`recover`，其中举刀/蓄力仅用于地面攻击，伸展仅用于空中攻击。不确定或不适用的阶段会在收费请求前被拦截。
 
 旧 `/attack-plans` 接口及记录保留兼容；复杂的分段方案面板不再显示。修补子任务作为执行记录保留，不列入作品库。
+
+## Godot SpriteFrames 包导出
+
+“4 · 导出”的按钮为“导出 PNG + Godot 包”。通过现有检查并采用候选后，一次导出 PNG、预览/配方/QA 及 `<文件名>.godot.zip`。下方“Godot SpriteFrames 包（ZIP）”可直接下载；重新选择已有导出作品可重新下载，不会重复生成。旧导出记录没有 ZIP 时仍可读取原文件，需在当前审批规则允许时重新导出获得新包。
+
+将 ZIP 中整个 `forge_sprites` 文件夹放进 Godot 4.6.x 项目根目录，再将包内 `sprite_frames.tres` 赋给 AnimatedSprite2D 的 Sprite Frames 属性；也可直接把 `animated_sprite.tscn` 拖入场景，运行时自动播放。无需手动切图、排序或逐帧添加。多个作业/候选按独立目录区分；请保持目录结构。包不含 project.godot，不覆盖游戏设置。
+
+SpriteFrames 保留导出配方中的准确格位/有效帧顺序、动作映射名、运行 FPS 和 loop。纹理无裁切、缩放或重排。示例场景按角色锚点设置脚底原点并使用 nearest 过滤；仅替换资源不会改变原角色碰撞/偏移。当前包只包含所选动作；给已有多动作角色更新时应合并该动作，保留其他动画，见[工程 Skill](game-engineering.md)。
+
+MCP/CLI 的 `sprite-generator export` 同步返回 `godotPackage` 和实际 ZIP 文件，资产库下载也包含已有 Godot 包。服务端记录新增可选 `godot_package_path` / `godot_sha256`，下载接口为 `/v1/jobs/{job_id}/exports/godot`；旧记录无包时返回 404。ZIP 与 PNG 使用同一份已验证快照，并与其他导出文件一起原子发布/回滚；不绕过审批、不调用模型，不要求安装 Godot。
+
+验证：SpritePipeline `tests/test_godot_export.py` 覆盖包内容、下载、旧记录、UI 回调、源文件修改拒绝和回滚。设置 `GODOT_46_BIN` 后还会真实导入并播放，验证非规则帧序、别名、FPS、循环和脚底偏移。

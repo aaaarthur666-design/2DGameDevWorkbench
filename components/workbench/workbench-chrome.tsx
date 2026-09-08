@@ -23,6 +23,8 @@ import {
 import { useWorkbench } from './workbench-provider';
 import { workStateLabels, type WorkItem } from '@/lib/workbench/work-items';
 import { ModuleIcon } from './module-icon';
+import manifest from '@/workbench/manifest.json';
+import { TaskResultCard } from './task-result-card';
 import { WorkbenchBrand } from './workbench-brand';
 
 const GUIDE_KEY = 'workbench.onboarding.v1';
@@ -99,6 +101,16 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
               {l.name}
             </a>
           ))}
+          <a
+            href={manifest.agentAssets.assetCatalog.route}
+            aria-current={
+              wb.pathname === manifest.agentAssets.assetCatalog.route
+                ? 'page'
+                : undefined
+            }
+          >
+            资产库
+          </a>
         </nav>
         <div className="wb-header-actions">
           <button
@@ -549,7 +561,8 @@ export function WorkbenchAdvanced() {
     // oxlint-disable-next-line react/react-compiler -- Hydrate a browser URL selection after SSR.
     setSelected(new URLSearchParams(location.search).get('task') || '');
   }, []);
-  const task = wb.tasks.find((t) => t.id === selected) || wb.tasks[0];
+  const task = selected ? wb.tasks.find((t) => t.id === selected) : wb.tasks[0];
+  const resultTaskId = selected || task?.id;
   return (
     <main className="wb-page wb-advanced">
       <div className="wb-page-heading">
@@ -625,35 +638,45 @@ export function WorkbenchAdvanced() {
           )}
         </section>
         <section className="wb-task-detail" aria-label="任务详情">
-          <h2>任务详情</h2>
+          <h2>作品与执行详情</h2>
+          {resultTaskId && (
+            <TaskResultCard key={resultTaskId} taskId={resultTaskId} />
+          )}
           {task ? (
             <>
-              <code>{task.id}</code>
-              <p>{task.error || task.refreshError || task.status}</p>
-              {task.requiredEnvironment && (
-                <p className="wb-notice">
-                  需要配置：{task.requiredEnvironment}
-                </p>
-              )}
-              <h3>输入</h3>
-              <pre>{JSON.stringify(task.input || {}, null, 2)}</pre>
-              <h3>产物</h3>
-              {task.outputs?.map((output) => (
-                <a
-                  className="wb-artifact"
-                  key={output}
-                  href={`/api/workbench/artifacts?path=${encodeURIComponent(output)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {output}
-                  <ExternalLink size={14} />
-                </a>
-              ))}
-              {!task.outputs?.length && <p className="wb-muted">尚无产物。</p>}
+              <details>
+                <summary>技术详情与文件</summary>
+                <code>{task.id}</code>
+                <p>{task.error || task.refreshError || task.status}</p>
+                {task.requiredEnvironment && (
+                  <p className="wb-notice">
+                    需要配置：{task.requiredEnvironment}
+                  </p>
+                )}
+                <h3>输入</h3>
+                <pre>{JSON.stringify(task.input || {}, null, 2)}</pre>
+                <h3>产物</h3>
+                {task.outputs?.map((output) => (
+                  <a
+                    className="wb-artifact"
+                    key={output}
+                    href={`/api/workbench/artifacts?path=${encodeURIComponent(output)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {output}
+                    <ExternalLink size={14} />
+                  </a>
+                ))}
+                {!task.outputs?.length && (
+                  <p className="wb-muted">尚无产物。</p>
+                )}
+              </details>
             </>
           ) : (
-            <p className="wb-muted">选择一条执行记录查看详情。</p>
+            !resultTaskId && (
+              <p className="wb-muted">选择一条执行记录查看详情。</p>
+            )
           )}
         </section>
       </div>

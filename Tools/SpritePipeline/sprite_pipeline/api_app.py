@@ -138,6 +138,9 @@ def create_api(
     from .canvas_api import create_canvas_router
 
     app.include_router(create_canvas_router(service))
+    from .asset_catalog import create_asset_router
+
+    app.include_router(create_asset_router(service))
     static_dir = Path(__file__).resolve().parent / "static"
 
     class _NoStoreStaticFiles(StaticFiles):
@@ -422,6 +425,7 @@ def create_api(
             "preview": ("preview_path", "image/gif"),
             "recipe": ("recipe_path", "application/json"),
             "qa": ("qa_path", "application/json"),
+            "godot": ("godot_package_path", "application/zip"),
         }
         field = fields.get(artifact_name)
         if field is None:
@@ -430,6 +434,8 @@ def create_api(
                 details={"job_id": job_id, "artifact": artifact_name},
             )
         recorded_path = getattr(job.export, field[0])
+        if not recorded_path:
+            raise NotFoundError("this historical export has no Godot package", details={"artifact": artifact_name})
         artifact = service.settings.resolve_record_path(recorded_path)
         exports_root = service.settings.exports_dir.resolve()
         try:

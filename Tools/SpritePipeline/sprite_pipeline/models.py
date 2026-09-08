@@ -343,6 +343,8 @@ class ExportRecord(StrictModel):
     preview_path: str
     recipe_path: str
     qa_path: str
+    godot_package_path: str | None = None
+    godot_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

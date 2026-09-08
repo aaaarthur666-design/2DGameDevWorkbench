@@ -7,6 +7,14 @@ import { createServer } from 'vite';
 export function createTestViteServer(options) {
   return createServer({
     ...options,
-    cacheDir: path.resolve(options.root || process.cwd(), 'work', 'test-runs', `vite-${randomUUID()}`, 'cache'),
+    // These suites load modules explicitly; watching runtime/test outputs creates needless file churn.
+    server: { ...options.server, watch: null },
+    cacheDir: path.resolve(
+      options.root || process.cwd(),
+      'work',
+      'test-runs',
+      `vite-${randomUUID()}`,
+      'cache',
+    ),
   });
 }

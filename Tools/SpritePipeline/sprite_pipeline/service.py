@@ -3167,6 +3167,7 @@ class SpritePipelineService:
                 "preview": export_dir / f"{stem}.preview.gif",
                 "recipe": export_dir / f"{stem}.recipe.json",
                 "qa": export_dir / f"{stem}.qa.json",
+                "godot": export_dir / f"{stem}.godot.zip",
             }
             existing = [str(path) for path in destinations.values() if path.exists()]
             if existing and not options.overwrite:
@@ -3258,6 +3259,15 @@ class SpritePipelineService:
                     for frame in candidate.frames
                 ],
             }
+            from .processing.godot_export import build_godot_package
+
+            staged_godot = staging / destinations["godot"].name
+            recipe["godot"] = build_godot_package(
+                staged_sheet, staged_godot, recipe,
+                anchor_x=job.character.anchor.x,
+                ground_y=job.character.anchor.ground_y,
+                facing=job.character.facing,
+            )
             staged_recipe = staging / destinations["recipe"].name
             staged_qa = staging / destinations["qa"].name
             atomic_write_json(staged_recipe, recipe)
@@ -3272,6 +3282,7 @@ class SpritePipelineService:
                     (staged_sheet, destinations["sheet"]),
                     (staged_preview, destinations["preview"]),
                     (staged_qa, destinations["qa"]),
+                    (staged_godot, destinations["godot"]),
                     (staged_recipe, destinations["recipe"]),
                 )
             )
@@ -3283,6 +3294,8 @@ class SpritePipelineService:
                 preview_path=self.settings.record_path(destinations["preview"]),
                 recipe_path=self.settings.record_path(destinations["recipe"]),
                 qa_path=self.settings.record_path(destinations["qa"]),
+                godot_package_path=self.settings.record_path(destinations["godot"]),
+                godot_sha256=recipe["godot"]["package_sha256"],
                 sha256=sha256_file(destinations["sheet"]),
             )
             job.status = JobStatus.exported

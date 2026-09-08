@@ -78,7 +78,7 @@ Commands:
   list [--json]
   describe <capability-id> [--json]
   doctor [--json]
-  agent <guidance|environment|start|frontend|presets|tasks|result|artifact|interactable-template> [--input <json-file>] [--json]
+  agent <guidance|environment|start|frontend|presets|tasks|result|artifact|interactable-template|assets|asset|asset-manifest> [--input <json-file>] [--json]
   prepare <capability-id> --input <json-file> [--json]
   run <capability-id> --input <json-file> [--json]
   status <task-id> [--json]

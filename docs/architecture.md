@@ -2,14 +2,14 @@
 
 ## 1. 架构目标
 
-2D Game Dev Workbench 是一个“外部 Agent 驱动、Web 工作台协作、能力可插拔”的本地优先项目。Codex、WorkBuddy 或其他支持 MCP 的客户端是主 Agent；仓库中的 Web 应用不内置大语言模型，也不承担意图规划。
+Forge 是一个“外部 Agent 驱动、Web 工作台协作、能力可插拔”的本地优先项目。Codex、WorkBuddy 或其他支持 MCP 的客户端是主 Agent；仓库中的 Web 应用不内置大语言模型，也不承担意图规划。
 
 架构需要同时保证：
 
 - Agent 能仅通过项目指令、MCP 或 CLI 发现并调用能力。
 - 人可以在统一界面查看任务、调整图形参数、预览和导出不适合纯对话完成的内容。
 - 能力实现可独立演进；工作台只维护清单、协议、任务状态和适配器。
-- 本地任务、输入与产物有明确边界，密钥不进入浏览器和持久化记录。
+- 本地任务、输入与产物有明确边界，密钥不进入浏览器存储、任务和产物；专用服务配置可以受保护地持久保存。
 
 ## 2. 总体结构
 
@@ -29,7 +29,7 @@ flowchart LR
     X --> S[SpritePipeline]
     X --> T[Map Stitcher]
     X --> O[Interactable Editor]
-    T -.可选外部生成.-> E[Gemini / OpenAI Images]
+    T -.可选外部生成.-> E[Gemini / OpenAI Images / Hunyuan]
     R --> Q[work/tasks]
     R --> U[outputs/task-id]
     P -.只读原生 job 摘要.-> S
@@ -37,13 +37,13 @@ flowchart LR
     W --> D[IndexedDB drafts]
 ```
 
-MCP、CLI 和 Web 提交的工作台任务汇入同一套运行时，因此不应各自实现一份能力目录或任务规则。Web 仍保留页面内编辑、浏览器草稿、嵌入式 SpritePipeline UI 和只读原生 job 摘要；这些状态必须与 runtime task 明确区分。
+MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此不应各自实现一份能力目录或任务规则。Web 仍保留页面内编辑、浏览器草稿、嵌入式 SpritePipeline UI 和只读原生 job 摘要；这些状态必须与 runtime task 明确区分。
 
 ## 3. 分层与职责
 
 | 层 | 主要位置 | 职责 |
 | --- | --- | --- |
-| 项目指令 | `AGENTS.md`、`.agents/skills/2d-game-workbench/` | 告诉外部 Agent 何时选能力、何时只准备、何时可执行 |
+| 项目指令 | `AGENTS.md`、`.agents/skills/` | 告诉外部 Agent 何时选能力、何时只准备、何时可执行 |
 | 能力清单 | `workbench/manifest.json` | 定义能力 ID、输入 schema、输出、适配器、页面路由与工作流引用 |
 | 接入层 | `scripts/workbench-mcp.mjs`、`scripts/workbench.mjs`、`scripts/workbench-http.mjs` | 分别提供 STDIO MCP、命令行和回环 HTTP 接口 |
 | 共享运行时 | `lib/workbench/runtime.mjs` | 加载与校验清单、创建任务、调度适配器、持久化与恢复状态 |
@@ -76,7 +76,7 @@ MCP、CLI 和 Web 提交的工作台任务汇入同一套运行时，因此不�
 
 ### 5.2 地图拼接
 
-`map-stitcher` 的确定性拼接、状态恢复、区域标注与导出在本地完成。`generate-layer` 可按配置调用 Gemini 或 OpenAI Images，但外部生成不是本地拼接的前置条件。模板中 alpha 大于 0 的像素必须被保留，生成内容只填充完全透明区域。
+`map-stitcher` 的确定性拼接、状态恢复、区域标注与导出在本地完成。`generate-origin` 从提示词生成中心图，预览采用后再编辑；`generate-layer` 扩展已有透明模板。两者可按配置调用 Gemini、OpenAI Images 或混元 Image 3.0，外部生成不是本地拼接的前置条件。地图仅供手动前端制作，MCP 排除其发现与执行；Agent 不得用其他接口绕过。模板中 alpha 大于 0 的像素必须被保留，生成内容只填充完全透明区域。
 
 ### 5.3 独立交互物编辑
 
@@ -84,7 +84,7 @@ MCP、CLI 和 Web 提交的工作台任务汇入同一套运行时，因此不�
 
 ## 6. Agent 调用面
 
-仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和 11 个工具：
+仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和 16 个工具。基础任务工具为：
 
 1. `workbench_list_capabilities`：读取当前能力目录。
 2. `workbench_describe_capability`：读取目标能力 schema、连接器和输出契约。
@@ -92,7 +92,7 @@ MCP、CLI 和 Web 提交的工作台任务汇入同一套运行时，因此不�
 4. `workbench_run_task`：校验后运行清单选定的本地适配器。
 5. `workbench_get_task`：读取任务；对于运行中的异步任务，安全刷新同一个上游作业一次。
 
-另有环境、启动、预设、历史、结果和图片六个接口，三种入口共享 `lib/workbench/agent-api.mjs`，由 Runtime 导出。详见 [MCP 第一阶段](agent-phase1-acceptance.md)。
+另有环境、Sprite 服务启动、前端启动、预设、交互物模板、历史、结果、图片读取及三个资产目录工具。共用 `lib/workbench/agent-api.mjs`，完整名单见 [Agent 客户端接入](agent-clients.md)。工程 Skill 是外部 Agent 文件工作流，不额外增加 MCP 工具。
 
 CLI 的 `list`、`describe`、`prepare`、`run`、`status` 与上述语义对齐。浏览器页面还可以在宿主支持 `document.modelContext` 时注册页面级工具；它们只代表当前页面的交互能力，不替代仓库 STDIO MCP。
 
@@ -103,7 +103,8 @@ CLI 的 `list`、`describe`、`prepare`、`run`、`status` 与上述语义对齐
 - `prepared`：输入已校验，但尚未执行。
 - `running`：适配器或已有上游异步任务仍在处理。
 - `awaiting_configuration`：所需外部服务未配置；这不是完成状态。
-- `completed`：适配器返回成功，声明产物已验证并记录。
+- `attention_required`：作业已保存或需要检查/恢复，读取实际候选和下一步。
+- `completed`：本次操作返回成功，声明产物已验证并记录；保存或检查完成不等于动画已导出。
 - `failed`：执行失败，任务记录包含可报告的错误。
 
 运行时只接纳位于该任务输出目录内的生成文件，防止适配器把任意本地路径伪装成产物。输入资源保持不变，新文件写入任务专属目录。
@@ -132,16 +133,20 @@ Web 工作台提供生产台、场景台、专业工具和高级配置。它负�
 
 ## 10. 安全边界
 
-- API token 只从服务端环境变量读取，不能发送到客户端组件、任务 JSON、日志或提交文件。
+- API token 从服务端环境或专用配置读取。设置入口接收用户输入后不回显；不写入浏览器存储、任务 JSON、日志或提交文件。
 - HTTP bridge 和默认工具服务仅监听回环地址。
 - 所有本地源文件和产物路径必须解析并验证在允许的工作区或任务目录内。
-- 外部调用可能产生费用或数据出站；未获得执行授权时只使用 `prepare`。
+- 外部调用可能产生费用或数据出站；必须先有执行授权。讨论不创建任务，明确的输入校验才使用 `prepare`。
 - Web 上传由服务端接收并写入受控任务位置；当前交互物资源单文件上限 64 MB，源项目导入上限 256 MB。
 
 ## 11. 扩展原则
 
-新增能力时，应先实现独立适配器和清单条目，再让 MCP、CLI 与 Web 自动消费。若需要外部 API，应把认证、重试、错误归一化和输出验证留在服务端适配器；浏览器只获得完成任务所需的非敏感状态。完整步骤见 [开发与验证](development.md#新增或修改能力)。
+新增能力时，应先实现独立适配器和清单条目，再让 MCP、CLI 与 Web 自动消费。若需要外部 API，应把认证、重试、错误归一化和输出验证留在服务端适配器；浏览器只获得完成任务所需的非敏感状态。完整步骤见 [开发与验证](development.md)。
 
 ## 场景组装的网页边界
 
 场景组装在 Manifest 的 `editorModules` 注册网页入口，复用模块导航而不加入 `capabilities` 可执行契约。网页编辑和源包保存在浏览器，私有导出路由通过 loopback Runtime Bridge 复用交互物生成器并装配地图、物件及碰撞。导出结果写入 `outputs/scene-export-<id>/`，记录写入 `work/scene-exports/`；这些记录与 Agent 任务区分。素材没有自动同步或场景内行为编辑。详见[场景组装](scene-composer.md)。
+
+## 资产与工程交接
+
+`asset-catalog.mjs` 按来源身份合并任务产物与原生候选，分页盘点覆盖持久文件；浏览器草稿单独保留。清单描述资产，下载 ZIP 才交付文件。Sprite 导出同时提供 PNG 和单动作 Godot SpriteFrames 包，旧记录保留可选字段兼容。工程 Skill 优先消费现成包；它在授权目标项目按 CopyWorms 契约接入角色与地图，保留玩法计时、场景生命周期和第三方依赖。详见 [资产目录](asset-catalog.md) 与 [游戏工程](game-engineering.md)。

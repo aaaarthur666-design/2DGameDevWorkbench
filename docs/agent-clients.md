@@ -14,7 +14,8 @@ Web 工作台负责展示任务和进度、恢复草稿、预览产物，以及�
 | --- | --- | --- |
 | STDIO MCP | Agent 客户端首选；类型化发现、执行与状态查询 | `.mcp.json`、`.codex/config.toml` |
 | 项目指令 | 角色、安全边界和验证规则 | `AGENTS.md` |
-| Repository Skill | 四项生产能力的选择与操作流程 | `.agents/skills/2d-game-workbench/SKILL.md` |
+| Repository Skill | 角色美术、交互物与资产操作；地图保持手动 | `.agents/skills/2d-game-workbench/SKILL.md` |
+| 工程 Skill | CopyWorms 方法下的 Godot 资产接入和脚本编写 | `.agents/skills/forge-game-engineering/SKILL.md` |
 | CLI | 不支持 MCP 的客户端或本地诊断 | `npm run workbench -- ...` |
 | Web 工作台 | 任务可视化、审查和人工编辑 | `npm run dev` |
 | Browser WebMCP | 宿主支持时控制当前可见页面 | 页面按需注册 |
@@ -58,18 +59,28 @@ default_tools_approval_mode = "writes"
 
 ## 4. MCP 能力面
 
-Server 暴露只读资源 `workbench://manifest`，以及 13 个工具：
+Server 暴露只读资源 `workbench://manifest`，以及 16 个工具：
 
 | 工具 | 行为 |
 | --- | --- |
-| `workbench_list_capabilities` | 列出能力、适配器和外部提供方就绪情况 |
-| `workbench_describe_capability` | 返回某一能力的输入 schema、输出与工作流契约 |
-| `workbench_prepare_task` | 校验输入并写入任务记录，不运行适配器 |
-| `workbench_run_task` | 对已授权请求运行清单选定的适配器 |
-| `workbench_interactable_template` | 获取四种行为的完整交互物模板，不创建任务 |
-| `workbench_get_task` | 读取任务；运行中时安全刷新已有上游作业一次 |
+| `workbench_list_capabilities` | 发现可用能力、就绪信息与两项 Skill 引导 |
+| `workbench_describe_capability` | 读取目标能力完整 schema 与输出约定 |
+| `workbench_prepare_task` | 显式输入校验，写准备记录，不运行适配器 |
+| `workbench_run_task` | 运行已获授权的操作，写任务及实际产物 |
+| `workbench_get_task` | 读取并按需要刷新原异步任务，不新建生成 |
+| `workbench_get_environment` | 检查运行环境、服务兼容性、前端和 Key 配置状态 |
+| `workbench_start_services` | 离线时启动本机 SpritePipeline，不安装或生成 |
+| `workbench_start_frontend` | 启动本机 Web 与 Bridge，宿主另行打开预览 |
+| `workbench_list_presets` | 查询真实角色与动作 ID 和默认参数 |
+| `workbench_interactable_template` | 返回完整行为模板，不保存或导出 |
+| `workbench_list_tasks` | 查最近执行和原生作业，用于追踪操作 |
+| `workbench_list_assets` | 按名称、类型、候选条件分页查持久资产 |
+| `workbench_get_asset` | 读取单件资产、文件证据及精确详情链接 |
+| `workbench_get_asset_manifest` | 返回明确所选资产的交接清单，不复制文件 |
+| `workbench_get_result` | 读取 taskId 或 jobId 的结果与精确候选链接，不刷新生成 |
+| `workbench_read_artifact` | 读取任务登记图片；GIF 为首帧，不等于完整播放 |
 
-新增工具：`workbench_start_frontend`（本地前端及运行时启动）、`workbench_get_environment`、`workbench_start_services`、`workbench_list_presets`、`workbench_list_tasks`、`workbench_get_result`、`workbench_read_artifact`。分别用于实际就绪检查、本机启动、角色与动作发现、历史查询、结构化结果和图像读取。完整契约和手动验收见 [MCP 第一阶段](agent-phase1-acceptance.md)。
+启动工具会改变进程状态；prepare/run 会持久化任务。其他查询不新建制作任务，get_task 可刷新原有异步记录。
 
 标准调用顺序：
 
@@ -79,11 +90,11 @@ list → describe → prepare 或 run → get → 报告 task/status/outputs
 
 选择 `prepare` 的情况：
 
-- 用户只要求方案、检查或准备输入；
-- 操作可能产生外部 API 费用或上传数据，但尚未授权；
-- 需要先把输入校验结果交给用户确认。
+- 用户明确要求对具体输入进行校验并保存准备记录。
 
-选择 `run` 的情况：用户已经要求实际生成、拼接或导出，并且操作仍在其授权范围内。本地操作无需额外制造确认步骤；外部调用仍受客户端自身审批策略约束。
+只讨论方案、浏览、澄清需求或等待执行授权时，不调用 prepare/run。
+
+选择 `run` 的情况：用户已经要求在开放能力内实际生成、保存或导出，并且操作仍在其授权范围内。本地操作无需额外制造确认步骤；外部调用仍受客户端自身审批策略约束。
 
 ## 5. 状态与异步任务
 
@@ -96,7 +107,7 @@ list → describe → prepare 或 run → get → 报告 task/status/outputs
 
 序列帧生成可能异步返回。此时调用 `workbench_get_task` 刷新原来的上游 job；不要再次调用 `workbench_run_task`。查询是幂等刷新，短暂轮询错误不会改写已有任务为虚假成功，也不会提交第二次生成。
 
-Agent 的最终报告至少包括：能力和操作、任务 ID、当前状态、错误或缺失配置、确认存在的输出路径。不能把 `prepared`、`running` 或 `awaiting_configuration` 描述为完成。
+普通回复先说结果、准确作品链接与下一步；技术详情保留能力、操作、任务 ID、状态、错误或缺失配置及实际输出路径，需要排错时提供。不能把 `prepared`、`running` 或 `awaiting_configuration` 描述为完成。
 
 ## 6. CLI 后备
 
@@ -136,6 +147,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 - STDIO MCP 面向打开仓库的外部主 Agent，可访问持久化任务运行时。
 - Browser WebMCP 面向当前页面会话，只在宿主支持且页面打开时存在。
+- 页面工具不解除地图与场景的手动制作边界。
 - 页面工具不能作为后台任务完成的证据；需要以页面返回或 runtime task record 为准。
 
 ## 9. Web 与部署边界
@@ -168,7 +180,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 手动验收：
 
-1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（总计 13 个工具），然后新建本项目对话。
+1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（MCP 0.8.0 总计 16 个工具），然后新建本项目对话。
 2. 发送“看看工作台现在有哪些功能”，无需要求打开网页。预期内部浏览器打开工作台首页，Agent 继续回答原问题。
 3. 再发送“列出已有角色”。预期复用页面，不增加重复预览；手动关掉预览后再发消息，也不应强行重开。
 4. 可选冷启动：正常关闭工作台开发服务，重新开启 WorkBuddy 项目对话并重复第 2 步。预期自动启动前端和 Runtime Bridge；无需 PixelLab Key 或 Python。若首次编译超过 60 秒，Agent 报告仍在启动和日志位置，不应谎报成功。
@@ -180,7 +192,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 `workbench_list_capabilities` 除能力列表外，还返回 `conversationGuidance`。它从清单的 `agentAssets.conversationGuide` 读取 [共用引导](../workbench/conversation-guide.md)，供只有 MCP、没有仓库 Skill 的 WorkBuddy 会话使用。CLI `npm run workbench -- agent guidance --json` 和 HTTP `POST /v1/agent/guidance`（请求体 `{}`）返回相同内容；读取引导不写任务、不调用生成服务。原有工具数量不变。
 
-引导覆盖角色动作、地图拼接/扩图、交互物行为。Agent 先利用上下文和已有资产，仅询问改变结果的关键选择。宿主 `AskUserQuestion` 可用时先查看其参数契约再调用；当前模式不可用时用简短文字提问。没有答案、取消和超时均不能当作默认选项已获同意。引导不提供任意图片注册角色或纯文字生成地图等未注册能力。
+引导覆盖角色动作、地图拼接/扩图、交互物行为。Agent 先利用上下文和已有资产，仅询问改变结果的关键选择。宿主 `AskUserQuestion` 可用时先查看其参数契约再调用；当前模式不可用时用简短文字提问。没有答案、取消和超时均不能当作默认选项已获同意。当前 MCP 没有任意附件注册角色或地图生产操作；前端地图已有文字生成中心原图，用户可手动进入使用。
 
 以下是 WorkBuddy 人工行为验收；在重新连接 MCP 的新对话中逐项进行。除明确的本地逻辑包例子外，先指定“只讨论方案，不生成”，避免验收时产生生图费用。
 
@@ -188,7 +200,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 | --- | --- |
 | “只讨论方案：做个角色动画。” | 只问角色来源、动作等真正缺失选择，用提问工具（若可用）；不创建空任务。 |
 | “只讨论方案：用已有赛博战士做行走，你决定其他设置。” | 查真实角色/动作 ID，说明沿用 preset 和一个候选；不重复问角色、动作、帧数。 |
-| “只讨论方案：做一张森林地图，目前没有任何素材。” | 说明当前地图能力的模板/素材边界，给出下一步所需素材；不伪造一次文生地图调用。 |
+| “只讨论方案：做一张森林地图，目前没有任何素材。” | 给出前端“生成原图”入口及提示词建议，说明预览采用后可继续扩图；不自动调用地图制作接口。 |
 | “只讨论方案：把这四张图按两行两列、附件顺序拼起来。” | 已有布局就不重复追问；提供地图前端入口，不运行 MCP 地图任务。 |
 | “只讨论方案：做个宝箱。” | 根据上下文区分外观图与可交互物，必要时询问；不默认宝箱等于拾取物。 |
 | “制作一个靠近按键可打开、可关上的门，只要可替换美术的逻辑包，通用 Godot。” | 选择 toggle 与 generic；执行本地导出，不要求 PixelLab Key，不新增角色生图。 |
@@ -196,3 +208,23 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 | 连续回答“已有角色”“做行走” | 记住答案，补足其余真实缺项后推进，不重复整份问卷。 |
 
 自动测试校验 MCP/CLI 共享运行时与 HTTP 的引导内容一致，以及真实适配器链路不回归。它们不等同于已验证 WorkBuddy 模型遵循每条对话规则；上表用于宿主侧验收。
+
+## 作品展示（MCP 0.7.0）
+
+0.7.0 引入的 `get_result` 展示契约在 0.8.0 中继续保留。`get_result` 接受 `taskId` 或序列帧原生 `jobId`，二选一；可用 `candidateIndex` 指定已有候选，`detail:true` 在文本内容中读取完整技术结果。无效候选明确报错，不回退到其他版本。查询只读，不创建任务或重新生图。
+
+`presentation` 由共享运行时生成，包含 `title`、`state`、`summary`、精确 `viewPath/viewUrl`、`actions`、可用的图片/GIF `preview` 和技术详情入口。状态区分已准备、等待配置、处理中、等待检查、已保存和已导出；缺失产物会提示需要处理。它不承诺质量通过，也不编造百分比。
+
+MCP 默认文本只给简明展示信息；原有完整结果仍在 `structuredContent`，旧客户端可用 `get_result(detail:true)` 获取完整 JSON 文本。图像读取仍返回 MCP image 内容。原图链接定位原生成任务，移送结果另提供选择角色动作入口；序列帧链接携带 job 和 candidate；交互物仍通过 task 恢复项目。执行详情页面优先展示预览与可点击操作，日志和输入折叠。
+
+浏览器与提问属于宿主：首次展示已知作品时以精确 URL 替换首页；已有预览只在宿主支持且编辑安全时复用，否则提供链接。关闭或重连不自动重开。`browserOpened:false` 只表示项目 MCP 没有操作浏览器，不能被说成打开成功。使用实际可用、已读取 schema 的提问工具；未回答不选择默认项。
+
+完整手动验收见 [阶段一展示验收](agent-presentation-acceptance.md)。
+
+## 资产目录（MCP 0.8.0）
+
+新增 list_assets / get_asset / get_asset_manifest，分别对应共享 agent 操作 assets / asset / asset-manifest。详见 [资产目录、范围与验收](asset-catalog.md)。查询不产生任务；运行 `npm run test:assets` 验证分页、候选、去重、文件校验和 MCP/HTTP 一致性。
+
+## 阶段三：游戏工程 Skill
+
+MCP `workbench_list_capabilities` 的 `conversationGuidance.engineering` 返回清单中的工程 Skill 及使用指南路径。可读取项目文件的 WorkBuddy/Codex 应读取该入口后继续架构与脚本任务。它不是新增的 MCP 生图工具，也不会自动安装宿主 Skill 或修改目标游戏。若宿主只能调用 MCP、不能读取仓库文件或执行脚本，需由宿主启用项目文件能力，不能声称已写入工程。具体输入、边界与验收见 [游戏工程](game-engineering.md)。

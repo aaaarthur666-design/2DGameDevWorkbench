@@ -1,9 +1,9 @@
 ---
 name: 2d-game-workbench
-description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off pixel character reference art, sprite-animation frames, stitched tile maps, or independent Godot interactable objects.
+description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off pixel character reference art, sprite-animation frames, saved map assets, or independent Godot interactable objects. Map production remains manual in the frontend; use forge-game-engineering for game architecture and scripts.
 ---
 
-# 2D Game Workbench
+# Forge asset production
 
 You are the main Agent running in an external client. The user's request controls scope and authorization. Use the repository registry and bridge so conversation-driven work follows the same task contract shown by the visual workbench. The web app provides task visibility and direct editing; it is not another Agent.
 
@@ -21,18 +21,18 @@ Use the `conversationGuidance` returned by `workbench_list_capabilities`, or rea
 1. Call `workbench_list_capabilities`. Do not infer an unregistered capability or operation.
 2. Call `workbench_describe_capability` and shape the request to its declared input schema.
 3. Keep user source files in place. Pass repository-relative paths when possible and never overwrite source assets.
-4. Call `workbench_prepare_task` when an adapter operation could call an unapproved external service, incur cost, or the user only requested a plan.
+4. Call `workbench_prepare_task` when the user explicitly requests input validation. Discussion and planning do not create records; resolve unapproved external execution before run.
 5. Call `workbench_run_task` only when execution is authorized.
-6. Read or refresh the returned task with `workbench_get_task`. Report its exact ID, status, error or required configuration, and existing output paths.
+6. Read or refresh the returned task with `workbench_get_task`. Keep exact IDs, status and verified output paths as technical evidence; lead the user-facing reply with the outcome, exact artwork link and one useful next step.
 
 ## CLI fallback
 
 1. Run `npm run workbench -- list --json` to discover available capabilities. Do not infer an unregistered capability.
 2. Run `npm run workbench -- describe <capability-id> --json` and shape the request to its declared input schema.
 3. Keep user source files in place. Pass repository-relative paths when possible and never overwrite source assets.
-4. Run `npm run workbench -- prepare <capability-id> --input <json-file>` first when an adapter operation could call an unapproved external service, incur cost, or the user only requested a plan.
+4. Run `npm run workbench -- prepare <capability-id> --input <json-file>` first when the user explicitly requests input validation. Discussion and planning do not create records; resolve unapproved external execution before run.
 5. When execution is authorized, run `npm run workbench -- run <capability-id> --input <json-file>`; local-only operations do not require an external URL.
-6. Use `npm run workbench -- status <task-id> --json` for follow-up. Report its exact ID, status, error or required configuration, and existing output paths.
+6. Use `npm run workbench -- status <task-id> --json` for follow-up. Keep exact IDs, status and verified output paths as technical evidence; lead the user-facing reply with the outcome, exact artwork link and one useful next step.
 
 ## Conversation-only production
 
@@ -53,15 +53,16 @@ Use the `conversationGuidance` returned by `workbench_list_capabilities`, or rea
 - If required input is missing, ask only for those fields. If an operation returns `awaiting_configuration`, preserve the task and explain the exact environment variable; do not treat other local adapter operations as unavailable.
 - Keep task records under `work/` and generated or downloaded artifacts under `outputs/`; both are local runtime data and should remain uncommitted.
 - Poll an asynchronous task with `get` or `status`; do not call `run` again merely to query progress.
-- A task is complete only when its task record says `completed` and every reported output path exists.
+- A task is complete only when its task record says `completed` and every reported output path exists. Check/save completion is not artwork approval or export; inspect the actual candidate state. `attention_required` needs review or recovery, not blind resubmission.
 
 ## Capability selection
 
 - Use `reference-art` `generate` for PixelLab character images (128x128 transparent PNG, prompt and optional name/facing/seed). It shares the SpritePipeline protected key. Use `transfer` with the completed source task ID to import a reusable character; this never generates animation. Poll with get/status and never resubmit to recover an ambiguous paid POST.
 
 - Use `sprite-generator` for SpritePipeline `create`, `create-and-generate`, `generate-existing`, `get`, `export`, `check`, `safety`, `review-frame`, `approve`, `reject`, `recover`, and `attach-provider-job`. Use declared preset IDs; do not derive IDs from free text.
-- Map stitching and extension are manual frontend workflows. MCP excludes map-stitcher; direct the user to /tools/map-stitcher. Do not bypass this boundary through CLI, HTTP or browser tools.
-- Use `interactable-editor` `export-godot` for inspect, toggle, pickup, and sequence objects. Export is local and does not require credentials, SpritePipeline, a Godot installation, or a mandatory validation step.
+- Map original-image generation, stitching and extension are manual frontend workflows. MCP excludes map-stitcher; direct the user to /tools/map-stitcher. Do not bypass this boundary through CLI, HTTP or browser tools.
+- Use `interactable-editor` `save-project` for complete editable source and `export-godot` for inspect, toggle, pickup, and sequence objects. Export is local and does not require credentials, SpritePipeline, a Godot installation, or a mandatory validation step.
+- Scene composition is a manual `editorModules` workflow, not an executable MCP capability. It consumes existing maps and interactables.
 - For copyWorms compatibility, use the declared `copyworms` target profile. Export success means files were created, not that the target game passed engine regression tests.
 - When a request spans capabilities, run separate tasks as authorized, then summarize their outputs together.
 
@@ -75,7 +76,38 @@ Use the `conversationGuidance` returned by `workbench_list_capabilities`, or rea
 - Protocol and troubleshooting: `docs/connector-contract.md` and `docs/agent-clients.md`.
 
 - First-stage MCP acceptance and manual prompts: `docs/agent-phase1-acceptance.md`.
+- Full human procedures, backup and troubleshooting: `docs/operations-manual.md`.
 
 ## Interactable authoring
 
 Use workbench_interactable_template for a complete inspect/toggle/pickup/sequence project without creating a task. Fill in the requested behavior and supplied assets, preserving projectId and definitionId. Run save-project to persist a portable source project without exporting. get_result.viewPath opens this task in the frontend editor; differing local drafts are retained separately. Resume by reading the existing source artifact, editing it and saving again. Use export-godot only for a requested package. A saved logic draft is not an exported asset or generated artwork.
+
+## Present work in WorkBuddy
+
+Follow the shared conversation guide's presentation section. Prefer `presentation.summary`, `viewUrl` and `actions`; retain the full structured result for reasoning rather than pasting it into chat. Query a native animation with `get_result(jobId, candidateIndex?)` and a workbench record with `get_result(taskId, candidateIndex?)`; exactly one identifier is required. Neither lookup creates a task or starts generation. Text-only clients can request `detail:true` to read complete artifacts and review evidence; keep those details out of routine user replies.
+
+On the first conversation preview, open the known artwork's exact URL when available. Use only a discovered host tool with its real schema. Later reuse the existing preview if supported and editing is safely saved, otherwise provide the exact link. Never reopen after dismissal or on reconnection without the user's request. Tool URLs and `browserOpened:false` are not evidence that a browser opened. Ask only the material unresolved choice through the available host question tool; no answer or cancellation means no selection.
+
+Default reply: concise outcome, actual preview/link, one next step. Expand technical detail when requested or needed. Show animation in its player; a GIF first-frame image is insufficient motion evidence. Saved, review-ready, approved and exported remain distinct states.
+
+## Inventory and handoff
+
+Use `workbench_list_assets` for existing artwork, and list_tasks for execution history. Read [the asset catalog guide](../../../docs/asset-catalog.md) when inventorying or handing off assets. Follow nextOffset with snapshot until the requested scope is covered. Filter structured fields rather than searching an entire natural-language sentence: “latest three-candidate animation, candidate 2” means kind=animation, candidateCount=3, candidateIndex=2, sortBy=createdAt, limit=1.
+
+Use get_asset for the exact assetId before making a handoff; preserve source relationships and file hashes. One animation candidate is one asset; retries/checks/exports are not extra artworks. Use get_asset_manifest with explicit selected assetIds for a portable inventory. Save returned data only where the user requested; this tool does not copy materials or change a game project. Missing files, pending review, source-only interactables and engine validation remain separate facts.
+
+Coverage only includes persisted server assets. Do not claim browser-only maps, scenes, drafts or external project folders were inspected. Offline/partial coverage is not proof of deletion. Refer users to the existing editor for those drafts; map creation remains manual. Present useful category totals, preview links and unresolved issues without pasting the full file list into ordinary chat.
+
+## Deliver actual export files
+
+Prefer an existing verified export. Current approved SpritePipeline export supplies PNG/sheet, preview, recipe/QA and a Godot ZIP via `godotPackage`; old records may omit the optional ZIP. Read `docs/sprite-generator.md` for the package contract. Do not regenerate, approve or re-export just because the user browsed or downloaded an older asset.
+
+The SpriteFrames pack preserves exact selected frame order/regions, action alias, FPS and loop. Copy its `forge_sprites` tree intact; it supplies a single action and optional visual scene, not a game controller. Updating an existing multi-action character requires a clip merge through the engineering Skill. Asset-library download copies real bytes into ZIP; `get_asset_manifest` is a descriptive handoff and never substitutes for those files. Export success alone is not target-engine validation.
+
+## Diagnose configuration accurately
+
+Check API compatibility and UI readiness separately; `sprite-pipeline:api` does not serve the embedded UI. PixelLab Key is shared and persists in protected SpritePipeline settings; map UI keys currently last only for the Bridge process, with server environment as the persistent alternative. Dedicated settings return configured state, never key values. Startup tools do not install dependencies or restart occupied/incompatible services. Read `docs/development.md` before maintaining or restarting a service, and retain the user's data directory and in-flight work.
+
+## Continue into a game project
+
+When the user wants architecture, Godot scripts or integration of ready assets, read the Skill at `agentAssets.engineering.skill` in the manifest. This is an external Agent workflow grounded in CopyWorms, not a new production operation. Keep the exact asset selections and their readiness evidence. Map production remains manual; the engineering Skill consumes exported scenes/maps. Preserve a planning-only request and the distinction between the read-only reference game and the authorized target project.

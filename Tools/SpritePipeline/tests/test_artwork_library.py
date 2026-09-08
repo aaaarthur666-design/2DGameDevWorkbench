@@ -177,3 +177,45 @@ def test_gradio_renders_material_cards_and_routes_exact_candidate(library_setup)
     updates = edit()
     assert tabs not in updates
     assert any('状态已经改变' in str(value) for value in updates.values())
+
+
+def test_workbench_link_opens_visible_details_for_exact_candidate(library_setup):
+    from types import SimpleNamespace
+    from sprite_pipeline.ui import build_ui
+
+    fixture, service, library = library_setup
+    job = service.create_job({**fixture.create_request('import'), 'candidate_count': 3})
+    fixture.write_sequence(fixture.root / 'inputs')
+    service.ingest_candidate(job.job_id, 2, fixture.root / 'inputs')
+    before = service.get_job(job.job_id).model_dump_json()
+    ui = build_ui(service=service)
+    try:
+        callback = next(fn for fn in ui.fns.values() if fn.name == 'load_workbench_entry')
+        def invoke(params):
+            result = callback.fn(None, SimpleNamespace(query_params=params))
+            return result if isinstance(result, dict) else dict(zip(callback.outputs, result))
+        updates = invoke({'workbench_job': job.job_id, 'workbench_candidate': '2'})
+        detail = next(c for c in ui.blocks.values() if getattr(c, 'elem_id', None) == 'artwork-detail')
+        content = next(c for c in ui.blocks.values() if getattr(c, 'label', None) == '记录中的候选画面')
+        radio = next(c for c in ui.blocks.values() if getattr(c, 'label', None) == '该任务中的候选')
+        assert updates.get(detail, {}).get('open') is True
+        assert updates.get(content, {}).get('open') is True
+        assert updates[radio]['value'] == 2
+        assert any('地面攻击' in str(value) or '候选 B' in str(value) for value in updates.values())
+        gallery = next(c for c in ui.blocks.values() if getattr(c, 'label', None) == '逐帧画面')
+        assert len(updates[gallery]) == 4
+        assert all("candidate_02" in path for path, _caption in updates[gallery])
+        invalid = invoke({'workbench_job': job.job_id, 'workbench_candidate': '8'})
+        assert invalid[detail]['open'] is True
+        assert invalid[radio]['value'] is None
+        assert invalid[gallery] == []
+        assert any('所选候选不存在' in str(value) for value in invalid.values())
+        missing = invoke({'workbench_job': 'missing-original', 'workbench_candidate': '2'})
+        assert missing[detail]['open'] is True
+        assert missing[radio]['value'] is None
+        assert any('找不到所选任务' in str(value) for value in missing.values())
+        ordinary = invoke({})
+        assert detail not in ordinary  # Homepage stays a library without forced scrolling/opening.
+        assert service.get_job(job.job_id).model_dump_json() == before
+    finally:
+        ui.close()

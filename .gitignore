@@ -47,3 +47,7 @@ next-env.d.ts
 /Tools/SpritePipeline/**/__pycache__/
 /Tools/SpritePipeline/.pytest_cache/
 /Tools/SpritePipeline/*.egg-info/
+
+# Bytecode from local engineering Skill helpers
+.agents/skills/**/__pycache__/
+tests/game-engineering/__pycache__/

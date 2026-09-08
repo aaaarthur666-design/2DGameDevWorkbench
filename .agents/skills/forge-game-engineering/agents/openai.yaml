@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge 游戏工程"
+  short_description: "沿用 CopyWorms 工程方法，接入角色帧动画、地图场景与游戏脚本"
+  default_prompt: "Use $forge-game-engineering to integrate ready Forge assets into a Godot 4.6 project using the verified CopyWorms contracts."

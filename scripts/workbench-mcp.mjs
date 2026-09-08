@@ -3,6 +3,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as z from 'zod/v4';
+import { assetInputs, assetTools } from '../lib/workbench/asset-contract.mjs';
+import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { KINDS } from '../features/interactable-editor/contract.mjs';
 
 import {
@@ -20,17 +22,17 @@ import {
 const server = new McpServer(
   {
     name: '2d-game-workbench',
-    version: '0.6.0',
+    version: '0.8.0',
   },
   {
     instructions:
-      'WorkBuddy session startup: on the first user message after connecting this server, unless the user opts out of opening the UI, call workbench_get_environment. If frontend.ready is false, call workbench_start_frontend once when services are offline, then poll get_environment at bounded intervals (up to 60 seconds); stop on blocked/conflict/unreachable and report the reason. When ready, discover the host-native present_files tool (possibly connector-proxy namespaced), inspect its schema, and call it with frontend.hostAction.arguments to open frontend.url in the WorkBuddy internal preview. Reuse an existing workbench preview and do not reopen it on each message, reconnect, or if the user closes it in this conversation. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. Map stitching and map generation are manual frontend workflows and cannot be prepared or run through MCP. For interactables, get a template without creating a task, edit its project, save-project for frontend continuation, then export-godot when requested. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task before any unapproved external call or cost. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and report task IDs and paths exactly as returned. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
+      'WorkBuddy session startup: on the first user message after connecting this server, unless the user opts out of opening the UI, call workbench_get_environment. If frontend.ready is false, call workbench_start_frontend once when services are offline, then poll get_environment at bounded intervals (up to 60 seconds); stop on blocked/conflict/unreachable and report the reason. When ready, prefer a known selected artwork presentation.viewUrl over the homepage. Discover the host-native present_files tool (possibly connector-proxy namespaced), inspect its schema, and use frontend.hostAction.arguments, replacing files with the verified presentation.viewUrl when continuing known work, to open the exact frontend page in the WorkBuddy internal preview. Reuse an existing workbench preview and do not reopen it on each message, reconnect, or if the user closes it in this conversation. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. Map stitching and map generation are manual frontend workflows and cannot be prepared or run through MCP. For interactables, get a template without creating a task, edit its project, save-project for frontend continuation, then export-godot when requested. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task only for explicitly requested input validation. Resolve authorization before external execution; planning or clarification creates no task. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and keep exact task IDs and paths in structured details; normal replies lead with the outcome and exact artwork link, without dumping JSON or IDs. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. Asset inventory: use list_assets for actual artwork, not list_tasks; filter candidateCount and candidateIndex and sortBy createdAt for the latest multi-candidate generation. Follow pagination to avoid missing old work. get_asset verifies the selected files; get_asset_manifest produces a handoff without modifying sources. Browser-only drafts are outside the server inventory; incomplete coverage is not proof an asset is gone. Presentation: prefer presentation.summary and viewUrl. Reply with a short outcome, preview/link and one next step; show technical details only when asked or necessary for troubleshooting. Navigate an existing host preview only when supported and editing is safely saved; otherwise offer the exact link. A returned URL or browserOpened:false never proves the browser opened. Do not reopen a dismissed preview. AskUserQuestion is host-owned: discover it and read its schema, ask one material choice at a time, and never treat cancellation as consent. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
   },
 );
 
-function success(value) {
+function success(value, name) {
   return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    content: [{ type: 'text', text: mcpContent(name, value) }],
     structuredContent: value,
   };
 }
@@ -39,7 +41,19 @@ function failure(error) {
   const message = error instanceof Error ? error.message : String(error);
   return {
     isError: true,
-    content: [{ type: 'text', text: message }],
+    content: [
+      {
+        type: 'text',
+        text: message.match(/^Task ([a-z0-9_-]+) failed:/i)
+          ? JSON.stringify({
+              summary:
+                '本次操作未完成。请读取原任务的错误和已有结果，避免重复生成。',
+              taskId: message.match(/^Task ([a-z0-9_-]+) failed:/i)[1],
+              nextTool: 'workbench_get_result',
+            })
+          : message,
+      },
+    ],
     structuredContent: {
       error: {
         message,
@@ -58,7 +72,7 @@ function failure(error) {
 function registerTool(name, options, handler) {
   server.registerTool(name, options, async (input) => {
     try {
-      return success(await handler(input));
+      return success(await handler(input), name);
     } catch (error) {
       return failure(error);
     }
@@ -134,7 +148,13 @@ registerTool(
   async ({ capabilityId, input }) => {
     const manifest = await loadManifest();
     const capability = findAgentCapability(manifest, capabilityId);
-    return summarizeTask(await prepareTask(manifest, capability, input));
+    const execution = await prepareTask(manifest, capability, input);
+    return {
+      ...summarizeTask(execution),
+      presentation: (
+        await agentRequest(manifest, 'result', { taskId: execution.task.id })
+      ).presentation,
+    };
   },
 );
 
@@ -155,7 +175,13 @@ registerTool(
   async ({ capabilityId, input }) => {
     const manifest = await loadManifest();
     const capability = findAgentCapability(manifest, capabilityId);
-    return summarizeTask(await runConnector(manifest, capability, input));
+    const execution = await runConnector(manifest, capability, input);
+    return {
+      ...summarizeTask(execution),
+      presentation: (
+        await agentRequest(manifest, 'result', { taskId: execution.task.id })
+      ).presentation,
+    };
   },
 );
 
@@ -180,6 +206,8 @@ registerTool(
     const refreshed = await refreshTask(manifest, taskId);
     return {
       task: refreshed.task,
+      presentation: (await agentRequest(manifest, 'result', { taskId }))
+        .presentation,
       ...(refreshed.refreshError
         ? { refreshError: refreshed.refreshError }
         : {}),
@@ -192,7 +220,10 @@ const discoveryTools = [
     'workbench_interactable_template',
     'interactable-template',
     'Return a complete editable interactable project template without writing a task. Choose inspect, toggle, pickup or sequence; preserve returned IDs while editing. Save with save-project, open get_result.viewPath for frontend editing, and export-godot only when requested.',
-    { kind: z.enum(KINDS).optional(), name: z.string().min(1).max(200).optional() },
+    {
+      kind: z.enum(KINDS).optional(),
+      name: z.string().min(1).max(200).optional(),
+    },
   ],
   [
     'workbench_start_frontend',
@@ -232,8 +263,18 @@ const discoveryTools = [
   [
     'workbench_get_result',
     'result',
-    'Read structured task results, characterId, candidate QA, suggested actions and verified artifact paths. Does not refresh or generate.',
-    { taskId: z.string().min(1) },
+    'Read a workbench taskId OR a native sprite jobId (exactly one). Optional candidateIndex selects an existing candidate. Returns a concise presentation and exact viewUrl plus structured results. Does not refresh, generate, create tasks or open a browser.',
+    {
+      taskId: z.string().min(1).optional(),
+      jobId: z.string().min(1).max(200).optional(),
+      candidateIndex: z.number().int().min(1).max(1000).optional(),
+      detail: z
+        .boolean()
+        .optional()
+        .describe(
+          'Return full technical JSON in text content for clients without structuredContent; use for frame review or debugging.',
+        ),
+    },
   ],
   [
     'workbench_read_artifact',
@@ -242,6 +283,23 @@ const discoveryTools = [
     { taskId: z.string().min(1), artifactPath: z.string().min(1) },
   ],
 ];
+for (const [name, operation, description] of assetTools) {
+  registerTool(
+    name,
+    {
+      description,
+      inputSchema: assetInputs[operation].shape,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (input) => agentRequest(await loadManifest(), operation, input),
+  );
+}
+
 for (const [name, operation, description, inputSchema] of discoveryTools) {
   server.registerTool(
     name,
@@ -264,7 +322,7 @@ for (const [name, operation, description, inputSchema] of discoveryTools) {
         );
         if (value.imageBase64) {
           const { imageBase64, ...metadata } = value;
-          const result = success(metadata);
+          const result = success(metadata, name);
           result.content.push({
             type: 'image',
             data: imageBase64,
@@ -272,7 +330,7 @@ for (const [name, operation, description, inputSchema] of discoveryTools) {
           });
           return result;
         }
-        return success(value);
+        return success(value, name);
       } catch (error) {
         return failure(error);
       }

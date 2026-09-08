@@ -4,12 +4,13 @@
 
 本文描述 MCP、CLI、Web HTTP bridge 与能力适配器共享的任务语义。输入字段的机器权威是 `workbench/manifest.json`；本文解释跨能力约束和协议转换，不复制完整 JSON Schema。
 
-当前三个能力均使用 `local-adapter`：
+当前四项能力均使用 `local-adapter`。Agent 仅开放原图、序列帧和交互物；地图的底层契约供手动前端使用：
 
 | 能力 | 适配器 | 是否依赖外部服务 |
 | --- | --- | --- |
+| `reference-art` | `reference-art` | PixelLab，经 SpritePipeline 共享凭据 |
 | `sprite-generator` | `sprite-pipeline` | 连接本地或自管 SpritePipeline；其生成提供方由该工具配置 |
-| `map-stitcher` | `map-stitcher` | `compose` 本地；`generate-layer` 可调用 Gemini/OpenAI Images |
+| `map-stitcher` | `map-stitcher` | `compose` 本地；`generate-origin` / `generate-layer` 调用所选 Gemini、OpenAI 或混元 |
 | `interactable-editor` | `interactable-editor` | 完全本地导出 |
 
 `lib/workbench/runtime.mjs` 负责统一校验、任务记录、调度、状态和输出验证；适配器只负责能力协议转换。
@@ -20,9 +21,10 @@
 
 ```json
 {
-  "capabilityId": "map-stitcher",
+  "capabilityId": "reference-art",
   "input": {
-    "operation": "compose"
+    "operation": "generate",
+    "prompt": "透明背景的侧视像素骑士"
   }
 }
 ```
@@ -32,8 +34,8 @@
 ```json
 {
   "schemaVersion": 1,
-  "id": "map-stitcher-...",
-  "capabilityId": "map-stitcher",
+  "id": "reference-art-...",
+  "capabilityId": "reference-art",
   "status": "prepared",
   "createdAt": "ISO-8601",
   "updatedAt": "ISO-8601",
@@ -46,10 +48,10 @@
 
 ```json
 {
-  "taskId": "map-stitcher-...",
+  "taskId": "reference-art-...",
   "status": "completed",
-  "taskPath": "work/tasks/map-stitcher-....json",
-  "outputs": ["outputs/map-stitcher-.../result.json"],
+  "taskPath": "work/tasks/reference-art-....json",
+  "outputs": ["outputs/reference-art-.../result.json"],
   "adapter": {}
 }
 ```
@@ -61,6 +63,7 @@
 ```text
 prepare ───────────────→ prepared
 run ─→ running ────────→ completed
+           ├───────────→ attention_required
            ├───────────→ failed
            └───────────→ awaiting_configuration
 get/status: running ───→ 刷新同一上游任务后保持或进入终态
@@ -69,7 +72,8 @@ get/status: running ───→ 刷新同一上游任务后保持或进入终�
 - `prepared`：输入通过 schema 校验，但没有调用适配器。
 - `running`：能力已开始，可能包含上游 job ID。
 - `awaiting_configuration`：缺少当前 operation 所需的环境或 provider key；不是成功。
-- `completed`：适配器声明完成，运行时已验证其输出文件。
+- `attention_required`：原生作业需要检查、审核或恢复，不能当作导出完成。
+- `completed`：本次操作完成，运行时已验证其输出文件；检查/保存完成与作品导出分别判断。
 - `failed`：运行或适配器结果失败；任务记录保存错误。
 
 刷新运行中任务发生短暂异常时，原任务保持 `running`，读取结果可以附带 `refreshError`。轮询不得重新提交计费请求。
@@ -135,7 +139,7 @@ Manifest 使用 camelCase；适配器转换为 Python API 的 snake_case。创�
 
 本地任务 ID 用作默认幂等键，避免不明确重试创建第二个可能计费的作业。`wait` 默认 false；生成异步返回时，任务保存上游 job ID，后续 `get`/`status` 刷新同一 job。
 
-标准化输出类型为 `jobRecord`、`orderedFrames`、`spriteSheet`、`preview` 和 `metadata`。需要交付的帧与导出文件被复制到当前任务输出目录，不暴露上游私有路径。
+标准化输出类型为 `jobRecord`、`orderedFrames`、`spriteSheet`、`godotPackage`、`preview` 和 `metadata`。需要交付的帧与导出文件被复制到当前任务输出目录，不暴露上游私有路径。
 
 默认 API 是 `http://127.0.0.1:7860`。仅连接另一个可信部署时设置 `SPRITE_PIPELINE_API_URL`；受保护部署可使用 `SPRITE_PIPELINE_API_TOKEN`。详细使用见 [序列帧生成](sprite-generator.md)。
 
@@ -174,20 +178,20 @@ Pixelwork v2 包可由地图编辑器恢复。新 Godot 包内嵌同一份可编
 
 返回图像统一解码并规范为 `generated-layer.png`。输入 PNG 的 alpha 通道定义可编辑区：只有 alpha 为 0 的像素可替换；服务端恢复模板中全部非透明 RGBA 像素，包括半透明边缘。明显不同的宽高比会被拒绝。`mask_mode` 只是旧客户端兼容字段，不按黑白颜色建立 provider mask。
 
-key 只来自 runtime 进程内设置或 `GEMINI_API_KEY`/`OPENAI_API_KEY`。缺少 key 时仅 `generate-layer` 进入 `awaiting_configuration`，本地 compose 仍可运行。详见 [地图拼接](map-stitcher.md)。
+key 只来自 runtime 进程内设置或 `GEMINI_API_KEY`/`OPENAI_API_KEY`/`TOKENHUB_API_KEY`。缺少 key 时原图与扩图进入 `awaiting_configuration`，本地 compose 仍可运行。详见 [地图拼接](map-stitcher.md)。
 
 ## 8. 交互物适配器
 
 `interactable-editor` 接受：
 
-- `operation: "export-godot"`；
+- `operation: "save-project"` 或 `"export-godot"`；
 - `project`：完整 `InteractableProject`；
 - 可选 `selectedDefinitionIds`：只导出选中定义；
 - 可选外层 `targetProfile` 选择 `generic` 或 `copyworms`。
 
 字段默认值和详细约束以 `features/interactable-editor/contract.mjs` 为编辑源，并同步到 manifest。完整请求见 `examples/requests/interactable-export.json` 与 `examples/requests/interactable-copyworms-export.json`。
 
-适配器打包固定 GDScript runtime、`.tres` 定义、可编辑 `.tscn` 场景、原始图像/音频、安装说明和 round-trip 源数据。它不运行 Godot，也不连接 copyWorms 或外部服务。输出包括 `interactables.zip`（copyWorms profile 为 `interactables-copyworms.zip`）、`interactable-project.json` 和 `result.json`。
+`save-project` 只持久化完整源工程，不接受导出专用选择与 profile。`export-godot` 打包固定 GDScript runtime、`.tres` 定义、可编辑 `.tscn` 场景、原始图像/音频、安装说明和 round-trip 源数据。它不运行 Godot，也不连接 copyWorms 或外部服务。输出包括 `interactables.zip`（copyWorms profile 为 `interactables-copyworms.zip`）、`interactable-project.json` 和 `result.json`。
 
 素材路径必须位于工作区；MCP/CLI 也可提交支持类型的 data URL。浏览器上传返回 workspace-relative `source`、`mime` 和 `size`，任务 JSON 只携带路径。详见 [独立交互物编辑器](interactable-editor.md)。
 
@@ -207,7 +211,7 @@ key 只来自 runtime 进程内设置或 `GEMINI_API_KEY`/`OPENAI_API_KEY`。缺
 
 ## 10. 安全要求
 
-- connector token 只从服务端环境读取，严禁进入 input、metadata、result、日志或浏览器存储。
+- connector token 从服务端环境或专用受保护配置读取，严禁进入 input、metadata、result、日志或浏览器存储。
 - 外部请求必须有明确授权，并报告 provider 和任务状态。
 - 本地路径在读取前必须解析到仓库允许范围；输出必须解析到任务目录。
 - 远端部署 bridge 时必须另加认证、TLS、速率/大小限制和审计，不能直接暴露默认回环服务。
@@ -219,4 +223,22 @@ key 只来自 runtime 进程内设置或 `GEMINI_API_KEY`/`OPENAI_API_KEY`。缺
 
 ## Agent 第一阶段扩展
 
-共享 Runtime 的 `agentRequest` 供 MCP、CLI `agent <operation> --input <json-file>` 与 HTTP `POST /v1/agent/<operation>` 使用。operation 为 environment、start、presets、tasks、result、artifact。查询参数也通过 JSON 传递；未知字段和越界产物均被拒绝。artifact 在 HTTP/CLI 返回预览 base64，MCP 转换成原生 image 内容；原始产物不被修改。具体工具名和审核规则见 [第一阶段验收](agent-phase1-acceptance.md)。
+共享 Runtime 的 `agentRequest` 供 MCP、CLI `agent <operation> --input <json-file>` 与 HTTP `POST /v1/agent/<operation>` 使用。当前 operation 为 guidance、environment、start、frontend、presets、interactable-template、tasks、assets、asset、asset-manifest、result、artifact。工具映射见 [Agent 客户端接入](agent-clients.md)。查询参数也通过 JSON 传递；未知字段和越界产物均被拒绝。artifact 在 HTTP/CLI 返回预览 base64，MCP 转换成原生 image 内容；原始产物不被修改。具体工具名和审核规则见 [第一阶段验收](agent-phase1-acceptance.md)。
+
+### 只读作品结果与展示
+
+`POST /v1/agent/result` 使用 `{ taskId }` 或 `{ jobId, candidateIndex? }`，可加布尔 `detail`；两个身份不能同时传入。task 查询也可指定已存在的序列帧 `candidateIndex`。此操作读取已有记录，不创建执行任务、不刷新收费生成、不操作浏览器。
+
+前端代理为 `GET /api/workbench/result?taskId=...`（也支持 jobId/candidateIndex/detail）。共享返回新增 `presentation`：作品标题、真实阶段摘要、精确编辑链接、预览、只导航的 actions、问题和技术详情。已有结果、产物验证字段保留；native job 不冒充工作台 task，不声称产物已转存或已验证。MCP 默认投影简明文本，`detail:true` 提供兼容旧客户端的完整文本 JSON。
+
+## 资产目录（MCP 0.8.0）
+
+新增 list_assets / get_asset / get_asset_manifest，分别对应共享 agent 操作 assets / asset / asset-manifest。详见 [资产目录、范围与验收](asset-catalog.md)。查询不产生任务；运行 `npm run test:assets` 验证分页、候选、去重、文件校验和 MCP/HTTP 一致性。
+
+### 序列帧 Godot 交付
+
+SpritePipeline `export` 沿用原有输入和审批契约，同时生成 Godot ZIP。结果 `godotPackage` 指向本次任务目录的 `sprite-frames.godot.zip`；原生服务以 `job.export.godot_package_path` 标记可用包。适配器只有收到该字段时才请求 `/v1/jobs/{job_id}/exports/godot`，保留旧服务/旧记录兼容。资产库只下载已有包，不为了下载触发新导出。具体导入方法见[序列帧功能](sprite-generator.md#godot-spriteframes-包导出)。
+
+### 地图原图与混元协议
+
+`generate-origin` 只接收 prompt、provider 与 aspectRatio（1:1 / 3:2 / 2:3），不接收已有地图，返回实际尺寸图片和 `requiresAdoption:true`；前端预览采用后才替换中心图。`hunyuan-image-3` 对应 `hy-image-v3`，经 TokenHub 生图接口返回临时图片 URL 后立即转存。扩图以透明模板保护原像素；不是专用像素级扩图承诺。完整配置与限制见 [地图手册](map-stitcher.md)。以上操作仅供手动地图前端使用。

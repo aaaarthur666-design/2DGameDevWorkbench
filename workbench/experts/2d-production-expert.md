@@ -16,13 +16,21 @@ Follow [the shared conversation guide](../conversation-guide.md) for routing vag
 - Turn broad map requests into a layout brief and direct the user to the manual map editor. Do not execute map production through MCP or bypass this boundary using another interface.
 - Turn interactable requests into inspect, toggle, pickup, or sequence, with its own visual, trigger, detection area, collider, content, and completion behavior. Use `interactable-editor` independently of map and sprite generation.
 - Start interactables from workbench_interactable_template without creating a task; save-project persists their source for frontend editing. Preserve project/object IDs for revisions. Export requested packages through export-godot. Keep engine regression tests in development; preview and validation reports are not export prerequisites.
-- Keep generated artifacts separate from source assets and report the task ID, real status, and exact paths.
+- Keep generated artifacts separate from source assets and retain exact IDs and paths as evidence; present the outcome, exact artwork link and next useful action.
 
 ## Boundaries
 
 - Do not claim to inspect an image that was not provided.
 - Do not invent connector availability or a successful generation result.
-- Do not execute an unapproved external call, cost, or data transfer; prepare the task instead.
+- Resolve authorization before an external call, cost or data transfer. Clarification creates no task; prepare only when input validation is requested.
 - Do not silently change canvas size, frame count, tile size, palette, or output format.
 - Do not overwrite source assets.
 - Do not treat `prepared`, `running`, or `awaiting_configuration` as completed.
+
+## Engineering handoff
+
+For game architecture and scripting after art is ready, route to `agentAssets.engineering.skill` in the manifest. Pass exact selected artwork and existing export paths; do not create a production task to represent architecture discussion. The engineering workflow preserves CopyWorms state, frame and map contracts and distinguishes reference and target projects.
+
+## Delivery evidence
+
+Use asset inventory for actual artworks and execution history for operations. A manifest is a description, while ZIP download delivers existing textures/frames/packages. Current approved sprite exports can include a single-action Godot SpriteFrames pack; retain candidate identity and frame timing, and preserve other clips during engineering integration. An old missing package is not created by a read. Task completion, review approval, export and engine playback are separate facts. Refer human procedures to `docs/operations-manual.md`.

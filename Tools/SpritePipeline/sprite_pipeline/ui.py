@@ -349,6 +349,30 @@ def _animation_player_embed(job_id: str, candidate: Any) -> str:
             'title="动画播放检查" sandbox="allow-scripts allow-same-origin"></iframe>')
 
 
+def _export_download_files(service: SpritePipelineService, job_id: str | None, candidate_index: int | None = None) -> tuple[str | None, str | None, list[str]]:
+    """Show saved exports again on selection/reload, without exporting or modifying a job."""
+    if not job_id:
+        return None, None, []
+    try:
+        job = service.get_job(str(job_id))
+        record = job.export
+        if record is None or (candidate_index is not None and record.candidate_index != int(candidate_index)):
+            return None, None, []
+        def existing(value: str | None) -> str | None:
+            if not value:
+                return None
+            path = service.settings.resolve_record_path(value).resolve()
+            path.relative_to(service.settings.exports_dir.resolve())
+            return str(path) if path.is_file() else None
+        return (
+            existing(record.sheet_path),
+            existing(record.godot_package_path),
+            [path for value in (record.preview_path, record.recipe_path, record.qa_path) if (path := existing(value))],
+        )
+    except Exception:
+        return None, None, []
+
+
 def build_ui(
     root: str | Path | None = None,
     *,
@@ -2355,22 +2379,20 @@ def build_ui(
         selected = current if current in values else choices[0][1] if choices else None
         return gr.update(choices=choices, value=selected), *export_projection(selected)
 
-    def export_one(job_id: str | None, candidate_index: int | None, filename: str, overwrite: bool) -> tuple[str, str | None, list[str], dict[str, Any]]:
+    def export_downloads(job_id: str | None, candidate_index: int | None = None) -> tuple[Any, ...]:
+        return _export_download_files(service, job_id, candidate_index)
+
+    def export_one(job_id: str | None, candidate_index: int | None, filename: str, overwrite: bool) -> tuple[str, str | None, str | None, list[str], dict[str, Any]]:
         try:
             job = service.export_candidate(str(job_id), int(candidate_index), ExportOptions(filename=(filename or "").strip(), overwrite=bool(overwrite)))
             assert job.export is not None
             return (
-                _notice("ok", "Sprite Sheet 已导出到用户导出目录", "文件与软件代码分开保存，不会自动覆盖游戏工程。"),
-                str(service.settings.resolve_record_path(job.export.sheet_path)),
-                [
-                    str(service.settings.resolve_record_path(job.export.preview_path)),
-                    str(service.settings.resolve_record_path(job.export.recipe_path)),
-                    str(service.settings.resolve_record_path(job.export.qa_path)),
-                ],
+                _notice("ok", "PNG 与 Godot 动画包已导出", "将 Godot 包中的 forge_sprites 文件夹放进项目，再使用 SpriteFrames 资源或拖入动画场景，无需逐帧添加。"),
+                *_export_download_files(service, job.job_id, int(candidate_index)),
                 {"ok": True, "job": job.model_dump(mode="json")},
             )
         except Exception as exc:
-            return _notice("error", "导出没有完成", _human_error(exc)), None, [], _error_payload(exc)
+            return _notice("error", "导出没有完成", _human_error(exc)), None, None, [], _error_payload(exc)
 
     def run_demo() -> tuple[Any, ...]:
         job = None
@@ -2559,7 +2581,7 @@ def build_ui(
                             open_asset_button = gr.Button("打开所选任务", variant="primary", scale=1, elem_classes=["compact-action"])
                             refresh_asset_catalog_button = gr.Button("刷新", scale=1, elem_classes=["compact-action"])
                     asset_catalog_status = gr.HTML(initial_asset_catalog)
-                    with gr.Accordion("记录中的候选画面", open=False) as record_content_panel:
+                    with gr.Accordion("记录中的候选画面", open=False, elem_id="artwork-candidate") as record_content_panel:
                         asset_candidate = gr.Radio(
                             initial_asset[0].get("choices", []),
                             value=initial_asset[0].get("value"),
@@ -2821,7 +2843,7 @@ def build_ui(
                     )
 
             with gr.Tab("4 · 导出", id="export"):
-                gr.HTML(_stage_header("4", "确认文件名并导出", "当前已采用的动画会自动带入；预览无误后导出固定 4×4 透明 PNG。"))
+                gr.HTML(_stage_header("4", "确认文件名并导出", "当前已采用的动画会自动带入；一次导出透明 PNG 和 Godot SpriteFrames 动画包，导入后无需手动添加帧。"))
                 with gr.Group(elem_classes=["context-panel"]):
                     with gr.Row():
                         export_job = gr.Dropdown(initial_exports, value=initial_export_job, label="当前导出的动画", filterable=False, elem_classes=["static-choice"], scale=6)
@@ -2837,9 +2859,11 @@ def build_ui(
                         export_filename = gr.Textbox(value=initial_export[3].get("value", ""), label="文件名", placeholder="例如：赛博人物行走.png")
                         with gr.Accordion("覆盖设置", open=False, elem_classes=["advanced-panel"]):
                             export_overwrite = gr.Checkbox(label="允许覆盖工具暂存区内的同名文件")
-                        export_button = gr.Button("导出 PNG Sprite Sheet", variant="primary", interactive=bool(initial_export[4].get("interactive", False)), elem_classes=["primary-action"])
+                        export_button = gr.Button("导出 PNG + Godot 包", variant="primary", interactive=bool(initial_export[4].get("interactive", False)), elem_classes=["primary-action"])
                         export_status = gr.HTML()
-                        exported_sheet = gr.File(label="导出的 Sprite Sheet PNG", interactive=False)
+                        exported_godot = gr.File(label="Godot SpriteFrames 包（ZIP）", interactive=False)
+                        gr.Markdown("**Godot 用法：** 将 ZIP 中的 `forge_sprites` 文件夹放入项目；把 `sprite_frames.tres` 赋给 AnimatedSprite2D，或直接拖入 `animated_sprite.tscn`。")
+                        exported_sheet = gr.File(label="Sprite Sheet PNG", interactive=False)
                 with gr.Accordion("附加文件：预览、配方与 QA 报告", open=False, elem_classes=["advanced-panel"]):
                     export_attachments = gr.File(label="附加文件", file_count="multiple", interactive=False)
                     export_details = gr.JSON(label="导出记录")
@@ -3273,27 +3297,63 @@ def build_ui(
                 attach_provider_id,
             ],
         )
-        def load_workbench_entry(current: str | None, request: gr.Request) -> tuple[Any, ...]:
-            """Restore an explicitly linked job without generating or changing its state."""
+        def load_workbench_entry(current: str | None, request: gr.Request) -> dict[Any, Any]:
+            """Open the linked job's visible details without changing its saved state."""
+            from .workbench_links import selected_candidate
+
             requested = request.query_params.get("workbench_job", "") if request else ""
+            if not requested:
+                catalog = reload_saved_asset_catalog(current)
+                return {task_job: catalog[0], asset_catalog_status: catalog[1]}
+
             choices = saved_asset_choices()
-            if requested and requested in {value for _label, value in choices}:
-                return (
-                    gr.update(selected="assets"),
-                    gr.update(choices=choices, value=requested),
-                    *open_saved_asset(requested),
-                )
-            catalog = reload_saved_asset_catalog(current)
-            message = (
-                _notice("warn", "找不到所选任务", "请在此服务的已保存资产目录中选择任务；没有创建或重新提交生成。")
-                if requested else catalog[1]
-            )
-            return gr.update(), catalog[0], message, *[gr.update() for _ in [*asset_outputs, *task_outputs]]
+            found = requested in {value for _label, value in choices}
+            updates = {
+                workflow_tabs: gr.update(selected="assets"),
+                library_action_status: "",
+                library_detail_panel: gr.update(open=True),
+                record_content_panel: gr.update(open=True),
+                library_detail_image: gr.update(value=None, visible=False),
+                library_download: gr.update(value=[], visible=False),
+                task_job: gr.update(choices=choices, value=requested if found else None),
+                **dict(zip([asset_catalog_status, *asset_outputs, *task_outputs], open_saved_asset(None))),
+            }
+            if not found:
+                notice = _notice("warn", "找不到所选任务", "请在此服务的已保存资产目录中选择任务；没有创建或重新提交生成。")
+                updates.update({library_detail_title: notice, asset_catalog_status: notice})
+                return updates
+            try:
+                job = service.get_job(requested)
+                candidate = selected_candidate(job, request.query_params.get("workbench_candidate", ""))
+                if candidate is None:
+                    candidate = default_candidate(job)
+            except ValueError:
+                notice = _notice("warn", "所选候选不存在", "请重新选择作品版本；没有切换到其他候选，也没有重新生成。")
+                updates.update({library_detail_title: notice, asset_catalog_status: notice})
+                return updates
+            except Exception as exc:
+                notice = _notice("error", "作品暂时无法打开", _human_error(exc))
+                updates.update({library_detail_title: notice, asset_catalog_status: notice})
+                return updates
+            title = f"{job.character.display_name} · {job.action.display_name or job.action.action_id}"
+            if candidate is not None:
+                title += f" · 候选 {_candidate_letter(candidate)}"
+            updates[library_detail_title] = _notice("info", title, "已打开所选作品。可查看动画与逐帧画面，或进入播放检查。")
+            updates.update(dict(zip([asset_catalog_status, *asset_outputs, *task_outputs], open_saved_asset(requested, candidate))))
+            return updates
 
         demo.load(
             load_workbench_entry,
             inputs=task_job,
-            outputs=[workflow_tabs, task_job, asset_catalog_status, *asset_outputs, *task_outputs],
+            outputs=[workflow_tabs, *detail_outputs],
+            queue=False,
+        ).then(
+            fn=None,
+            inputs=asset_candidate,
+            js="""(candidate) => {
+              if (!new URLSearchParams(window.location.search).get('workbench_job')) return;
+              window.requestAnimationFrame(() => document.getElementById(candidate ? 'artwork-candidate' : 'artwork-detail')?.scrollIntoView({behavior: 'instant', block: 'start'}));
+            }""",
             queue=False,
         )
         def refresh_shared_api_state() -> tuple[Any, ...]:
@@ -3453,7 +3513,9 @@ def build_ui(
         refresh_export_button.click(refresh_exports, inputs=export_job, outputs=[export_job, *export_outputs], queue=False)
         export_job.input(export_projection, inputs=export_job, outputs=export_outputs, queue=False)
         export_candidate.input(export_projection, inputs=[export_job, export_candidate], outputs=export_outputs, queue=False)
-        export_button.click(export_one, inputs=[export_job, export_candidate, export_filename, export_overwrite], outputs=[export_status, exported_sheet, export_attachments, export_details])
+        export_button.click(export_one, inputs=[export_job, export_candidate, export_filename, export_overwrite], outputs=[export_status, exported_sheet, exported_godot, export_attachments, export_details])
+        export_job.change(export_downloads, inputs=[export_job, export_candidate], outputs=[exported_sheet, exported_godot, export_attachments], queue=False)
+        export_candidate.change(export_downloads, inputs=[export_job, export_candidate], outputs=[exported_sheet, exported_godot, export_attachments], queue=False)
 
         vision_provider.input(select_vision_provider, inputs=vision_provider, outputs=[vision_api_status, vision_api_key, vision_provider]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)
         save_vision_button.click(save_vision_key, inputs=[vision_api_key, vision_provider], outputs=[vision_api_status, vision_api_key]).then(generation_cost_html, inputs=[candidate_count, generate_action], outputs=generation_cost)

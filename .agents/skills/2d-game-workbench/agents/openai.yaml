@@ -1,4 +1,4 @@
 interface:
-  display_name: "2D Game Workbench"
-  short_description: "Drive reusable 2D game production tools"
-  default_prompt: "Use the 2D game workbench to complete this asset task."
+  display_name: "Forge 资产制作"
+  short_description: "驱动 Forge 角色美术与交互物制作，查找预览并交付真实资产"
+  default_prompt: "Use $2d-game-workbench to create, inspect or deliver Forge assets through the shared runtime, preserving manual map boundaries and existing artwork."

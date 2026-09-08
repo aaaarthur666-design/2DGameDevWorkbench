@@ -10,7 +10,7 @@
 首次安装：
 
 ```powershell
-npm install
+npm ci
 Copy-Item .env.example .env
 ```
 
@@ -67,7 +67,9 @@ npm run sprite-pipeline:setup
 | `NEXT_PUBLIC_SPRITE_PIPELINE_UI_URL` | 浏览器打开原生 SpritePipeline UI 的地址；不得包含 token |
 | `MAP_STITCHER_IMAGE_PROVIDER` | 可选的地图图像生成提供方 ID |
 | `GEMINI_API_KEY` | Nano Banana 2 提供方凭据 |
-| `OPENAI_API_KEY` | GPT Image 2 提供方凭据 |
+| `OPENAI_API_KEY` | GPT Image 2 地图提供方凭据 |
+| `TOKENHUB_API_KEY` | 混元 Image 3.0 地图生图；也可供序列帧默认混元视觉检查使用 |
+| `PIXELLAB_API_KEY` | 覆盖序列帧/角色原图受保护的已存凭据 |
 
 地图编辑器也允许把 key 只保存在当前本地 runtime 进程中；进程退出后该临时设置消失。任何密钥都不能写入客户端组件、任务记录或日志。
 
@@ -100,7 +102,7 @@ npm run workbench -- doctor --json
 - 明确区分“未配置”“处理中”“完成”和“失败”；
 - 对超时、错误体和返回文件进行归一化与验证；
 - 避免重试造成重复计费；异步查询必须复用原始上游任务 ID；
-- 在执行可能产生费用或数据出站的调用前，为 Agent 保留 `prepare` 路径。
+- 明确区分输入校验与执行授权：prepare 会写记录，讨论和等待授权不创建任务；外部执行必须有授权。
 
 ## 6. 验证矩阵
 
@@ -117,12 +119,16 @@ npm run workbench -- doctor --json
 | 交互物编辑器或 schema | schema 改动先运行 `npm run schema:interactable` 并检查 manifest diff；再运行 `npm run test:interactable`、`npm run test:interactable-http`；兼容配置另跑 `npm run test:interactable-copyworms` |
 | SpritePipeline 总控 | `npm run test:dev-supervisor` |
 | SpritePipeline 上游组件 | 在 `Tools/SpritePipeline` 安装 `requirements.lock` 后运行 `python -m pytest -q` 和 `python -m pip check` |
-| 仓库 Skill | 运行 Skill validator，并人工核对工具名、授权边界与文档链接 |
+| 资产目录与素材 ZIP | `npm run test:assets`，以及 MCP / HTTP / Agent acceptance 对应检查 |
+| Agent 结果展示与导航 | `npm run test:presentation`，以及 MCP / HTTP / Agent acceptance；页面改动加壳层检查 |
+| 前端服务启动与就绪 | `npm run test:frontend`、`npm run test:mcp`；桌面初始化加 `npm run test:desktop-services` |
+| 工程 Skill helper | `npm run test:engineering`；引擎行为设置 `GODOT_46_BIN` |
+| 仓库 Skill | 对每个变更 Skill 运行 validator，核对元数据、工具名、授权边界与相对链接 |
 | 纯文档 | `git diff --check`、相对链接检查、示例命令与当前清单核对 |
 
 当前 `package.json` 没有单独的 schema check 脚本。运行同步命令后应审查 `workbench/manifest.json` 的 diff；如果工作区原本干净，也可用 `git diff --exit-code -- workbench/manifest.json` 确认生成结果没有遗漏。存在有意的清单改动时不要把非零退出误判为失败。
 
-CI 会运行 doctor、MCP、适配器、HTTP、交互物、地图、Sprite 总控、lint、typecheck、build 和 SpritePipeline Python 测试。`test:workbench-shell`、`test:interactable-copyworms` 目前属于提交前的本地补充检查。
+CI 的实际步骤以 `.github/workflows/ci.yml` 为准：包含资产、展示、MCP、原图、任务隔离、适配器/HTTP、交互物、场景、地图、前端、Sprite 总控、工程、Agent acceptance 和代码检查，并有 Windows/macOS 初始化检查。`test:workbench-shell`、CopyWorms 实际工程和 Godot 引擎行为仍需按范围在本地补充；未配置引擎的 CI 不证明真实播放。
 
 ## 7. 数据与调试
 
@@ -139,7 +145,7 @@ CI 会运行 doctor、MCP、适配器、HTTP、交互物、地图、Sprite 总�
 
 - 根 README 的能力、端口和入口与当前实现一致；
 - [文档中心](README.md) 中所有当前文档和历史快照分类正确；
-- 新增字段已进入清单、功能手册和 Agent 指令；
+- 新增字段已进入清单、功能手册、Agent 指令和两个相关 Skills；同步维护 `docs/operations-manual.md`；
 - `THIRD_PARTY_NOTICES.md` 反映新增依赖、复制代码或兼容性来源；
 - 没有提交 `.env`、`work/`、`outputs/`、测试生成包或上游缓存；
 - 提交信息能区分实现、文档和上游同步。
@@ -178,3 +184,23 @@ npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健�
 使用 Vite 加载 TypeScript 的测试必须通过 `tests/helpers/vite-server.mjs` 创建服务器。每次测试使用 `work/test-runs/vite-<uuid>/cache`，不可与开发前端共用 `node_modules/.vite`。否则测试服务器会替换依赖索引，让仍在运行的网页请求旧模块时得到 `504 Outdated Optimize Dep`，表现为 `Failed to fetch dynamically imported module`。
 
 排查时同时检查页面入口和其 JavaScript 依赖的 HTTP 状态；入口返回 200 不代表整个页面可以加载。修复缓存后重启前端，再刷新旧页面；不要清空浏览器草稿或素材目录。服务没有闲置自动关闭机制，但关闭启动终端或某个受管理进程意外退出会影响服务。
+
+## Agent 展示回归
+
+`npm run test:presentation` 验证精确作品身份、状态、缺失产物和动画预览语义，CI 同步执行。展示 / 结果接口调整同时运行 MCP、HTTP、原图和 Agent acceptance；前端改动运行 shell、lint、typecheck、build。阶段一的 WorkBuddy 宿主验收见 [展示验收](agent-presentation-acceptance.md)，协议测试不代表宿主的浏览器或提问工具已实际执行。
+
+## 资产目录（MCP 0.8.0）
+
+新增 list_assets / get_asset / get_asset_manifest，分别对应共享 agent 操作 assets / asset / asset-manifest。详见 [资产目录、范围与验收](asset-catalog.md)。查询不产生任务；运行 `npm run test:assets` 验证分页、候选、去重、文件校验和 MCP/HTTP 一致性。
+
+## 游戏工程 Skill 验证
+
+`npm run test:engineering` 检查 Skill 的发现入口、真实 Frame Ronin 导出包接入、显式帧顺序/哈希与拒绝用例。设置 `GODOT_46_BIN` 后还会在隔离项目执行 Godot 4.6.x 的资源加载、播放/重播/事件、朝向、地图碰撞与重挂载契约检查。未配置引擎时明确跳过引擎检查，不能报告为引擎通过。产物保留在 `work/engineering-test-*`；不会读写用户游戏或调用外部模型。新 Skill 与原生产 Skill 均用 bundled `quick_validate.py` 校验。
+
+## 规范与操作手册维护
+
+根 `AGENTS.md` 负责 Agent 的范围、证据与工作流规则；两个 Skills 分别负责生产和工程；`workbench/conversation-guide.md` 还会通过 MCP discovery 提供给无 Skill 宿主。不能只更新一份而留下冲突指引。文档事实以清单与实现核对，授权始终来自用户及有效指令；接口存在不解除地图手动边界。
+
+完整操作正文维护在 `docs/operations-manual.md`。更新 DOCX 时使用可用的文档工具，从同一正文生成分级标题、目录和表格；逐页渲染检查中文、换行、目录与表格分页后再交付。正文或 DOCX 更新不代表运行过真实模型或目标游戏。
+
+纯规范变更至少检查 `git diff --check`、相对链接、所有引用脚本存在、MCP 名单与 manifest 一致；两个 Skill 分别执行宿主提供的 `quick_validate.py <skill-directory>`。对 discovery 共用引导的修改再运行 `test:mcp` 和 `test:engineering`，确认入口与共享内容一致。不要为文档验收调用收费生成或改动正式资产。

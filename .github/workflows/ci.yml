@@ -23,6 +23,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run workbench -- doctor --json
+      - run: npm run test:assets
+      - run: npm run test:presentation
       - run: npm run test:mcp
       - run: npm run test:reference-art
       - run: npm run test:task-isolation
@@ -60,6 +62,10 @@ jobs:
           cache: npm
       - run: npm ci
         working-directory: .
+      - run: npm run test:engineering
+        working-directory: .
+        env:
+          WORKBENCH_TEST_PYTHON: python
       - run: npm run test:agent-acceptance
         working-directory: .
         env:

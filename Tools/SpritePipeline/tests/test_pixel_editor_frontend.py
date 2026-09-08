@@ -131,7 +131,7 @@ def test_default_ui_flow_has_ordered_next_steps_and_replay() -> None:
     assert "从头播放" in (PROJECT_ROOT / "sprite_pipeline/static/animation_player.html").read_text(encoding="utf-8")
     assert "有标记问题：进入逐帧修补" in source
     assert "全部可用：采用并进入导出" in source
-    assert "导出 PNG Sprite Sheet" in source
+    assert "导出 PNG + Godot 包" in source
     assert "outputs=[review_action_status, workflow_tabs, *review_outputs, export_job, *export_outputs]" in source
 
 
