@@ -18,7 +18,9 @@ func run_checks() -> void:
 	check(boundary.get_child_count() == 4, "four perimeter walls")
 	var camera: Camera2D = player.get_node("Camera2D")
 	var visible_size := root.get_visible_rect().size / camera.zoom
-	check(visible_size.is_equal_approx(Vector2(1280, 720)), "camera sees 1280x720 world units")
+	check(is_equal_approx(visible_size.y, 300.0), "camera view height is 300 world pixels at zoom 1.2")
+	check(camera.get_parent() == player and camera.position_smoothing_enabled, "camera smoothly follows the player")
+	check(camera.position.is_equal_approx(Vector2(0.0, -42.0)), "camera follows the body center instead of the feet")
 	var view := root.canvas_transform.affine_inverse() * root.get_visible_rect()
 	print("VISIBLE_RECT ", view)
 	check(view.position.x >= -1 and view.position.y >= -1 and view.end.x <= 1537 and view.end.y <= 1025, "camera view stays inside map")
