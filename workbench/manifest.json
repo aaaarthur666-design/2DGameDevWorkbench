@@ -19,6 +19,7 @@
     "name": "Forge — 2D game dev workbench",
     "brand": { "name": "Forge", "tagline": "2D game dev workbench", "icon": "/favicon.svg?v=forge-play" },
     "taskDirectory": "work/tasks",
+    "sceneExportDirectory": "work/scene-exports",
     "outputDirectory": "outputs",
     "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }
   },
@@ -28,7 +29,7 @@
   ],
   "agentAssets": {
     "role": "external-client",
-    "assetCatalog": { "schemaVersion": 1, "route": "/assets", "guide": "docs/asset-catalog.md", "sources": ["runtime-tasks", "sprite-pipeline"], "browserDrafts": "not-indexed" },
+    "assetCatalog": { "schemaVersion": 1, "route": "/assets", "guide": "docs/asset-catalog.md", "sources": ["runtime-tasks", "sprite-pipeline", "scene-exports"], "browserDrafts": "not-indexed" },
     "conversationGuide": "workbench/conversation-guide.md",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",
     "engineering": { "skill": ".agents/skills/forge-game-engineering/SKILL.md", "guide": "docs/game-engineering.md", "mode": "external-agent", "engine": "Godot 4.6.x", "source": "https://github.com/flxBurnOut/copyWorms", "createsTask": false },

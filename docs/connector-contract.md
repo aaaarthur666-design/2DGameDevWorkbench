@@ -235,6 +235,10 @@ key 只来自 runtime 进程内设置或 `GEMINI_API_KEY`/`OPENAI_API_KEY`/`TOKE
 
 新增 list_assets / get_asset / get_asset_manifest，分别对应共享 agent 操作 assets / asset / asset-manifest。详见 [资产目录、范围与验收](asset-catalog.md)。查询不产生任务；运行 `npm run test:assets` 验证分页、候选、去重、文件校验和 MCP/HTTP 一致性。
 
+资产 kind 包含 character、animation、map、interactable、scene。scene 只读取已经完成的网页导出，返回 exportId、sceneId、sceneRevision，不增加自动场景制作操作；下载包含已有的源包和 Godot 包。浏览器草稿不自动收录。
+
+`tasks` 支持 query、capabilityId、status、limit（1–200）、offset（非负整数）、snapshot。搜索在全部未归档记录上执行，返回 totalTasks、totalNativeJobs、searchedTasks、nextOffset 和 snapshot；各来源独立分页，带回相同 snapshot 和 nextOffset 直到 null。Web `GET /v1/tasks` 使用本地记录分页，另支持 refresh，返回 tasks、total、nextOffset、snapshot。历史变化时拒绝旧快照，客户端从第一页重新查询。已归档记录仅从执行列表隐藏，资产与原始产物仍可读。
+
 ### 序列帧 Godot 交付
 
 SpritePipeline `export` 沿用原有输入和审批契约，同时生成 Godot ZIP。结果 `godotPackage` 指向本次任务目录的 `sprite-frames.godot.zip`；原生服务以 `job.export.godot_package_path` 标记可用包。适配器只有收到该字段时才请求 `/v1/jobs/{job_id}/exports/godot`，保留旧服务/旧记录兼容。资产库只下载已有包，不为了下载触发新导出。具体导入方法见[序列帧功能](sprite-generator.md#godot-spriteframes-包导出)。

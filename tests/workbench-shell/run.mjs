@@ -354,6 +354,28 @@ try {
     assert.equal(saves, 0);
   });
 
+  test('history reads older pages without losing or duplicating records', async () => {
+    const { readTaskHistory } = await server.ssrLoadModule('/lib/workbench/task-history.ts');
+    const source = Array.from({ length: 413 }, (_, i) => ({ id: `task-${i}` }));
+    const offsets = [];
+    const tasks = await readTaskHistory(async (url) => {
+      const params = new URL(url, 'http://localhost').searchParams;
+      const offset = Number(params.get('offset'));
+      offsets.push(offset);
+      assert.equal(params.get('refresh'), String(offset === 0));
+      if (offset) assert.equal(params.get('snapshot'), 'stable');
+      return { tasks: source.slice(offset, offset + 200), snapshot: 'stable', nextOffset: offset + 200 < source.length ? offset + 200 : null };
+    });
+    assert.deepEqual(offsets, [0, 200, 400]);
+    assert.deepEqual(tasks, source);
+    await assert.rejects(readTaskHistory(async () => ({ tasks: source.slice(0, 200) })), /重启/);
+    await assert.rejects(readTaskHistory(async () => ({ tasks: [], snapshot: 'stable', nextOffset: 0 })), /分页无效/);
+    let calls = 0;
+    await assert.rejects(readTaskHistory(async () => ++calls === 1
+      ? { tasks: source.slice(0, 200), snapshot: 'first', nextOffset: 200 }
+      : { tasks: [], snapshot: 'changed', nextOffset: null }), /历史已变化/);
+  });
+
   for (const { name, run } of tests) {
     try {
       await run();

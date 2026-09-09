@@ -252,12 +252,14 @@ const discoveryTools = [
   [
     'workbench_list_tasks',
     'tasks',
-    'Find recent workbench tasks and native SpritePipeline jobs, including work created in the web page. Native jobs use job_id, not workbench taskId.',
+    'Search all unarchived workbench tasks and native SpritePipeline jobs before pagination. Follow nextOffset with snapshot for older history. Native jobs use job_id, not workbench taskId. Archiving history does not remove assets.',
     {
       query: z.string().max(2000).optional(),
       capabilityId: z.string().optional(),
       status: z.string().optional(),
       limit: z.number().int().min(1).max(200).optional(),
+      offset: z.number().int().min(0).optional(),
+      snapshot: z.string().max(2000).optional(),
     },
   ],
   [

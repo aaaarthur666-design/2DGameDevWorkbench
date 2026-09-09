@@ -2489,6 +2489,8 @@ def build_ui(
         input_background_fill_hover="light-dark(var(--theme-light-surface), #0f1b30)",
         input_background_fill_hover_dark="light-dark(var(--theme-light-surface), #0f1b30)",
         input_border_color="light-dark(var(--theme-light-control-border), #3a4968)",
+        input_border_width="1px",
+        input_border_width_dark="1px",
         input_border_color_dark="light-dark(var(--theme-light-control-border), #3a4968)",
         input_border_color_focus="light-dark(var(--theme-light-accent), #a894ff)",
         input_border_color_focus_dark="light-dark(var(--theme-light-accent), #a894ff)",

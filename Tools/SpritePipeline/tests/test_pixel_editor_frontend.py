@@ -144,7 +144,7 @@ def test_saved_assets_is_separate_and_startup_catalog_stays_lazy() -> None:
         'with gr.Tab("设置", id="settings"):', 1
     )[0]
     job_choices_source = source.split("def job_choices(", 1)[1].split(
-        "def saved_asset_choices()", 1
+        "def saved_asset_choices(", 1
     )[0]
 
     assert "任务安全中心" not in generate_section

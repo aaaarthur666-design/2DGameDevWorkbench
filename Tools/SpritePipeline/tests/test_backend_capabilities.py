@@ -145,7 +145,8 @@ class BackendCapabilityTests(unittest.TestCase):
         self.assertEqual(stored["sheet_columns"], 4)
         loaded, loaded_path = service.presets.load_character("project_boss")
         self.assertEqual(loaded, created)
-        self.assertEqual(loaded_path, character_path)
+        # Windows short paths and macOS temp symlinks can name the same file.
+        self.assertTrue(loaded_path.samefile(character_path))
 
     def test_export_filename_accepts_project_png_name_and_rejects_paths(self) -> None:
         self.assertEqual(ExportOptions(filename="赛博人物行走.png").filename, "赛博人物行走.png")

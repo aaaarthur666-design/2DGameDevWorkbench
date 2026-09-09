@@ -24,10 +24,14 @@ try {
   const parent = { postMessage() {} };
   const notifications = [];
   const child = { contentWindow: { postMessage: (message, origin) => notifications.push([message, origin]) }, src: 'http://127.0.0.1:7860/pixel-editor' };
-  const document = { documentElement: root, body: root, readyState: 'complete', getElementById: () => null, querySelectorAll: selector => selector === '.pixel-editor-frame' ? [child] : [], addEventListener() {} };
+  const playerMessages = [];
+  const player = { contentWindow: { postMessage: (message, origin) => playerMessages.push([message, origin]) }, src: 'http://127.0.0.1:7860/animation-player?job=example' };
+  const frames = [child];
+  let mounted;
+  const document = { documentElement: root, body: root, readyState: 'complete', getElementById: () => null, querySelectorAll: selector => selector === '.pixel-editor-frame, .animation-player-frame' ? frames : [], addEventListener() {} };
   const window = { parent, addEventListener: (name, fn) => events.set(name, fn), dispatchEvent() {} };
   const localStorage = { getItem: () => 'dark', setItem: () => { throw new Error('Embedded theme must not write data'); } };
-  runInNewContext(script, { document, window, localStorage, location: { origin: 'http://127.0.0.1:7860', href: 'http://127.0.0.1:7860/', search: '?workbench_embedded=1&workbench_origin=http://localhost:3000&workbench_theme=light' }, URL, URLSearchParams, Event, matchMedia: () => ({ matches: false, addEventListener() {} }), MutationObserver: class { observe() {} } });
+  runInNewContext(script, { document, window, localStorage, location: { origin: 'http://127.0.0.1:7860', href: 'http://127.0.0.1:7860/', search: '?workbench_embedded=1&workbench_origin=http://localhost:3000&workbench_theme=light' }, URL, URLSearchParams, Event, matchMedia: () => ({ matches: false, addEventListener() {} }), MutationObserver: class { constructor(callback) { mounted = callback; } observe() {} } });
   assert.equal(root.dataset.theme, 'light');
   const message = events.get('message');
   message({ source: {}, origin: 'http://localhost:3000', data: { type: 'workbench:theme', theme: 'dark' } });
@@ -39,6 +43,18 @@ try {
   assert.equal(notifications.at(-1)[0].theme, 'dark');
   assert.equal(notifications.at(-1)[1], 'http://127.0.0.1:7860');
   assert.equal(child.src, 'http://127.0.0.1:7860/pixel-editor');
+
+  frames.push(player);
+  mounted([{ addedNodes: [{ nodeType: 1, matches: selector => selector.includes('.animation-player-frame') }] }]);
+  assert.equal(playerMessages.at(-1)[0].theme, 'dark');
+  const beforeReady = playerMessages.length;
+  message({ source: player.contentWindow, origin: 'https://untrusted.example', data: { type: 'workbench:theme-ready' } });
+  assert.equal(playerMessages.length, beforeReady);
+  message({ source: player.contentWindow, origin: 'http://127.0.0.1:7860', data: { type: 'workbench:theme-ready' } });
+  assert.equal(playerMessages.length, beforeReady + 1);
+  message({ source: parent, origin: 'http://localhost:3000', data: { type: 'workbench:theme', theme: 'light' } });
+  assert.equal(playerMessages.at(-1)[0].theme, 'light');
+  assert.equal(player.src, 'http://127.0.0.1:7860/animation-player?job=example');
 
   const palette = JSON.parse(await readFile('lib/workbench/theme-palette.json', 'utf8'));
   const luminance = value => value.slice(1).match(/../g).slice(0, 3).map(x => parseInt(x, 16) / 255).map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4).reduce((sum, x, index) => sum + x * [.2126, .7152, .0722][index], 0);

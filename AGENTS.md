@@ -40,11 +40,13 @@
 - `map-stitcher`: manual frontend production only, including original image generation, stitching and extension. MCP discovery/execution exclude it. Do not use CLI, HTTP or browser tools to bypass this boundary. Read-only inventory of saved map outputs and integration of already exported maps are allowed within the user's request.
 - `interactable-editor`: obtain task-free templates with `workbench_interactable_template`; persist complete projects with `save-project` and open the returned result link. Preserve project/object IDs on edits. `export-godot` exports inspect, toggle, pickup and sequence locally to Godot 4.6.x, using `generic` or the explicit `copyworms` profile. No PixelLab, SpritePipeline or Godot installation is required to export.
 - `scene-composer` is a manual `editorModules` entry, not a new executable MCP capability. It assembles existing maps and interactables; it does not generate a player or complete game.
+- Completed scene exports are indexed as `kind=scene`, one asset per exportId with saved source and Godot ZIPs. Read `workspace.sceneExportDirectory` from the manifest. Browser drafts are not automatically indexed.
 - Multi-capability requests use separate authorized tasks. Fixture/diagnostic providers prove orchestration only and must never be presented as user production art.
 
 ## Asset identity and data
 
 - Use `workbench_list_assets` for durable artwork and `workbench_list_tasks` for execution history. Follow `nextOffset` with `snapshot` for full inventory. One saved animation candidate is one asset; retry/check/export records are not additional artworks.
+- History queries also paginate across all unarchived records. Archiving hides history only; assets, source files, original creation times and provenance remain available from exact asset details.
 - “Latest three-candidate animation, candidate 2” uses structured candidate filters, then exact `get_asset`/`get_result` identity. Never substitute the library homepage for the requested detail page or silently choose another candidate.
 - `workbench_get_asset_manifest` describes an explicit selection; it does not copy textures, create a task or edit a game. The frontend's asset download supplies real files in a ZIP. Missing files and changed content must remain errors, not fabricated delivery.
 - Coverage excludes browser-only drafts, browser downloads and external game folders. Offline/partial results do not prove asset deletion. See [asset catalog](docs/asset-catalog.md).

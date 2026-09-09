@@ -18,7 +18,7 @@ import {
   agentRequest,
   archiveTaskHistory,
   findCapability,
-  listTasks,
+  listTaskPage,
   loadManifest,
   repositoryRoot,
   runConnector,
@@ -222,12 +222,15 @@ const server = http.createServer(async (request, response) => {
       const manifest = await loadManifest();
       const limit = Number(url.searchParams.get('limit') ?? 30);
       const refresh = url.searchParams.get('refresh') === 'true';
-      sendJson(response, 200, {
-        tasks: await listTasks(manifest, {
-          limit: Number.isInteger(limit) ? limit : 30,
-          refresh,
-        }),
-      });
+      sendJson(response, 200, await listTaskPage(manifest, {
+        limit,
+        offset: Number(url.searchParams.get('offset') ?? 0),
+        query: url.searchParams.get('query') ?? '',
+        capabilityId: url.searchParams.get('capabilityId') || undefined,
+        status: url.searchParams.get('status') || undefined,
+        snapshot: url.searchParams.get('snapshot') || undefined,
+        refresh,
+      }));
       return;
     }
     if (

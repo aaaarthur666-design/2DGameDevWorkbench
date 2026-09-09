@@ -10,6 +10,9 @@ MCP 0.8.0 增加三个只读工具，前端入口为“资产库”。资产与�
 - 动画 ID 为 `animation:<jobId>:<candidateIndex>`。创建、查询、检查和导出同一候选的多条任务不会增加资产数。旧的本地产物快照与当前原生资产区分标注。
 - 交互物以 projectId + definitionId 标识。完整保存更新当前对象集合；导出部分对象不删除其余对象。重新保存后不把旧导出包声称为当前版本。
 - 服务端地图原图、扩图和拼接产物可以盘点；地图 MCP 自动制作仍不开放。
+- 完整场景读取 manifest 的 `workspace.sceneExportDirectory`（默认 `work/scene-exports/`）。每次成功导出以 `scene:<exportId>` 单独收录，保留 sceneId、sceneRevision 和导出时间；不同导出不会相互覆盖。新记录保存名称与素材/实例数量，旧记录从已有 `scene-source.zip` 读取这些信息。场景导出不是生产任务。
+
+归档只隐藏执行历史，不删除或隐藏资产。任务扫描忽略 `.archived.json` 等内部索引；原生作品库读取包含已归档作业的完整素材记录。动画快照保留原始作业创建时间（旧数据缺少时采用最早关联任务时间），交互物重新保存保留首次创建时间及来源任务。详情中的 `history` 可追溯已归档的制作/导出记录；当前下载只提供当前版本文件，不夹带旧导出包。
 
 浏览器 IndexedDB 草稿、浏览器下载和外部游戏目录没有自动扫描。仅在浏览器中保存的地图、场景与交互物需回原工具查看；不能把当前目录无匹配说成所有资产都不存在。浏览器交互物通过已有 save-project 保存到 runtime 后可被收录。
 
@@ -25,7 +28,7 @@ MCP 0.8.0 增加三个只读工具，前端入口为“资产库”。资产与�
 | workbench_get_asset | asset | assetId |
 | workbench_get_asset_manifest | asset-manifest | assetIds，1–100 个；projectName 可选 |
 
-kind 为 character / animation / map / interactable。sortBy 为 createdAt（默认）或 updatedAt；原生素材没有创建时间时保留未知，不把最近打开时间伪装成生成时间。limit 默认为 24，最高 100。返回 nextOffset 不为空时继续分页，并带回 snapshot；目录变化时从第一页重新查询，避免重复或漏项。
+kind 为 character / animation / map / interactable / scene。sortBy 为 createdAt（默认）或 updatedAt；原生素材没有创建时间时保留未知，不把最近打开时间伪装成生成时间。limit 默认为 24，最高 100。返回 nextOffset 不为空时继续分页，并带回 snapshot；目录变化时从第一页重新查询，避免重复或漏项。
 
 `query` 是名称关键词。让 Agent 将“最新一组三个候选中的第二个”映射为 candidateCount=3、candidateIndex=2、kind=animation、sortBy=createdAt、limit=1；不要把整句指令作为关键词搜索。
 
@@ -33,9 +36,15 @@ get_asset 返回尺寸、朝向/帧率（来源提供时）、文件存在性、
 
 get_asset_manifest 返回 `manifest` 和 `markdown`，供 Agent 交接，不会写任务、复制文件或改动游戏工程。Agent 可在用户指定的位置保存返回内容，不能自动覆盖项目已有资产。
 
-前端“下载所选素材”和详情页“下载素材（ZIP）”调用 `POST /api/workbench/assets/download`，由共享资产目录打包真实素材，再通过 `POST /v1/assets/download` 返回 `forge-assets.zip`。每件素材有独立文件夹：原图和地图提供图片，动画提供按顺序命名的 PNG 帧、已有 GIF、精灵图和 Godot SpriteFrames ZIP；交互物提供可重新打开的源工程及已有 Godot 包。包内附可读的尺寸、帧率和当前状态说明，不以描述清单替代素材。
+前端“下载所选素材”和详情页“下载素材（ZIP）”调用 `POST /api/workbench/assets/download`，由共享资产目录打包真实素材，再通过 `POST /v1/assets/download` 返回 `forge-assets.zip`。每件素材有独立文件夹：原图和地图提供图片，动画提供按顺序命名的 PNG 帧、已有 GIF、精灵图和 Godot SpriteFrames ZIP；交互物提供可重新打开的源工程及已有 Godot 包；完整场景提供原字节的 `scene-source.zip` 和 `scene-godot.zip`。将场景源包导入场景组装器可继续编辑。包内附可读的尺寸、帧率和当前状态说明，不以描述清单替代素材。
 
-下载仅复制登记的当前文件字节到响应，不创建任务或重新执行审核、生成、引擎导出。未审核动画可以下载当前帧，审核状态保持原样。尚未导出的交互物只有源工程，不承诺已有引擎包。按来源及候选分别命名，避免同名覆盖；缺失文件或打包期间内容变化时明确报错。每次最多 100 件、源文件总量最多 128 MB，超过时分批下载。
+下载仅复制登记的当前文件字节到响应，不创建任务或重新执行审核、生成、引擎导出。未审核动画可以下载当前帧，审核状态保持原样。尚未导出的交互物只有源工程，不承诺已有引擎包。按来源及候选分别命名，避免同名覆盖；缺失文件或打包期间内容变化时明确报错。每次最多 100 件、普通素材源文件总量最多 128 MB；包含完整场景时总量上限为 768 MB，场景单文件上限为 512 MB。超过时分批下载。
+
+## 执行历史分页
+
+`workbench_list_tasks` / `agent tasks` 在全部未归档任务中搜索，再分页，不局限于最近 200 条。输入新增 offset、snapshot；每页 limit 上限仍为 200，返回 totalTasks、totalNativeJobs、searchedTasks、nextOffset、snapshot。两个来源各自按相同 offset 分页；nextOffset 为 null 才表示都已读完。目录变动时从第一页重新查询。
+
+Web 的 `/api/workbench/tasks` 代理 `/v1/tasks`，支持相同的本地任务搜索和分页，返回 tasks、total、nextOffset、snapshot。工作台会读完各页后更新制作历史与本地搜索，不以首屏替代全量。归档后的具体记录仍可由资产详情链接读取，不重新加入历史列表。
 
 ## 前端与可用性
 

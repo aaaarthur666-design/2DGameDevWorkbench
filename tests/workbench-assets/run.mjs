@@ -2,7 +2,7 @@ import '../helpers/runtime-workspace.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile, readdir, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import JSZip from 'jszip';
@@ -14,7 +14,12 @@ import {
   agentRequest,
   persistTask,
   repositoryRoot,
+  archiveTaskHistory,
+  listTasks,
+  listTaskPage,
 } from '../../lib/workbench/runtime.mjs';
+import { createScene } from '../../features/scene-composer/model.mjs';
+import { createScenePackage, readScenePackage } from '../../features/scene-composer/package.mjs';
 import {
   readAssetPreview,
   buildAssetArchive,
@@ -64,6 +69,13 @@ const server = createServer((req, res) => {
   if (offline) {
     res.writeHead(503);
     res.end('{}');
+    return;
+  }
+  if (req.url === '/v1/jobs') {
+    res.end(JSON.stringify({ data: { jobs: Array.from({ length: 215 }, (_, i) => ({
+      job_id: `native-history-${String(i).padStart(3, '0')}`, status: 'review_required',
+      updated_at: '2026-08-01', created_at: '2026-08-01', character_name: '历史角色', action_name: '待检查动作',
+    })) } }));
     return;
   }
   if (req.url === '/v1/artworks') {
@@ -141,8 +153,10 @@ try {
       id,
     );
     await mkdir(output, { recursive: true });
-    for (const [name, bytes] of Object.entries(files))
+    for (const [name, bytes] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(output, name)), { recursive: true });
       await writeFile(path.join(output, name), bytes);
+    }
     const record = {
       schemaVersion: 1,
       id,
@@ -269,6 +283,11 @@ try {
     handoff.manifest.assets.find((a) => a.kind === 'interactable').status,
     'saved',
   );
+  const door = handoff.manifest.assets.find((a) => a.kind === 'interactable');
+  assert.equal(door.createdAt, '2026-01-01');
+  assert.deepEqual(door.taskIds, ['old-project', 'new-project']);
+  assert.deepEqual(door.history.map((h) => h.operation), ['export-godot', 'save-project']);
+  assert(!door.files.some((f) => f.name.endsWith('.zip')), 'saving newer source must not retain an obsolete export');
   assert.deepEqual((await readdir(taskDirectory)).sort(), before.sort());
   assert(
     (
@@ -394,6 +413,22 @@ try {
     ),
   );
   offline = false;
+  // Later checks/exports must preserve animation creation time and all source tasks,
+  // including a generation record which has no copied frame outputs.
+  await task('animation-start', 'sprite-generator', { operation: 'create-and-generate', jobId: 'snapshot-job' }, {}, '2025-01-01');
+  for (const [id, operation, at] of [['animation-check', 'check', '2026-01-01'], ['animation-export', 'export', '2026-08-01']]) {
+    await task(id, 'sprite-generator', { operation, jobId: 'snapshot-job' }, {
+      'frames/candidate-01/frame_000.png': png,
+      'result.json': JSON.stringify({ jobId: 'snapshot-job', candidates: [{ candidateIndex: 1, status: 'approved' }], jobRecord: { action: { fps: 12, loop: false } } }),
+    }, at);
+  }
+  const snapshotAsset = (await agentRequest(manifest, 'asset', { assetId: 'animation:snapshot-job:1' })).asset;
+  assert.equal(snapshotAsset.createdAt, '2025-01-01');
+  assert.equal(snapshotAsset.taskId, 'animation-export');
+  assert.deepEqual(snapshotAsset.taskIds, ['animation-start', 'animation-check', 'animation-export']);
+  assert.equal(snapshotAsset.history.length, 3);
+  assert.equal(snapshotAsset.fps, 12);
+
   client = new Client({ name: 'asset-inventory-test', version: '1.0.0' });
   await client.connect(
     new StdioClientTransport({
@@ -475,6 +510,91 @@ try {
     body: JSON.stringify({ assetIds: ['reference:escape-original'] }),
   });
   assert.equal(invalidDownload.status, 400);
+  // Search applies before the page limit, both API sources remain reachable past 200.
+  const historyMatch = await agentRequest(manifest, 'tasks', { query: 'reference-original', capabilityId: 'reference-art', limit: 1 });
+  assert.equal(historyMatch.tasks.length, 1);
+  assert(historyMatch.totalTasks >= 1);
+  assert(historyMatch.searchedTasks > 200);
+  const historyFirst = await agentRequest(manifest, 'tasks', { limit: 200 });
+  const historySecond = await agentRequest(manifest, 'tasks', { limit: 200, offset: historyFirst.nextOffset, snapshot: historyFirst.snapshot });
+  assert.equal(historyFirst.tasks.length + historySecond.tasks.length, historyFirst.totalTasks);
+  assert.equal(historyFirst.nativeJobs.length + historySecond.nativeJobs.length, 215);
+  assert.equal(historySecond.nextOffset, null);
+  assert(!historyFirst.tasks.some((t) => historySecond.tasks.some((u) => u.id === t.id)));
+  const historyMcp = await client.callTool({ name: 'workbench_list_tasks', arguments: { limit: 200, offset: 200, snapshot: historyFirst.snapshot } });
+  assert.deepEqual(historyMcp.structuredContent.tasks, historySecond.tasks);
+  const httpPage = await (await fetch(base + '/v1/tasks?limit=200')).json();
+  const httpOlder = await (await fetch(base + `/v1/tasks?limit=200&offset=${httpPage.nextOffset}&snapshot=${httpPage.snapshot}`)).json();
+  assert.equal(httpPage.tasks.length + httpOlder.tasks.length, httpPage.total);
+  const httpSearch = await (await fetch(base + `/v1/tasks?limit=1&query=${encodeURIComponent('"id":"reference-original"')}`)).json();
+  assert.equal(httpSearch.tasks[0].id, original.id);
+  await assert.rejects(listTaskPage(manifest, { offset: -1 }), /pagination/);
+  await assert.rejects(listTaskPage(manifest, { snapshot: 'stale' }), /历史已变化/);
+  await assert.rejects(agentRequest(manifest, 'tasks', { offset: -1 }), /offset/);
+  await assert.rejects(agentRequest(manifest, 'tasks', { snapshot: 'stale' }), /历史已变化/);
+  // Use the real local scene exporter through an isolated HTTP bridge. Cataloging
+  // and downloading must preserve exact ZIP bytes and never create task records.
+  const scene = createScene('资产库完整场景');
+  scene.map = { name: '测试地图', origin: { x: 0, y: 0 }, offset: { x: 0, y: 0 },
+    layers: [{ id: 'base', name: '地形', source: `data:image/png;base64,${png.toString('base64')}`, width: 128, height: 128, included: true, hidden: false, locked: false }],
+    collisions: [], source: `data:application/zip;base64,${mapBytes.toString('base64')}`, warnings: [] };
+  scene.order = ['base', 'actor'];
+  const taskNamesBeforeScenes = await readdir(taskDirectory);
+  const exports = [];
+  for (const revision of [1, 2]) {
+    scene.revision = revision;
+    const res = await fetch(base + '/v1/scene-composer/export', { method: 'POST', headers: { 'content-type': 'application/zip' }, body: await createScenePackage(scene) });
+    assert.equal(res.status, 200);
+    exports.push(await res.json());
+  }
+  // Cover old records which predate display metadata as well as modern exports.
+  const legacy = { ...exports[0] };
+  delete legacy.sceneName; delete legacy.instanceCount; delete legacy.materialCount; delete legacy.mapName;
+  const sceneDir = path.join(repositoryRoot, manifest.workspace.sceneExportDirectory);
+  await writeFile(path.join(sceneDir, `${legacy.exportId}.json`), JSON.stringify(legacy));
+  const scenes = await agentRequest(manifest, 'assets', { kind: 'scene' });
+  assert.equal(scenes.total, 2);
+  assert(scenes.assets.every((a) => a.title === scene.name && a.origin === 'scene-export' && a.taskIds.length === 0));
+  assert.deepEqual(scenes.assets.map((a) => a.sceneRevision).sort(), [1, 2]);
+  const sceneId = `scene:${exports[0].exportId}`;
+  const sceneDetail = (await agentRequest(manifest, 'asset', { assetId: sceneId })).asset;
+  assert.equal(sceneDetail.readiness.filesAvailable, true);
+  assert.equal(sceneDetail.engineValidated, false);
+  const sceneDownload = await buildAssetArchive(manifest, { assetIds: [sceneId] });
+  const sceneZip = await JSZip.loadAsync(sceneDownload.bytes);
+  for (const file of sceneDetail.files) {
+    const entry = Object.values(sceneZip.files).find((f) => f.name.endsWith('/' + file.name));
+    assert(entry);
+    assert.deepEqual(await entry.async('nodebuffer'), await readFile(path.join(repositoryRoot, file.path)));
+  }
+  const sourceEntry = Object.values(sceneZip.files).find((f) => f.name.endsWith('/scene-source.zip'));
+  assert.equal((await readScenePackage(await sourceEntry.async('uint8array'))).id, scene.id);
+  assert.deepEqual(await readdir(taskDirectory), taskNamesBeforeScenes);
+  const mcpScenes = await client.callTool({ name: 'workbench_list_assets', arguments: { kind: 'scene' } });
+  assert.deepEqual(mcpScenes.structuredContent.assets, scenes.assets);
+  assert.equal((await agentRequest(manifest, 'asset-manifest', { assetIds: [sceneId] })).manifest.assets[0].sceneRevision, 1);
+  // Missing recorded files stay visible and prevent an incomplete download.
+  await unlink(path.join(repositoryRoot, exports[1].outputs[0]));
+  assert.equal((await agentRequest(manifest, 'asset', { assetId: `scene:${exports[1].exportId}` })).asset.readiness.filesAvailable, false);
+  await assert.rejects(buildAssetArchive(manifest, { assetIds: [`scene:${exports[1].exportId}`] }), /缺失|不可读取/);
+  const forged = { ...legacy, exportId: 'scene-export-forged', outputs: legacy.outputs };
+  await writeFile(path.join(sceneDir, `${forged.exportId}.json`), JSON.stringify(forged));
+  const invalidScenes = await agentRequest(manifest, 'assets', { kind: 'scene' });
+  assert.equal(invalidScenes.total, 2);
+  assert(invalidScenes.coverage.issues.some((i) => i.record === 'scene-export-forged.json'));
+  await unlink(path.join(sceneDir, 'scene-export-forged.json'));
+
+  // Archive only hides history. The index file is never parsed as a task, and
+  // exact source/history links and downloadable assets still work afterwards.
+  const prior = await agentRequest(manifest, 'assets', { limit: 100 });
+  await archiveTaskHistory(manifest);
+  assert.deepEqual(await listTasks(manifest), []);
+  const archived = await agentRequest(manifest, 'assets', { limit: 100 });
+  assert.deepEqual(archived.assets, prior.assets);
+  assert(!archived.coverage.issues.some((i) => i.record === '.archived.json'));
+  assert.equal(archived.coverage.runtimeRecords, prior.coverage.runtimeRecords);
+  assert.deepEqual((await agentRequest(manifest, 'asset', { assetId: 'interactable:door-project:door' })).asset.history, door.history);
+  assert((await buildAssetArchive(manifest, { assetIds: [sceneId] })).fileCount === 2);
   console.log(
     'Assets: complete record scan, pagination, exact candidates, provenance deduplication, project revisions, file hashes, missing/escaped files, offline coverage, MCP/HTTP parity and actual ZIP bytes/candidate isolation/download errors passed; zero generation.',
   );

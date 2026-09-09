@@ -1,6 +1,6 @@
 ---
 name: 2d-game-workbench
-description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off pixel character reference art, sprite-animation frames, saved map assets, or independent Godot interactable objects. Map production remains manual in the frontend; use forge-game-engineering for game architecture and scripts.
+description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off pixel character reference art, sprite-animation frames, saved map assets, independent Godot interactable objects, or completed scene exports. Map and scene production remain manual in the frontend; use forge-game-engineering for game architecture and scripts.
 ---
 
 # Forge asset production
@@ -99,6 +99,8 @@ Use get_asset for the exact assetId before making a handoff; preserve source rel
 Coverage only includes persisted server assets. Do not claim browser-only maps, scenes, drafts or external project folders were inspected. Offline/partial coverage is not proof of deletion. Refer users to the existing editor for those drafts; map creation remains manual. Present useful category totals, preview links and unresolved issues without pasting the full file list into ordinary chat.
 
 ## Deliver actual export files
+
+Completed manual scene exports are indexed as kind=scene, with a distinct asset per exportId and the saved sceneId/revision. Download provides the original scene-source.zip and scene-godot.zip; import the source ZIP in the scene editor to continue. Reads do not export again or index browser drafts. Archived execution history never hides assets. Asset details retain original creation time and source history; list_tasks supports offset/snapshot pagination over all unarchived records, following nextOffset until null.
 
 Prefer an existing verified export. Current approved SpritePipeline export supplies PNG/sheet, preview, recipe/QA and a Godot ZIP via `godotPackage`; old records may omit the optional ZIP. Read `docs/sprite-generator.md` for the package contract. Do not regenerate, approve or re-export just because the user browsed or downloaded an older asset.
 

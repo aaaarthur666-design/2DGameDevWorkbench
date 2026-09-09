@@ -149,4 +149,4 @@ Web 工作台提供生产台、场景台、专业工具和高级配置。它负�
 
 ## 资产与工程交接
 
-`asset-catalog.mjs` 按来源身份合并任务产物与原生候选，分页盘点覆盖持久文件；浏览器草稿单独保留。清单描述资产，下载 ZIP 才交付文件。Sprite 导出同时提供 PNG 和单动作 Godot SpriteFrames 包，旧记录保留可选字段兼容。工程 Skill 优先消费现成包；它在授权目标项目按 CopyWorms 契约接入角色与地图，保留玩法计时、场景生命周期和第三方依赖。详见 [资产目录](asset-catalog.md) 与 [游戏工程](game-engineering.md)。
+`asset-catalog.mjs` 按来源身份合并任务产物与原生候选，并从 manifest 的 sceneExportDirectory 收录完整场景导出；浏览器草稿不自动收录。场景保留每次导出的独立版本与两个 ZIP，不冒充生产任务。执行历史归档与资产可见性分离，资产保留创建时间和来源记录；历史搜索先过滤全量未归档记录，再按快照分页。清单描述资产，下载 ZIP 才交付文件。Sprite 导出同时提供 PNG 和单动作 Godot SpriteFrames 包，旧记录保留可选字段兼容。工程 Skill 优先消费现成包；它在授权目标项目按 CopyWorms 契约接入角色与地图，保留玩法计时、场景生命周期和第三方依赖。详见 [资产目录](asset-catalog.md) 与 [游戏工程](game-engineering.md)。

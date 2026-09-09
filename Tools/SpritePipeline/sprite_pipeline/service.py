@@ -87,7 +87,10 @@ class SpritePipelineService:
             "actions": self.presets.list_actions(),
         }
 
-    def list_jobs(self) -> list[dict[str, Any]]:
+    def list_jobs(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
+        # Archiving hides execution history, never the durable artwork inventory.
+        if include_archived:
+            return self.store.list_jobs()
         path = self.settings.config_dir / "archived_jobs.json"
         archived = set(read_json(path)) if path.exists() else set()
         return [job for job in self.store.list_jobs() if job["job_id"] not in archived]

@@ -146,3 +146,5 @@ SpriteFrames 保留导出配方中的准确格位/有效帧顺序、动作映射
 MCP/CLI 的 `sprite-generator export` 同步返回 `godotPackage` 和实际 ZIP 文件，资产库下载也包含已有 Godot 包。服务端记录新增可选 `godot_package_path` / `godot_sha256`，下载接口为 `/v1/jobs/{job_id}/exports/godot`；旧记录无包时返回 404。ZIP 与 PNG 使用同一份已验证快照，并与其他导出文件一起原子发布/回滚；不绕过审批、不调用模型，不要求安装 Godot。
 
 验证：SpritePipeline `tests/test_godot_export.py` 覆盖包内容、下载、旧记录、UI 回调、源文件修改拒绝和回滚。设置 `GODOT_46_BIN` 后还会真实导入并播放，验证非规则帧序、别名、FPS、循环和脚底偏移。
+
+表单、像素修补编辑器与动画播放器跟随工作台深浅主题。API Key 等输入框使用可见边框和聚焦色；切换主题通过消息同步，不重载播放器。

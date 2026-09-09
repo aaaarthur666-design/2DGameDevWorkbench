@@ -121,7 +121,7 @@ npm run workbench -- doctor --json
 | 交互物编辑器或 schema | schema 改动先运行 `npm run schema:interactable` 并检查 manifest diff；再运行 `npm run test:interactable`、`npm run test:interactable-http`；兼容配置另跑 `npm run test:interactable-copyworms` |
 | SpritePipeline 总控 | `npm run test:dev-supervisor` |
 | SpritePipeline 上游组件 | 在 `Tools/SpritePipeline` 安装 `requirements.lock` 后运行 `python -m pytest -q` 和 `python -m pip check` |
-| 资产目录与素材 ZIP | `npm run test:assets`，以及 MCP / HTTP / Agent acceptance 对应检查 |
+| 资产目录与素材 ZIP | `npm run test:assets`（含场景导出收录、历史归档保留资产、超过 200 条的分页及来源时间），以及 MCP / HTTP / Agent acceptance 对应检查 |
 | Agent 结果展示与导航 | `npm run test:presentation`，以及 MCP / HTTP / Agent acceptance；页面改动加壳层检查 |
 | 前端服务启动与就绪 | `npm run test:frontend`、`npm run test:mcp`；桌面初始化加 `npm run test:desktop-services` |
 | 工程 Skill helper | `npm run test:engineering`；引擎行为设置 `GODOT_46_BIN` |
@@ -194,7 +194,7 @@ npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健�
 
 配色的唯一来源是 [theme-palette.json](../lib/workbench/theme-palette.json)。修改后运行 `npm run theme:sync`，同步生成 Web 与 SpritePipeline 使用的 `theme-tokens.css`；`npm run theme:check` 检查两份生成文件是否与源一致。样式用语义变量定义浅色，并通过 `light-dark()` 保留编辑器原有深色配色；新控件优先使用 `--theme-*`。不要把素材 tint、画笔颜色或导出像素替换为主题变量。
 
-序列帧首次加载通过 URL 接收主题，后续以校验 origin 和 source 的消息同步，不能通过改变 iframe 的 key 或 src 切换主题。像素修补页使用相同配色并只重绘辅助覆盖层。修改 Python 服务样式或主题脚本后需重启对应本机服务。
+序列帧首次加载通过 URL 接收主题，后续以校验 origin 和 source 的消息同步，不能通过改变 iframe 的 key 或 src 切换主题。像素修补页与动画播放器均接收实时主题同步，包括延迟挂载的播放器；修补页只重绘辅助覆盖层。Gradio 输入框必须显式设置浅色和深色的 `input_border_width`，仅设置边框颜色无法覆盖 Base 主题的零宽度默认值。修改 Python 服务样式或主题脚本后需重启对应本机服务。
 
 主题验证：`npm run test:theme`、`npm run test:workbench-shell`、`npm run lint`、`npm run typecheck`、`npm run build`。人工检查全部入口的两种主题、弹窗/菜单、加载与错误状态，以及序列帧输入在切换后仍保留。
 
