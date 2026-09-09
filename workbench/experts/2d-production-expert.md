@@ -51,3 +51,9 @@ Use asset inventory for actual artworks and execution history for operations. A 
 当前引擎基线为 Godot 4.7.x；启动时核对实际版本，工程测试使用 GODOT_47_BIN。历史 4.6.x 报告保留为来源证据。
 
 角色原图支持原生 size=64/128（默认 128，物品仍固定 128）。粗像素风优先 64，并以游戏实际尺寸检查；移送用简短外观 identityDescription，避免把原图姿势要求带入动画。
+
+Map assets include complete saved projects (mapType=project) and durable image/history assets (mapType=image); kind=map without mapType returns both. Preserve legacy asset IDs and exact source files. Resume a project through its exact editorPath; map-source.zip is editable source and can be imported into the map editor or scene composer, not used as a prop image or claimed as an existing Godot export. Project thumbnails remain display attachments. Browser-only legacy drafts require a manual open/save before server indexing; never bypass the manual-map boundary.
+
+地图卡缩略图是当前工程版本的显示附件，不是新的图片资产或引擎导出。无预览不等于工程损坏；旧工程需人工打开并保存后补齐。预览读取不生成图片。
+
+资产回收站仅整理目录：默认 list_assets 查询 active，scope=trashed 查询回收站；精确详情返回 trashedAt。用户通过前端核对选择后移入/恢复，生产源文件、任务历史和已有引用保持原样。来源离线仍可恢复目录状态，不代表文件已验证。

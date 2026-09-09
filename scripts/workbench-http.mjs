@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {
+  manageAssets,
   readAssetPreview,
   buildAssetArchive,
   buildAssetImport,
@@ -44,6 +45,8 @@ import {prepareGodotPackage} from '../features/godot-export/package.mjs';
 import {requestBinary, endpointUrl, bearerHeaders} from '../lib/workbench/adapters/http.mjs';
 const gameExportToken=randomUUID();
 const requireGameToken=request=>{if(request.headers['x-forge-game-token']!==gameExportToken)throw new Error('项目导出会话已失效，请关闭导出窗口后重试。');};
+
+import { readMapProject, saveMapProjectRequest } from '../lib/workbench/map-projects.mjs';
 
 const host = process.env.WORKBENCH_RUNTIME_HOST || '127.0.0.1';
 const port = readPort(process.env.WORKBENCH_RUNTIME_PORT, 8790);
@@ -106,6 +109,11 @@ const server = http.createServer(async (request, response) => {
       } catch (error) { sendJson(response, 400, { error: error.message }); }
       return;
     }
+    if (request.method === 'POST' && url.pathname === '/v1/assets/manage') {
+      try { sendJson(response, 200, await manageAssets(await loadManifest(), await readJsonBody(request))); }
+      catch (error) { sendJson(response, 400, { error: error.message }); }
+      return;
+    }
     if (request.method === 'POST' && url.pathname === '/v1/assets/download') {
       try {
         const archive = await buildAssetArchive(
@@ -130,7 +138,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/v1/assets/preview') {
       const assetId = url.searchParams.get('assetId');
       if (!assetId || assetId.length > 500) throw new Error('Invalid assetId.');
-      const preview = await readAssetPreview(await loadManifest(), assetId);
+      const preview = await readAssetPreview(await loadManifest(), assetId, url.searchParams.get('projectRevision') ?? undefined);
       response.writeHead(200, {
         'Content-Type': preview.mime,
         'Cache-Control': 'no-store',
@@ -160,6 +168,19 @@ const server = http.createServer(async (request, response) => {
       } catch (error) {
         sendJson(response, 400, { error: error.message });
       }
+      return;
+    }
+    if (url.pathname.startsWith('/v1/map-stitcher/projects/') && ['GET', 'PUT'].includes(request.method)) {
+      try {
+        const id = decodeURIComponent(url.pathname.slice('/v1/map-stitcher/projects/'.length));
+        if (request.method === 'PUT') sendJson(response, 200, await saveMapProjectRequest(request, repositoryRoot, id));
+        else {
+          const { bytes, record } = await readMapProject(repositoryRoot, await loadManifest(), id);
+          response.writeHead(200, { 'Content-Type': 'application/zip', 'Cache-Control': 'no-store',
+            'X-Map-Revision': String(record.revision), 'X-Content-Type-Options': 'nosniff' });
+          response.end(bytes);
+        }
+      } catch (error) { sendJson(response, error.status || 400, { error: error.message }); }
       return;
     }
     if (request.method === 'POST' && url.pathname.startsWith('/v1/agent/')) {

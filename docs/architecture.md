@@ -162,3 +162,11 @@ MCP 0.9.0 的 workbench_present 通过共享 runtime 写入 workspace.presentati
 ## Godot 游戏交付层
 
 [Godot 交付](godot-delivery.md)在生产导出与外部 Agent 游戏工程之间建立可核对的交付记录。features/godot-export 统一包结构，lib/workbench/game-export 负责项目选择、收件、安装计划、备份与证据；网页、MCP 和 CLI 共享实现。外部 Agent 根据实际项目写接入代码；不新增通用网页 Agent 或地图生产 capability。状态与目录由 manifest.gameExport/workspace.gameExportDirectory 描述。
+
+完整地图工程通过人工编辑器保存到 `workspace.mapProjectDirectory`，源 ZIP 位于版本化 outputs 目录，IndexedDB 保留本地备份。持久化独立于生产任务，资产库 map 类型仅索引完整工程。协议、冲突恢复和源包格式见 [地图工具](map-stitcher.md)；`npm run test:map-stitcher` 包含完整源包往返、并发版本冲突及文件完整性检查。
+
+地图源包可带可选的 `preview.png`。Bridge 验证 PNG 像素与尺寸，作为同版本的显示附件保存；失败不阻断源包记录提交。资产预览接口校验工程版本和附件哈希，不调用合成器或图片服务。浏览器缓存只依赖地图文档中的画面数据。
+
+### 资产回收站
+
+`asset-trash.mjs` 在 manifest 指定的独立索引保存稳定资产 ID、别名和移入时摘要，使用跨进程目录锁与原子替换。`asset-catalog.mjs` 在扫描后合并回收站状态，默认只列 active，来源离线时仍提供可恢复的摘要。Web manage 代理和 Bridge 共享同一管理函数，不改源文件、不新建任务；MCP 查询继续只读。

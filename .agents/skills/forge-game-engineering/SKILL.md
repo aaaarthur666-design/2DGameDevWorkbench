@@ -54,3 +54,11 @@ Project selection uses the in-page folder browser or an explicit typed path. Bro
 Engine selection: the current baseline is Godot 4.7.x. Verify the actual executable with --version and use its resolved path; a PATH alias or cached editor path may select a different installation. Historical CopyWorms 4.6.x evidence remains source history and must be revalidated on 4.7.x.
 
 For a requested character art replacement, inspect the target SpriteFrames at execution time and preserve its actual aliases, FPS, loop and controller behavior; old handoff notes may be stale. Native 64px art may need a larger visual-only scale to retain the previous world height. Derive scale and foot offset from actual alpha bounds and export anchor; leave collision and input logic unchanged. Record any animation metadata override in the target handoff.
+
+Map assets include complete saved projects (mapType=project) and durable image/history assets (mapType=image); kind=map without mapType returns both. Preserve legacy asset IDs and exact source files. Resume a project through its exact editorPath; map-source.zip is editable source and can be imported into the map editor or scene composer, not used as a prop image or claimed as an existing Godot export. Project thumbnails remain display attachments. Browser-only legacy drafts require a manual open/save before server indexing; never bypass the manual-map boundary.
+
+Map project thumbnails are optional, version-bound display attachments rendered locally by the manual editor. They are not separate map assets or engine exports. Missing previews do not imply missing source; legacy projects gain a thumbnail on the next manual open/save. Asset reads never render or generate a thumbnail.
+
+## Recoverable asset recycle bin
+
+Asset listing defaults to `scope=active`; use `scope=trashed` to inspect the recoverable recycle bin. Exact details expose `trashedAt`. The frontend confirms explicit selections before trash/restore; source files, original tool content, task history and existing scene references remain intact. This organizes the catalog and does not free disk space. A source being offline does not mean deletion; restoring a catalog entry does not repair missing files. Do not clean existing assets merely because the user requested implementation of the feature.

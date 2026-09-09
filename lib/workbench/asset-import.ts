@@ -11,6 +11,8 @@ export type ImportPurpose =
 export type LibraryAsset = {
   id: string;
   kind: string;
+  origin?: string;
+  mapType?: 'project' | 'image';
   title: string;
   revision?: string;
   statusLabel?: string;
@@ -37,7 +39,7 @@ export function purposesFor(asset: LibraryAsset, purposes: ImportPurpose[]) {
   return manifest.assetImports.filter(
     (rule) =>
       purposes.includes(rule.id as ImportPurpose) &&
-      rule.kinds.includes(asset.kind),
+      rule.kinds.includes(asset.kind) && (asset.origin !== 'map-project' || rule.id === 'map'),
   );
 }
 export function importLink(

@@ -1,4 +1,7 @@
 import '../helpers/runtime-workspace.mjs';
+import { mapProjectFixture } from '../helpers/map-project.mjs';
+import { saveMapProject } from '../../lib/workbench/map-projects.mjs';
+import { createMapProjectPackage } from '../../features/map-stitcher/project-package.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -21,6 +24,9 @@ import {
 import { createScene } from '../../features/scene-composer/model.mjs';
 import { createScenePackage, readScenePackage } from '../../features/scene-composer/package.mjs';
 import {
+  manageAssets,
+  buildAssetImport,
+  readAssetGodotPackage,
   readAssetPreview,
   buildAssetArchive,
 } from '../../lib/workbench/asset-catalog.mjs';
@@ -303,19 +309,52 @@ try {
     { operation: 'compose' },
     { 'stitched-map.png': png, 'godot-package.zip': mapBytes },
   );
+  nativeAssets.push({ id: 'map:legacy-native', kind: 'map', title: '旧导入图' });
+  assert.equal((await agentRequest(manifest, 'assets', { kind: 'map' })).total, 1, 'legacy map image remains discoverable');
+  const projectPng = await sharp(png).resize(16, 16).png().toBuffer();
+  const { draft: projectDraft } = await mapProjectFixture(projectPng);
+  const projectBytes = await createMapProjectPackage(projectDraft, projectPng);
+  await saveMapProject(repositoryRoot, manifest, 'map:fixture', 0, projectBytes);
+  await saveMapProject(repositoryRoot, manifest, 'map:fixture', 1, projectBytes);
+  const maps = await agentRequest(manifest, 'assets', { kind: 'map', mapType: 'project' });
+  assert.equal(maps.total, 1);
+  assert.equal(maps.assets[0].projectRevision, 2);
+  assert.equal(maps.assets[0].previewKind, 'image');
+  assert.deepEqual((await readAssetPreview(manifest, maps.assets[0].id)).bytes, projectPng);
+  await assert.rejects(readAssetPreview(manifest, maps.assets[0].id, 1), /版本已更新/);
+  assert(maps.assets[0].editorPath.endsWith('?map=map%3Afixture&saved=1'));
+  const allMaps = await agentRequest(manifest, 'assets', { kind: 'map' });
+  assert.equal(allMaps.total, 2);
+  const imageMaps = await agentRequest(manifest, 'assets', { kind: 'map', mapType: 'image' });
+  assert.equal(imageMaps.total, 1);
+  assert.equal(imageMaps.assets[0].id, 'map:saved-map:stitched-map');
+  const imageDetail = (await agentRequest(manifest, 'asset', { assetId: imageMaps.assets[0].id })).asset;
+  const oldMapDownload = await JSZip.loadAsync((await buildAssetArchive(manifest, { assetIds: [imageDetail.id] })).bytes);
+  assert(Object.keys(oldMapDownload.files).some((name) => name.endsWith('/map.png')));
+  assert(Object.keys(oldMapDownload.files).some((name) => name.endsWith('/godot-package.zip')));
+  assert.deepEqual((await readAssetGodotPackage(manifest, {assetId: imageDetail.id, revision: imageDetail.revision})).bytes, mapBytes);
+  const projectDetail = (await agentRequest(manifest, 'asset', {assetId: maps.assets[0].id})).asset;
+  const projectRequest = {assetId: projectDetail.id, revision: projectDetail.revision, purpose:'map'};
+  const reusable = await JSZip.loadAsync((await buildAssetImport(manifest, projectRequest)).bytes);
+  const importInfo = JSON.parse(await reusable.file('import.json').async('string'));
+  assert.equal(importInfo.files[0].name, 'map-source.zip');
+  assert.deepEqual(await reusable.file(importInfo.files[0].path).async('uint8array'), projectBytes);
+  await assert.rejects(buildAssetImport(manifest, {...projectRequest,purpose:'image'}), /不能/);
+  await assert.rejects(readAssetGodotPackage(manifest, projectRequest), /Godot 包/);
   const archiveIds = [
     'reference:reference-original',
     'character:transferred',
     'animation:original-job:1',
     'animation:original-job:2',
     'interactable:door-project:door',
-    'map:saved-map:stitched-map',
+    'map-project:map:fixture',
   ];
   const beforeArchive = await readdir(taskDirectory);
   const archive = await buildAssetArchive(manifest, { assetIds: archiveIds });
   assert.equal(archive.assetCount, 5);
   const zip = await JSZip.loadAsync(archive.bytes, { checkCRC32: true });
   const entries = Object.values(zip.files).filter((f) => !f.dir);
+  assert(!entries.some((f) => /^map\/.+\/preview\.png$/.test(f.name)), 'thumbnail is not an independent downloadable map asset');
   assert.equal(
     entries.filter((f) => f.name.endsWith('/frames/frame_000.png')).length,
     2,
@@ -331,18 +370,8 @@ try {
         .async('nodebuffer')
     ).equals(png),
   );
-  assert(
-    (
-      await entries.find((f) => f.name.endsWith('/map.png')).async('nodebuffer')
-    ).equals(png),
-  );
-  assert(
-    (
-      await entries
-        .find((f) => f.name.endsWith('/godot-package.zip'))
-        .async('nodebuffer')
-    ).equals(mapBytes),
-  );
+  assert((await entries.find((f) => f.name.endsWith('/map-source.zip')).async('nodebuffer')).equals(Buffer.from(projectBytes)));
+  assert(!entries.some((f) => f.name.endsWith('/map.png') || f.name.endsWith('/godot-package.zip')));
   assert.deepEqual(
     JSON.parse(
       await entries
@@ -595,6 +624,50 @@ try {
   assert.equal(archived.coverage.runtimeRecords, prior.coverage.runtimeRecords);
   assert.deepEqual((await agentRequest(manifest, 'asset', { assetId: 'interactable:door-project:door' })).asset.history, door.history);
   assert((await buildAssetArchive(manifest, { assetIds: [sceneId] })).fileCount === 2);
+  const recycledIds = [(await agentRequest(manifest, 'asset', { assetId: 'character:transferred' })).asset.id, 'animation:original-job:2', 'map-project:map:fixture', 'interactable:door-project:door', sceneId];
+  const originals = await Promise.all(recycledIds.map(async (assetId) => (await agentRequest(manifest, 'asset', { assetId })).asset));
+  const beforeTrash = await agentRequest(manifest, 'assets', { limit: 100 });
+  const namesBeforeTrash = await readdir(taskDirectory);
+  await assert.rejects(manageAssets(manifest, { operation: 'trash', assetIds: [sceneId, 'unknown:asset'] }), /不可读取/);
+  assert.equal((await agentRequest(manifest, 'assets', { scope: 'trashed' })).total, 0);
+  const moved = await fetch(base + '/v1/assets/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ operation: 'trash', assetIds: [...recycledIds, 'character:transferred'] }) });
+  assert.equal(moved.status, 200);
+  assert.equal((await moved.json()).count, 5);
+  const activeAfter = await agentRequest(manifest, 'assets', { limit: 100 });
+  assert.equal(activeAfter.total, beforeTrash.total - 5);
+  assert(activeAfter.assets.some((asset) => asset.id === 'animation:original-job:1'));
+  assert(activeAfter.assets.some((asset) => asset.id === 'animation:original-job:3'));
+  await assert.rejects(agentRequest(manifest, 'assets', { snapshot: beforeTrash.snapshot }), /已变化/);
+  const recycled = await agentRequest(manifest, 'assets', { scope: 'trashed', limit: 2 });
+  assert.equal(recycled.total, 5);
+  assert.equal((await agentRequest(manifest, 'assets', { scope: 'trashed', offset: recycled.nextOffset, snapshot: recycled.snapshot })).assets.length, 3);
+  assert((await agentRequest(manifest, 'asset', { assetId: 'character:transferred' })).asset.trashedAt);
+  const mcpTrash = await client.callTool({ name: 'workbench_list_assets', arguments: { scope: 'trashed' } });
+  assert.equal(mcpTrash.structuredContent.total, 5);
+  for (const original of originals) {
+    const current = (await agentRequest(manifest, 'asset', { assetId: original.id })).asset;
+    assert.deepEqual(current.files, original.files);
+    assert.deepEqual(current.history, original.history);
+  }
+  assert.deepEqual(await readdir(taskDirectory), namesBeforeTrash);
+  offline = true;
+  const offlineTrash = await agentRequest(manifest, 'assets', { scope: 'trashed' });
+  assert.equal(offlineTrash.total, 5);
+  assert.equal(offlineTrash.assets.find((a) => a.id === 'animation:original-job:2').availability, 'unknown');
+  assert.equal((await agentRequest(manifest, 'asset', { assetId: 'animation:original-job:2' })).asset.readiness.filesAvailable, false);
+  await manageAssets(manifest, { operation: 'restore', assetIds: recycledIds });
+  offline = false;
+  assert.equal((await agentRequest(manifest, 'assets', { scope: 'trashed' })).total, 0);
+  assert.deepEqual((await agentRequest(manifest, 'assets', { limit: 100 })).assets, beforeTrash.assets);
+  await assert.rejects(manageAssets(manifest, { operation: 'delete', assetIds: [sceneId] }));
+  await assert.rejects(manageAssets(manifest, { operation: 'trash', assetIds: [] }));
+  const trashIndex = path.join(repositoryRoot, manifest.workspace.assetTrashDirectory, 'index.json');
+  const validTrash = await readFile(trashIndex);
+  await writeFile(trashIndex, '{corrupt');
+  await assert.rejects(agentRequest(manifest, 'assets', {}), /回收站记录无法读取/);
+  await assert.rejects(manageAssets(manifest, { operation: 'trash', assetIds: [sceneId] }), /回收站记录无法读取/);
+  await writeFile(trashIndex, validTrash);
+  console.log('Recoverable asset trash: five kinds, aliases, candidate isolation, atomic batch, durable MCP/HTTP views, pagination, offline restore and corrupt index passed; sources unchanged.');
   console.log(
     'Assets: complete record scan, pagination, exact candidates, provenance deduplication, project revisions, file hashes, missing/escaped files, offline coverage, MCP/HTTP parity and actual ZIP bytes/candidate isolation/download errors passed; zero generation.',
   );

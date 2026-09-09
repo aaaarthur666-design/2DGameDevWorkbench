@@ -18,10 +18,13 @@
   "workspace": {
     "name": "Forge — 2D game dev workbench",
     "brand": { "name": "Forge", "tagline": "2D game dev workbench", "icon": "/favicon.svg?v=forge-play" },
+    "assetTrashDirectory": "work/asset-trash",
     "taskDirectory": "work/tasks",
     "sceneExportDirectory": "work/scene-exports",
     "gameExportDirectory": "work/game-exports",
     "presentationDirectory": "work/presentation",
+
+    "mapProjectDirectory": "work/map-projects",
     "outputDirectory": "outputs",
     "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }
   },
@@ -39,7 +42,7 @@
   ],
   "agentAssets": {
     "role": "external-client",
-    "assetCatalog": { "schemaVersion": 1, "route": "/assets", "guide": "docs/asset-catalog.md", "sources": ["runtime-tasks", "sprite-pipeline", "scene-exports"], "browserDrafts": "not-indexed" },
+    "assetCatalog": { "schemaVersion": 1, "route": "/assets", "guide": "docs/asset-catalog.md", "sources": ["runtime-tasks", "sprite-pipeline", "map-projects", "scene-exports"], "recycleBin": { "defaultScope": "active", "trashScope": "trashed", "preservesSourceFiles": true }, "browserDrafts": "not-indexed" },
     "conversationGuide": "workbench/conversation-guide.md",
     "presentationGuide": "docs/agent-preview-follow.md",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",

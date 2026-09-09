@@ -4,9 +4,11 @@ import {
 } from '@/lib/workbench/runtime-proxy';
 export async function GET(request: Request) {
   try {
-    const assetId = new URL(request.url).searchParams.get('assetId') || '';
+    const query = new URL(request.url).searchParams;
+    const assetId = query.get('assetId') || '';
+    const revision = query.get('projectRevision');
     const response = await fetchWorkbenchRuntime(
-      `/v1/assets/preview?assetId=${encodeURIComponent(assetId)}`,
+      `/v1/assets/preview?assetId=${encodeURIComponent(assetId)}${revision ? `&projectRevision=${encodeURIComponent(revision)}` : ''}`,
     );
     return new Response(response.body, {
       status: response.status,

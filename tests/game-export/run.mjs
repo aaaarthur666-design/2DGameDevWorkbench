@@ -42,6 +42,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const manifest = await loadManifest();
+await mkdir(path.join(repositoryRoot, 'work'), { recursive: true });
 const sandbox = await mkdtemp(
   path.join(repositoryRoot, 'work', 'game-export-test-'),
 );

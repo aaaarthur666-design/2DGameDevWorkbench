@@ -45,6 +45,30 @@ try {
   const engine = await server.ssrLoadModule(
     '/features/map-stitcher/engine-export.ts',
   );
+  const thumbnail = await server.ssrLoadModule('/features/map-stitcher/project-preview.ts');
+  test('map thumbnails ignore editor view changes, bound huge maps and never reuse a failed old preview', async () => {
+    const { mapProjectFixture } = await import('../helpers/map-project.mjs');
+    const { draft } = await mapProjectFixture(new Uint8Array([1]));
+    const snapshot = draft.snapshot;
+    let renders = 0;
+    const cached = thumbnail.createMapPreviewCache(async () => {
+      renders++;
+      if (renders > 1) throw new Error('canvas failed');
+      return new Blob([new Uint8Array([1])]);
+    });
+    assert.deepEqual(await cached(snapshot), new Uint8Array([1]));
+    assert.deepEqual(await cached({ ...snapshot, pan: { x: 99, y: 10 }, zoom: 2, selectedKey: null, activeMapLayer: 'white' }), new Uint8Array([1]));
+    assert.equal(renders, 1);
+    const changed = { ...snapshot, tiles: snapshot.tiles.map((tile) => ({ ...tile, x: 55 })) };
+    assert.equal(await cached(changed), undefined);
+    assert.equal(await cached(changed), undefined);
+    assert.equal(renders, 2);
+    const huge = { ...snapshot, tiles: snapshot.tiles.map((tile) => ({ ...tile, x: -50000, w: 100000 })) };
+    const input = thumbnail.mapPreviewInput(huge);
+    assert(input.width * 100000 <= 640);
+    assert(input.shapes[0].points[0].x < snapshot.shapes[0].points[0].x);
+    assert.throws(() => thumbnail.mapPreviewInput({ ...snapshot, tiles: snapshot.tiles.map((tile) => ({ ...tile, hidden: true })) }), /暂无/);
+  });
 
   const { parseMapLayout } = await server.ssrLoadModule(
     '/features/map-stitcher/editor-layout.ts',

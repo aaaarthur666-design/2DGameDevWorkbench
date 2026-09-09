@@ -47,6 +47,7 @@
 
 ## Asset identity and data
 
+- Map inventory preserves complete projects and saved image/history assets. Use `mapType=project|image` to narrow `kind=map`; omitting it returns both. Keep legacy IDs reachable. A map-source.zip is editable source for map/scene import, not a prop image or an engine export.
 - Use `workbench_list_assets` for durable artwork and `workbench_list_tasks` for execution history. Follow `nextOffset` with `snapshot` for full inventory. One saved animation candidate is one asset; retry/check/export records are not additional artworks.
 - History queries also paginate across all unarchived records. Archiving hides history only; assets, source files, original creation times and provenance remain available from exact asset details.
 - “Latest three-candidate animation, candidate 2” uses structured candidate filters, then exact `get_asset`/`get_result` identity. Never substitute the library homepage for the requested detail page or silently choose another candidate.
