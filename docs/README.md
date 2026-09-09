@@ -26,6 +26,7 @@
 | [Agent 客户端接入](agent-clients.md) | Codex、WorkBuddy 类客户端的 MCP 配置和调用流程 |
 | [连接器与任务契约](connector-contract.md) | 公共任务协议、状态机、HTTP 边界和安全规则 |
 | [Web 工作台界面](workbench-interface.md) | 页面职责、路由、本地草稿、任务聚合和部署边界 |
+| [交互物品原图](prop-art.md) | PixelLab 物品生图、预览采用、MCP 与来源交接 |
 | [角色原图](reference-art.md) | PixelLab 原图生成、共享密钥与序列帧参考交接 |
 | [序列帧生成](sprite-generator.md) | SpritePipeline 能力、操作、异步状态和产物 |
 | [地图拼接](map-stitcher.md) | 本地拼接、外部生成、编辑流程和导出 |
@@ -39,6 +40,14 @@
 | [第三方声明](../THIRD_PARTY_NOTICES.md) | 上游组件、兼容性实现和参考项目边界 |
 | [贡献指南](../CONTRIBUTING.md) | 变更流程、架构约束和提交前检查 |
 | [安全策略](../SECURITY.md) | 密钥、回环服务、文件边界和漏洞报告方式 |
+
+- [直接导出到游戏项目](godot-delivery.md)：选择目标、资源交付、WorkBuddy 代码接入、备份和验收。
+
+## Demo 策划
+
+以下文档定义拟制作作品的范围和协作约定，不代表相应游戏已经实现或验收：
+
+- [《最后一盏灯》协作策划案](demos/the-last-light-plan.md)：独立横版探索修复 Demo 的玩法、资产、CopyWorms 方法适配、工作包与验收标准。
 
 ## 历史快照
 
@@ -62,3 +71,7 @@
 - 修改交互物字段：从 `features/interactable-editor/contract.mjs` 生成清单字段，禁止手工维护两份 schema。
 - 计划完成后：保留为历史快照，顶部写明状态、完成版本和当前文档入口。
 - 文档中的命令必须在仓库根目录可执行；提交前按 [开发与验证](development.md) 的矩阵检查。
+
+- [Agent 执行过程与页面跟随](agent-preview-follow.md)：MCP 0.9.0、当前页面摘要、步骤确认、暂停与验收。
+
+- [内部素材导入与联用](internal-imports.md)：地图、交互物、原图、动画和完整场景的内部复用入口。

@@ -47,6 +47,7 @@ export type Scene = {
     y: number;
     zoom: number;
     grid: number;
+    aidsVersion: number;
     showGrid: boolean;
     showNames: boolean;
     showShapes: boolean;

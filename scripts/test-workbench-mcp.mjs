@@ -21,6 +21,8 @@ const expectedTools = [
   'workbench_get_environment',
   'workbench_start_services',
   'workbench_start_frontend',
+  'workbench_present',
+  'workbench_get_frontend_context',
   'workbench_list_presets',
   'workbench_interactable_template',
   'workbench_list_tasks',

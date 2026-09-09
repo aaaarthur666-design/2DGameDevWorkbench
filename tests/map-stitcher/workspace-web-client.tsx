@@ -2,6 +2,9 @@
 /* oxlint-disable next/no-html-link-for-pages -- Standalone Vite fixture has no Next router. */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {loadLibraryAsset, mapImportFile} from '../../lib/workbench/asset-import';
+import {loadMapProject} from '../../features/map-stitcher/godot-import';
+import {readMap} from '../../features/scene-composer/browser';
 import { useMapEditorController } from '../../components/map-stitcher/use-map-editor-controller';
 import { useMapWorkspace } from '../../components/map-stitcher/use-map-workspace';
 import { AssetLibrary } from '../../components/workbench/asset-library';
@@ -63,11 +66,19 @@ function Harness() {
       const local = await readWorkspaceDraft<MapWorkspaceDraft>(latest.current.workspaceId);
       assert(local?.serverSynced && local.serverRevision === edited.record.revision, '浏览器备份与服务端版本不同步');
       remote?.snapshot.tiles.forEach((tile) => Object.values(tile.images).forEach((a) => a && URL.revokeObjectURL(a.url)));
-      const catalog = await (await fetch('/api/workbench/assets?kind=map')).json() as { total: number; assets: { previewUrl: string; previewKind: string }[] };
+      const catalog = await (await fetch('/api/workbench/assets?kind=map&mapType=project')).json() as { total: number; assets: { previewUrl: string; previewKind: string }[] };
       assert(catalog.total === 1 && catalog.assets[0].previewKind === 'image', '资产库没有精确收录地图工程预览');
+      const bundle = await loadLibraryAsset('map-project:' + latest.current.workspaceId,'map');
+      const source = await mapImportFile(bundle);
+      assert(source.name === 'map-source.zip','内部导入未提供完整地图工程');
+      const loaded = await loadMapProject(source);
+      assert(loaded.tiles[0].feather.left === 35 && loaded.shapes.length === 1,'地图编辑器导入丢失图像编辑或碰撞');
+      loaded.tiles.forEach(tile => Object.values(tile.images).forEach(a => a && URL.revokeObjectURL(a.url)));
+      const sceneMap = await readMap(source);
+      assert(sceneMap.collisions.length === 1 && sceneMap.layers.length > 0,'场景组装器未恢复地图图层与碰撞');
       assert(edited.deniedGeneration === 0, '验收中出现非预期生成请求');
       setPreviewUrl(catalog.assets[0].previewUrl);
-      setResult('PASS：实际编辑器恢复 → IndexedDB 备份 → 自动保存 → 视图变化保持预览 → 图片编辑更新预览 → 服务端恢复 → 资产库单件收录。生成请求为 0。');
+      setResult('PASS：实际编辑器恢复 → IndexedDB 备份 → 自动保存 → 视图变化保持预览 → 图片编辑更新预览 → 服务端恢复 → 资产库工程分类及内部移送地图 / 场景。生成请求为 0。');
     })().catch((error) => setResult(`FAIL：${error.message}`));
   }, [workspace.loading, c.sourceAsset]);
   return <main className="wb-page">

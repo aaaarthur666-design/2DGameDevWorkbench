@@ -30,7 +30,7 @@ const child = spawn(process.execPath, ['scripts/workbench-http.mjs'], {
   env: {
     ...process.env,
     WORKBENCH_RUNTIME_PORT: String(port),
-    GODOT_46_BIN: 'not-installed',
+    GODOT_47_BIN: 'not-installed',
     GEMINI_API_KEY: '',
     OPENAI_API_KEY: '',
   },

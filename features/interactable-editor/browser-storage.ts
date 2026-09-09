@@ -207,3 +207,22 @@ export async function exportProject(
     throw new Error(result.error ?? describeError(result));
   return result as { taskId: string; status: string; outputs: string[] };
 }
+
+/** Publish editable source to the durable asset catalog without exporting a Godot package. */
+export async function saveProjectToLibrary(project: InteractableProject) {
+  const clean = normalizeProject(project);
+  const assets: Asset[] = [];
+  for (const asset of clean.assets) {
+    if (!asset.source.startsWith('data:')) { assets.push(asset); continue; }
+    const blob = await (await fetch(asset.source)).blob();
+    const uploaded = await fetch('/api/workbench/interactable-assets', {method:'POST',headers:{'content-type':asset.mime,'x-asset-name':encodeURIComponent(asset.name)},body:blob});
+    const result = await uploaded.json() as {source?:string;error?:string};
+    if (!uploaded.ok || !result.source) throw new Error(result.error || '素材保存失败，当前草稿保留。');
+    assets.push({...asset,source:result.source});
+  }
+
+  const response = await fetch('/api/workbench/tasks', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({capabilityId:'interactable-editor',input:{operation:'save-project',project:{...clean,assets}}})});
+  const result = await response.json() as {taskId?:string;status?:string;error?:string};
+  if(!response.ok || result.status!=='completed' || !result.taskId) throw new Error(result.error || '保存到资产库失败，当前草稿保留。');
+  return result;
+}

@@ -8,20 +8,22 @@ export async function restoreTaskProject(taskId: string, storage: {
   request: typeof fetch;
   items: (project: InteractableProject, completed: string[]) => WorkItem[];
 }): Promise<InteractableProject> {
+  // Native browser fetch must not receive the storage object as its receiver.
+  const request = storage.request;
   const mappingKey = `interactable-task:${taskId}`;
   const mapped = await storage.read(mappingKey);
   if (typeof mapped === 'string') {
     const saved = await storage.read(mapped);
     if (saved) return projectSchema.parse(saved);
   }
-  const response = await storage.request(`/api/workbench/tasks/${encodeURIComponent(taskId)}`, { cache: 'no-store' });
+  const response = await request(`/api/workbench/tasks/${encodeURIComponent(taskId)}`, { cache: 'no-store' });
   const payload = await response.json() as { task?: { capabilityId: string; status: string; outputs?: string[]; input?: { operation?: string } } };
   const task = payload.task;
   if (!response.ok || task?.capabilityId !== 'interactable-editor' || task.status !== 'completed')
     throw new Error('此交互物任务尚未完成或无法读取。');
   const source = task.outputs?.find((output: string) => output.endsWith('/interactable-project.json'));
   if (!source) throw new Error('任务缺少可编辑的交互物源文件。');
-  const artifact = await storage.request(`/api/workbench/artifacts?path=${encodeURIComponent(source)}`, { cache: 'no-store' });
+  const artifact = await request(`/api/workbench/artifacts?path=${encodeURIComponent(source)}`, { cache: 'no-store' });
   if (!artifact.ok) throw new Error('交互物源文件暂时无法读取。');
   let project = normalizeProject(await artifact.json()) as InteractableProject;
   const key = `interactable-project:${project.projectId}`;

@@ -137,7 +137,7 @@ try {
       '旧工程 · 暂无预览',
       '预览文件缺失 · 测试工程',
     ][index],
-    kind: 'map',
+    kind: 'map', origin: 'map-project', mapType: 'project',
     statusLabel: '已保存',
     availability: 'available',
     tileCount: 3,

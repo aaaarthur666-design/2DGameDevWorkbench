@@ -43,7 +43,11 @@
     "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
     "format": "oxfmt",
-    "test:desktop-services": "node tests/desktop-services/run.mjs"
+    "test:desktop-services": "node tests/desktop-services/run.mjs",
+    "test:prop-art": "node tests/prop-art/run.mjs",
+    "test:preview-follow": "node tests/preview-follow/run.mjs",
+    "test:asset-import": "node tests/asset-import/run.mjs",
+    "test:game-export": "node tests/game-export/run.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

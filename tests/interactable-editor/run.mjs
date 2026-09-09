@@ -184,7 +184,7 @@ await writeFile(
   await readFile('tests/interactable-editor/regression.gd'),
 );
 const godot =
-  process.env.GODOT_46_BIN || process.argv[process.argv.indexOf('--godot') + 1];
+  process.env.GODOT_47_BIN || process.argv[process.argv.indexOf('--godot') + 1];
 if (!godot || godot === process.argv[0]) {
   console.log(
     JSON.stringify({

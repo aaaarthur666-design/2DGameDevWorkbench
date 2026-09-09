@@ -25,6 +25,8 @@ import { createScene } from '../../features/scene-composer/model.mjs';
 import { createScenePackage, readScenePackage } from '../../features/scene-composer/package.mjs';
 import {
   manageAssets,
+  buildAssetImport,
+  readAssetGodotPackage,
   readAssetPreview,
   buildAssetArchive,
 } from '../../lib/workbench/asset-catalog.mjs';
@@ -308,19 +310,37 @@ try {
     { 'stitched-map.png': png, 'godot-package.zip': mapBytes },
   );
   nativeAssets.push({ id: 'map:legacy-native', kind: 'map', title: '旧导入图' });
-  assert.equal((await agentRequest(manifest, 'assets', { kind: 'map' })).total, 0);
+  assert.equal((await agentRequest(manifest, 'assets', { kind: 'map' })).total, 1, 'legacy map image remains discoverable');
   const projectPng = await sharp(png).resize(16, 16).png().toBuffer();
   const { draft: projectDraft } = await mapProjectFixture(projectPng);
   const projectBytes = await createMapProjectPackage(projectDraft, projectPng);
   await saveMapProject(repositoryRoot, manifest, 'map:fixture', 0, projectBytes);
   await saveMapProject(repositoryRoot, manifest, 'map:fixture', 1, projectBytes);
-  const maps = await agentRequest(manifest, 'assets', { kind: 'map' });
+  const maps = await agentRequest(manifest, 'assets', { kind: 'map', mapType: 'project' });
   assert.equal(maps.total, 1);
   assert.equal(maps.assets[0].projectRevision, 2);
   assert.equal(maps.assets[0].previewKind, 'image');
   assert.deepEqual((await readAssetPreview(manifest, maps.assets[0].id)).bytes, projectPng);
   await assert.rejects(readAssetPreview(manifest, maps.assets[0].id, 1), /版本已更新/);
   assert(maps.assets[0].editorPath.endsWith('?map=map%3Afixture&saved=1'));
+  const allMaps = await agentRequest(manifest, 'assets', { kind: 'map' });
+  assert.equal(allMaps.total, 2);
+  const imageMaps = await agentRequest(manifest, 'assets', { kind: 'map', mapType: 'image' });
+  assert.equal(imageMaps.total, 1);
+  assert.equal(imageMaps.assets[0].id, 'map:saved-map:stitched-map');
+  const imageDetail = (await agentRequest(manifest, 'asset', { assetId: imageMaps.assets[0].id })).asset;
+  const oldMapDownload = await JSZip.loadAsync((await buildAssetArchive(manifest, { assetIds: [imageDetail.id] })).bytes);
+  assert(Object.keys(oldMapDownload.files).some((name) => name.endsWith('/map.png')));
+  assert(Object.keys(oldMapDownload.files).some((name) => name.endsWith('/godot-package.zip')));
+  assert.deepEqual((await readAssetGodotPackage(manifest, {assetId: imageDetail.id, revision: imageDetail.revision})).bytes, mapBytes);
+  const projectDetail = (await agentRequest(manifest, 'asset', {assetId: maps.assets[0].id})).asset;
+  const projectRequest = {assetId: projectDetail.id, revision: projectDetail.revision, purpose:'map'};
+  const reusable = await JSZip.loadAsync((await buildAssetImport(manifest, projectRequest)).bytes);
+  const importInfo = JSON.parse(await reusable.file('import.json').async('string'));
+  assert.equal(importInfo.files[0].name, 'map-source.zip');
+  assert.deepEqual(await reusable.file(importInfo.files[0].path).async('uint8array'), projectBytes);
+  await assert.rejects(buildAssetImport(manifest, {...projectRequest,purpose:'image'}), /不能/);
+  await assert.rejects(readAssetGodotPackage(manifest, projectRequest), /Godot 包/);
   const archiveIds = [
     'reference:reference-original',
     'character:transferred',

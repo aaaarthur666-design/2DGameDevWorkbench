@@ -30,6 +30,7 @@ class ReferenceRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
     facing: Literal["right", "left"] = "right"
     seed: int | None = Field(default=None, ge=0, le=2147483647)
+    size: Literal[64, 128] = 128
 
 
 class KeyRequest(BaseModel):
@@ -38,7 +39,9 @@ class KeyRequest(BaseModel):
 
 
 class ImportRequest(ReferenceRequest):
+    prompt: str = Field(min_length=1, max_length=1000)
     image: str = Field(min_length=1, max_length=2_000_000)
+    reuseIdentity: bool = False
     characterId: str = Field(pattern=r"^reference_[a-f0-9]{24}$")
     name: str = Field(min_length=1, max_length=80)
 
@@ -83,7 +86,7 @@ def _provider_request(service: SpritePipelineService, method: str, route: str, p
         raise ProviderPermanentError(message) from exc
 
 
-def validate_reference_image(encoded: str) -> bytes:
+def validate_reference_image(encoded: str, expected_size: int | None = None) -> bytes:
     if encoded.startswith("data:"):
         if not encoded.startswith("data:image/png;base64,"):
             raise ValidationHarnessError("原图必须是 PNG。")
@@ -93,7 +96,7 @@ def validate_reference_image(encoded: str) -> bytes:
         if len(data) > 1_000_000:
             raise ValueError("oversize")
         with Image.open(io.BytesIO(data)) as image:
-            if image.format != "PNG" or image.size != (128, 128):
+            if image.format != "PNG" or (image.size not in ((64, 64), (128, 128)) or (expected_size is not None and image.size != (expected_size, expected_size))):
                 raise ValueError("size or format")
             image.load()
             if "A" not in image.getbands() and "transparency" not in image.info:
@@ -103,7 +106,7 @@ def validate_reference_image(encoded: str) -> bytes:
                 raise ValueError("empty or opaque")
         return data
     except (ValueError, binascii.Error, OSError) as exc:
-        raise ValidationHarnessError("原图需要是 128×128、含角色且带透明背景的 PNG；请重新生成或使用其他图片。") from exc
+        raise ValidationHarnessError("原图需要是 64×64 或 128×128、含角色且带透明背景的 PNG；请重新生成或使用其他图片。") from exc
 
 
 def create_reference_router(service: SpritePipelineService) -> APIRouter:
@@ -123,7 +126,7 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
     def generate(body: ReferenceRequest):
         if not body.prompt.strip():
             raise ValidationHarnessError("请输入角色描述。")
-        payload = {"description": body.prompt.strip(), "image_size": {"width": 128, "height": 128},
+        payload = {"description": body.prompt.strip(), "image_size": {"width": body.size, "height": body.size},
                    "no_background": True, "view": "side", "direction": "east" if body.facing == "right" else "west"}
         if body.seed is not None:
             payload["seed"] = body.seed
@@ -159,13 +162,17 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
 
     @router.post("/import")
     def import_reference(body: ImportRequest):
-        image = validate_reference_image(body.image)
+        image = validate_reference_image(body.image, body.size)
         with import_lock, tempfile.TemporaryDirectory(prefix="reference-import-") as directory:
+            identity = body.prompt
+            if body.reuseIdentity and service.presets.character_exists(body.characterId):
+                existing, _ = service.presets.load_character(body.characterId)
+                identity = existing.identity_description
             source = Path(directory) / "reference.png"
             source.write_bytes(image)
             preset = service.create_character_preset(
                 display_name=body.name, reference_image=source, facing=body.facing,
-                identity_description=body.prompt, character_id=body.characterId, reuse_if_identical=True,
+                identity_description=identity, character_id=body.characterId, reuse_if_identical=True,
             )
         return {"characterId": preset.character_id}
 

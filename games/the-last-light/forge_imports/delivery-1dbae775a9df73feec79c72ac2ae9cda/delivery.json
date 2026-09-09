@@ -1,0 +1,229 @@
+{
+  "format": "forge-game-delivery",
+  "version": 1,
+  "deliveryId": "delivery-1dbae775a9df73feec79c72ac2ae9cda",
+  "title": "港口守灯人·64像素 · 原地跳跃",
+  "createdAt": "2026-09-09T11:47:36.575Z",
+  "updatedAt": "2026-09-09T11:54:12.516Z",
+  "status": "integrated",
+  "project": {
+    "path": "D:\\2DGameDevWorkbench\\games\\the-last-light",
+    "name": "The Last Light"
+  },
+  "source": {
+    "assetId": "animation:20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001:1",
+    "revision": "ee7f86aaa73313bc2d11b9d2d836ede898ac8550e778cbbf639d970abe2d7ead",
+    "kind": "animation",
+    "candidateIndex": 1,
+    "sha256": "5a100e573c6a9349726e2cb882fab66b375150e693c2e3ab9a85196d075ae458"
+  },
+  "package": {
+    "format": "forge-godot-export",
+    "version": 1,
+    "packageId": "animation-0f7d8995b4eae6793c6a71ec",
+    "kind": "animation",
+    "engine": "Godot 4.6.x",
+    "entryScenes": [
+      "res://forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/animated_sprite.tscn"
+    ],
+    "spriteFrames": [
+      "res://forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite_frames.tres"
+    ],
+    "runtime": null,
+    "details": {
+      "singleAction": true,
+      "preserveOtherActions": true,
+      "animation": "jump",
+      "frameCount": 17,
+      "fps": 6,
+      "loop": false,
+      "candidateIndex": 1,
+      "jobId": "20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001",
+      "frameRegions": [
+        [
+          0,
+          0,
+          64,
+          64
+        ],
+        [
+          64,
+          0,
+          64,
+          64
+        ],
+        [
+          128,
+          0,
+          64,
+          64
+        ],
+        [
+          192,
+          0,
+          64,
+          64
+        ],
+        [
+          0,
+          64,
+          64,
+          64
+        ],
+        [
+          64,
+          64,
+          64,
+          64
+        ],
+        [
+          128,
+          64,
+          64,
+          64
+        ],
+        [
+          192,
+          64,
+          64,
+          64
+        ],
+        [
+          0,
+          128,
+          64,
+          64
+        ],
+        [
+          64,
+          128,
+          64,
+          64
+        ],
+        [
+          128,
+          128,
+          64,
+          64
+        ],
+        [
+          192,
+          128,
+          64,
+          64
+        ],
+        [
+          0,
+          192,
+          64,
+          64
+        ],
+        [
+          64,
+          192,
+          64,
+          64
+        ],
+        [
+          128,
+          192,
+          64,
+          64
+        ],
+        [
+          192,
+          192,
+          64,
+          64
+        ],
+        [
+          0,
+          256,
+          64,
+          64
+        ]
+      ]
+    },
+    "files": [
+      {
+        "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/animated_sprite.tscn",
+        "sha256": "d41d38e7487704d8a7c15943d22dcf3af5a607eb91d29024db569ffea5af916b",
+        "bytes": 416
+      },
+      {
+        "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/export.json",
+        "sha256": "96cdd7e4adc019e35b5fd4fda4a8da7f785b3a5118b69242ee0fe9a6da8c6144",
+        "bytes": 1855
+      },
+      {
+        "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/IMPORT.md",
+        "sha256": "149d9bf344eb794b0c032acd89b5995ddfa80aeb8fd84c71cd5447bf4d4621ec",
+        "bytes": 1674
+      },
+      {
+        "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite_frames.tres",
+        "sha256": "763a2d213a87553f692c5e7e3497440a6b6cdb06daccd6260be04110ef12e71d",
+        "bytes": 3452
+      },
+      {
+        "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite-sheet.png",
+        "sha256": "85090f6335d3f556c8117bf060b709debd9d37a4e28d6a8d81529fbbd7fa9327",
+        "bytes": 25952
+      }
+    ]
+  },
+  "packageSha256": "e89850ea6de6cdd3bf4df8fb7d0fab1c7de5c24a9467382e1ed5fbaf8c3c8729",
+  "inboxPath": "D:\\2DGameDevWorkbench\\games\\the-last-light\\forge_imports\\delivery-1dbae775a9df73feec79c72ac2ae9cda",
+  "integration": {
+    "summary": "港口守灯人 v02 原生64px整套美术已替换；保留当前idle/walk/jump逻辑和10 FPS。视觉scale=1.5，脚底offset=(1,-28)，原版资源保留。",
+    "files": [
+      {
+        "path": "PlayerModule/Formal/Player_Maintainer.tscn",
+        "sha256": "98008f4076a8dc4b43c149276ddd139d19a359d139199dc1df14d1c7021efc84"
+      },
+      {
+        "path": "Assets/Characters/maintainer/maintainer_frames_v02.tres",
+        "sha256": "691b08a1c1bd2e16e2b32c74169888d8faeedc5f57df302f6db4a8c5dcfc84a7"
+      },
+      {
+        "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite_frames.tres",
+        "sha256": "763a2d213a87553f692c5e7e3497440a6b6cdb06daccd6260be04110ef12e71d"
+      }
+    ],
+    "engine": {
+      "status": "passed",
+      "version": "4.7.stable.official.5b4e0cb0f",
+      "evidence": "Godot 4.7真实导入、合并；headless_smoke.gd 73项通过；view_boundary.gd 15项通过；实际OpenGL游戏截图对比已检查。控制器、物理配置、镜头及空气墙脚本哈希保持不变。日志 work/keeper-restyle-v02/；逐帧视觉审核共51帧，行走接缝轻微顿挫及部分接触像素已记录。",
+      "baselineValidated": true
+    },
+    "evidenceSource": "agent-reported",
+    "recordedAt": "2026-09-09T11:54:12.516Z"
+  },
+  "installedAt": "2026-09-09T11:48:33.324Z",
+  "installedFiles": [
+    {
+      "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/IMPORT.md",
+      "sha256": "149d9bf344eb794b0c032acd89b5995ddfa80aeb8fd84c71cd5447bf4d4621ec"
+    },
+    {
+      "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/animated_sprite.tscn",
+      "sha256": "d41d38e7487704d8a7c15943d22dcf3af5a607eb91d29024db569ffea5af916b"
+    },
+    {
+      "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/export.json",
+      "sha256": "96cdd7e4adc019e35b5fd4fda4a8da7f785b3a5118b69242ee0fe9a6da8c6144"
+    },
+    {
+      "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite-sheet.png",
+      "sha256": "85090f6335d3f556c8117bf060b709debd9d37a4e28d6a8d81529fbbd7fa9327"
+    },
+    {
+      "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite_frames.tres",
+      "sha256": "763a2d213a87553f692c5e7e3497440a6b6cdb06daccd6260be04110ef12e71d"
+    },
+    {
+      "path": "forge_packages/animation-0f7d8995b4eae6793c6a71ec/manifest.json",
+      "sha256": "fcd6ae2c124d57ef6d323a237e5e27b5de156844c69f2d5e5865626848c9d078"
+    }
+  ]
+}

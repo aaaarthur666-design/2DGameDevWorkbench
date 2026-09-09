@@ -1,12 +1,14 @@
 import '../helpers/runtime-workspace.mjs';
 import react from '@vitejs/plugin-react';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import sharp from 'sharp';
 import { createTestViteServer } from '../helpers/vite-server.mjs';
 import { mapProjectFixture } from '../helpers/map-project.mjs';
-import { loadManifest, repositoryRoot } from '../../lib/workbench/runtime.mjs';
+import { loadManifest, repositoryRoot, persistTask } from '../../lib/workbench/runtime.mjs';
 import { saveMapProjectRequest, saveMapProject, readMapProject } from '../../lib/workbench/map-projects.mjs';
 import { createMapProjectPackage } from '../../features/map-stitcher/project-package.mjs';
-import { listAssets, getAsset, manageAssets, readAssetPreview, buildAssetArchive } from '../../lib/workbench/asset-catalog.mjs';
+import { listAssets, getAsset, manageAssets, readAssetPreview, buildAssetArchive, buildAssetImport } from '../../lib/workbench/asset-catalog.mjs';
 
 const manifest = await loadManifest();
 const id = `map:${process.env.WORKBENCH_TEST_RUN}`;
@@ -14,6 +16,10 @@ const png = await sharp({ create: { width: 16, height: 16, channels: 4, backgrou
 const { draft } = await mapProjectFixture(png, id);
 for (const layer of Object.keys(draft.snapshot.imageLocks)) draft.snapshot.imageLocks[layer] = false;
 await saveMapProject(repositoryRoot, manifest, id, 0, await createMapProjectPackage(draft));
+const legacyOutput = manifest.workspace.outputDirectory + '/map-history/generated-origin.png';
+await mkdir(path.dirname(path.join(repositoryRoot, legacyOutput)), {recursive:true});
+await writeFile(path.join(repositoryRoot, legacyOutput),png);
+await persistTask(manifest,{schemaVersion:1,id:'map-history',capabilityId:'map-stitcher',input:{operation:'generate-origin',name:'历史地图原图'},status:'completed',outputs:[legacyOutput],createdAt:'2026-01-01',updatedAt:'2026-01-01'});
 let writes = 0;
 let deniedGeneration = 0;
 const json = (res, value, status = 200) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -46,6 +52,10 @@ const server = await createTestViteServer({
         } else if (p === '/api/workbench/assets/manage') {
           const chunks = []; for await (const chunk of req) chunks.push(chunk);
           json(res, await manageAssets(manifest, JSON.parse(Buffer.concat(chunks).toString())));
+        } else if (p === '/api/workbench/assets/import') {
+          const chunks = []; for await (const chunk of req) chunks.push(chunk);
+          const result = await buildAssetImport(manifest,JSON.parse(Buffer.concat(chunks).toString()));
+          res.writeHead(200,{'content-type':'application/zip'});res.end(result.bytes);
         } else if (p === '/api/workbench/assets/download') {
           const chunks = []; for await (const chunk of req) chunks.push(chunk);
           const result = await buildAssetArchive(manifest, JSON.parse(Buffer.concat(chunks).toString()));

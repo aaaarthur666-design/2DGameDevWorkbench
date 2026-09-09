@@ -1,6 +1,6 @@
 /* oxlint-disable react/react-compiler -- The preview clock and document history are explicitly imperative. */
 'use client';
-import { useEffect, useMemo, useRef, useState, useId } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useId } from 'react';
 import {
   Layers,
   Plus,
@@ -81,6 +81,10 @@ import {
   readObjects,
 } from '@/features/scene-composer/browser';
 import { useSceneDocument } from './use-scene-document';
+import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
+import { mapImportFile, clearImportQuery, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
+import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
+import { useWorkbench } from '@/components/workbench/workbench-provider';
 import { SceneCanvas } from './scene-canvas';
 import { ObjectArt } from './scene-art';
 import './scene-composer.css';
@@ -202,6 +206,10 @@ function MapThumbnail({
 
 export function SceneComposer() {
   'use no memo';
+  const { navigate } = useWorkbench();
+  const [library, setLibrary] = useState<{ purpose: ImportPurpose; assetId?: string; replace?: boolean } | null>(null);
+  const importStarted = useRef(false);
+  const [handoffUrl, setHandoffUrl] = useState('');
   const doc = useSceneDocument(),
     { scene, ready, busy } = doc;
   const [selected, setSelected] = useState<string[]>([]),
@@ -486,6 +494,57 @@ export function SceneComposer() {
       setSelected([]);
     }
   };
+  const importFromLibrary = async (bundle: ImportBundle) => {
+    const success = await doc.perform(async () => {
+      if (bundle.purpose === 'map') chooseMap(await readMap(await mapImportFile(bundle)));
+      else if (bundle.purpose === 'scene') await openImported(await importScene(bundle.files[0].file));
+      else {
+        const incoming = normalizeProject(JSON.parse(await bundle.files[0].file.text())) as InteractableProject;
+        chooseObjects(incoming);
+        if (bundle.asset.definitionId) setObjectIds([bundle.asset.definitionId]);
+        setDialog(library?.replace ? 'replace' : 'objects');
+      }
+    });
+    if (!success) throw new Error('导入未应用，请检查源文件或当前编辑状态。');
+  };
+  const consumeImport = useEffectEvent(() => {
+    const params = new URLSearchParams(location.search);
+    const assetId = params.get('importAsset'), purpose = params.get('importPurpose');
+    if (assetId && ['map', 'interactable', 'scene'].includes(purpose || '')) {
+      setLibrary({purpose: purpose as ImportPurpose, assetId});
+      clearImportQuery();
+    } else if (params.has('handoff')) {
+      void doc.perform(async () => {
+        const record = await readEditorHandoff('scene-composer');
+        if (record?.purpose === 'interactable') {
+          const payload = record.payload as {project: unknown; definitionIds?: string[]};
+          const incoming = normalizeProject(payload.project) as InteractableProject;
+          chooseObjects(incoming);
+          setObjectIds(payload.definitionIds || incoming.objects.map(o => o.definitionId));
+          setDialog('objects');
+        }
+        clearImportQuery();
+      });
+    }
+  });
+  useEffect(()=>{if(!ready||importStarted.current)return;importStarted.current=true;queueMicrotask(()=>consumeImport());},[ready]);
+  useEffect(()=>{
+    if(!busy && handoffUrl) queueMicrotask(()=>{setHandoffUrl('');void navigate(handoffUrl);});
+  },[busy,handoffUrl,navigate]);
+  const editMaterial = () => void doc.perform(async () => {
+    const material = active && materialFor(scene, active);
+    if (!material) return;
+    await doc.save();
+    const href = await storeEditorHandoff('interactable-editor', 'interactable', {project: material.project});
+    // Navigate only after the editor has published its idle state.
+    setHandoffUrl(href);
+  });
+  const editMapSource = () => void doc.perform(async () => {
+    if (!scene.map) return;
+    await doc.save();
+    const href = await storeEditorHandoff('map-stitcher', 'map', {source: scene.map.source, name: scene.map.name + '.zip'});
+    setHandoffUrl(href);
+  });
   const applyObjects = () => {
     if (!project) return;
     if (dialog === 'replace') {
@@ -1134,6 +1193,7 @@ export function SceneComposer() {
                   {scene.map && (
                     <>
                       <h3>{scene.map.name}</h3>
+                      <Button size="sm" variant="outline" onClick={editMapSource} disabled={busy}>编辑地图源文件</Button>
                       <p className="sc-note">
                         {sceneBounds(scene).width} × {sceneBounds(scene).height}{' '}
                         · {scene.map.layers.length} 个视觉层 ·{' '}
@@ -1152,6 +1212,7 @@ export function SceneComposer() {
               )}
               {active && (
                 <>
+                  <Button size="sm" variant="outline" onClick={editMaterial} disabled={busy}>编辑此交互物</Button>
                   <label className="sc-field" htmlFor="sc-instance-name">
                     实例名称
                     <Input
@@ -1470,6 +1531,7 @@ export function SceneComposer() {
           });
         }}
       />
+      <AssetImportPicker open={!!library} onClose={() => setLibrary(null)} purposes={[library?.purpose || 'interactable']} initialAsset={library?.assetId} onImport={importFromLibrary} />
       <Dialog
         open={dialog !== null}
         onOpenChange={(open) => {
@@ -1531,6 +1593,7 @@ export function SceneComposer() {
             </>
           ) : (
             <>
+              <Button variant="outline" disabled={busy} onClick={() => {setLibrary({purpose: dialog === 'map' ? 'map' : dialog === 'open' ? 'scene' : 'interactable', replace: dialog === 'replace'});setDialog(null);}}>从资产库导入</Button>
               <Button
                 variant="outline"
                 disabled={busy}

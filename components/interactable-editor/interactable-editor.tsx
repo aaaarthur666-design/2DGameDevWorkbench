@@ -1,8 +1,10 @@
 /* oxlint-disable next/no-img-element -- User-uploaded local data URLs must retain their original bytes. */
 'use client';
+import {offerGodotExport} from '@/lib/workbench/godot-export';
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
@@ -30,6 +32,7 @@ import {
   loadDraft,
   loadTaskProject,
   saveDraft,
+  saveProjectToLibrary,
   downloadJson,
   exportProject,
   interactableWorkItems,
@@ -39,10 +42,16 @@ import {
   removeEditorSession,
   markEditorSaved,
 } from '@/lib/workbench/editor-session';
-import { listWorkItems } from '@/lib/workbench/browser-store';
+import { listWorkItems, readWorkspaceDraft } from '@/lib/workbench/browser-store';
+import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
+import { clearImportQuery, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
+import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
+import { useWorkbench } from '@/components/workbench/workbench-provider';
 import { isUntouchedStarterProject } from '@/features/interactable-editor/draft-activity';
 import { Field, Numeric, Check, BehaviorPanel } from './property-panels';
 import { VisualPanel } from './visual-panel';
+import { PropArtPanel } from './prop-art-panel';
+import { applyPropArt } from '@/features/interactable-editor/prop-art.mjs';
 import { Preview, assetUrl } from './preview';
 import './interactable-editor.css';
 
@@ -58,6 +67,10 @@ async function flushPendingDrafts(pass: () => Promise<boolean>) {
   }
 }
 export function InteractableEditor() {
+  const { navigate } = useWorkbench();
+  const [library, setLibrary] = useState<{purposes: ImportPurpose[]; assetId?: string} | null>(null);
+  const importStarted = useRef(false);
+  const [handoffUrl, setHandoffUrl] = useState('');
   const [project, setProjectState] =
       useState<InteractableProject>(createProject),
     [selected, setSelected] = useState(''),
@@ -240,7 +253,7 @@ export function InteractableEditor() {
       save: persist,
       beforeLeave: () => {
         if (latest.current.busy)
-          throw new Error('交互物正在导入或导出，请完成后再切换页面。');
+          throw new Error('交互物正在提交、采用或导出，请完成后再切换页面。');
       },
     });
   }, [
@@ -347,19 +360,66 @@ export function InteractableEditor() {
       }
       setMessage('已导出，点击下方文件下载。');
       const output = task.outputs.find((p) => p.endsWith('.zip'));
-      if (output) {
-        const a = document.createElement('a');
-        a.href = `/api/workbench/artifacts?path=${encodeURIComponent(output)}`;
-        a.download = output.split('/').pop() ?? 'interactables.zip';
-        a.click();
-      }
+      if (output) offerGodotExport({name:project.name||current.displayName,url:`/api/workbench/artifacts?path=${encodeURIComponent(output)}`});
     });
+  const adoptImportedProject = async (incoming: InteractableProject, definitionId?: string) => {
+    if (latest.current.draftWritable) await persist();
+    let next = normalizeProject(incoming) as InteractableProject;
+    const existing = await readWorkspaceDraft<InteractableProject>('interactable-project:' + next.projectId);
+    if (existing && JSON.stringify(normalizeProject(existing)) !== JSON.stringify(next)) next = {...next, projectId: makeId('project'), name: next.name.slice(0,170) + '（导入版本）'};
+    setProject(next); setDraftWritable(true); setSelected(definitionId || next.objects[0]?.definitionId || ''); setExportIds([]); setResult(null);
+    setMessage('项目与素材已导入；原项目保留。');
+  };
+  const importFromLibrary = async (bundle: ImportBundle) => {
+    if (latest.current.busy) throw new Error('请等待当前操作完成。');
+    const target = {projectId: latest.current.project.projectId, definitionId: current.definitionId, previousAssetId: current.visual.assetId};
+    setBusy(true);
+    try {
+      if (bundle.purpose === 'interactable') await adoptImportedProject(await importProject(bundle.files[0].file), bundle.asset.definitionId);
+      else {
+        const imported: Asset[] = [];
+        for (const {file,sha256} of bundle.files) {
+          const asset = await importAsset(file);
+          const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(bundle.asset.id + ':' + sha256));
+          asset.id = 'library_' + Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('').slice(0,32);
+          if (bundle.asset.kind === 'prop' && bundle.asset.taskId) asset.generation = {sourceTaskId:bundle.asset.taskId,sha256};
+          imported.push(asset);
+        }
+        const next = structuredClone(latest.current.project);
+        const object = next.objects.find(o=>o.definitionId===target.definitionId);
+        if (next.projectId!==target.projectId || !object || object.visual.assetId!==target.previousAssetId) throw new Error('目标物件已变化，请重新选择导入目标。');
+        for (const asset of imported) { const previous=next.assets.find(a=>a.id===asset.id); if(previous&&previous.source!==asset.source)throw new Error('素材身份冲突。'); if(!previous)next.assets.push(asset); }
+        if (bundle.purpose === 'animation') {
+          if (!bundle.asset.fps || typeof bundle.asset.loop!=='boolean') throw new Error('动画缺少播放设置。');
+          const name=nextClipName(object);
+          object.visual.clips.push({name,fps:bundle.asset.fps,loop:bundle.asset.loop,frames:imported.map(a=>({assetId:a.id,duration:1}))});
+          object.visual.idleAnimation=name;
+        } else {object.visual.assetId=imported[0].id;object.visual.idleAnimation='';object.visual.focusAnimation='';}
+        setProject(next);setMessage(bundle.purpose==='animation'?'动画帧与播放设置已导入当前物件。':'原图已用于当前物件；其他状态图片和交互行为保留。');
+      }
+    } finally { setBusy(false); }
+  };
+  const sendToScene = () => void run(async () => {
+    await persist(true);
+    const href=await storeEditorHandoff('scene-composer','interactable',{project:latest.current.project,definitionIds:exportIds.length?exportIds:[current.definitionId]});
+    setHandoffUrl(href);
+  });
+  useEffect(()=>{
+    if(!busy && handoffUrl) queueMicrotask(()=>{setHandoffUrl('');void navigate(handoffUrl);});
+  },[busy,handoffUrl,navigate]);
+  const consumeImport = useEffectEvent(()=>{
+    const params=new URLSearchParams(location.search),assetId=params.get('importAsset'),purpose=params.get('importPurpose');
+    if(assetId&&['image','animation','interactable'].includes(purpose||'')){queueMicrotask(()=>setLibrary({purposes:[purpose as ImportPurpose],assetId}));clearImportQuery();}
+    else if(params.has('handoff'))void run(async()=>{const record=await readEditorHandoff('interactable-editor');if(record?.purpose==='interactable'){const payload=record.payload as {project:unknown};await adoptImportedProject(normalizeProject(payload.project));}clearImportQuery();});
+  });
+  useEffect(()=>{if(!ready||importStarted.current)return;importStarted.current=true;queueMicrotask(()=>consumeImport());},[ready]);
   const used = new Set(referencedAssets(project).map((a) => a.id));
   return (
     <main className="ie-workspace">
       {!ready && (
         <output className="wb-loading-veil">正在恢复交互物草稿…</output>
       )}
+      <AssetImportPicker open={!!library} onClose={()=>setLibrary(null)} purposes={library?.purposes || ['interactable']} initialAsset={library?.assetId} onImport={importFromLibrary} />
       <header className="ie-toolbar">
         <Box color="var(--theme-cyan)" />
         <strong>交互物编辑器</strong>
@@ -374,6 +434,9 @@ export function InteractableEditor() {
             : '原草稿保留，请保存源文件；导入项目可恢复自动保存'}
         </span>
         <span className="ie-spacer" />
+        <button disabled={busy || !ready} onClick={()=>setLibrary({purposes:['interactable']})}>从资产库打开项目</button>
+        <button disabled={busy || !ready || !draftWritable} onClick={()=>void run(async()=>{await saveProjectToLibrary(latest.current.project);await persist(true);setMessage('交互物源项目已保存到资产库，可直接导入场景；尚未导出 Godot。');})}>保存到资产库</button>
+        <button disabled={busy || !ready || !draftWritable} onClick={sendToScene}>用于制作场景</button>
         <button disabled={busy} onClick={() => projectInput.current?.click()}>
           <Upload size={16} />
           导入项目
@@ -532,6 +595,7 @@ export function InteractableEditor() {
               <Upload size={14} />
               导入图片 / 音效
             </button>
+            <button disabled={busy || !ready || !draftWritable} onClick={()=>setLibrary({purposes:['image','animation']})}>从资产库导入原图 / 动画</button>
             <div className="ie-asset-list">
               {project.assets.map((a) => (
                 <div key={a.id}>
@@ -561,6 +625,25 @@ export function InteractableEditor() {
         </aside>
         <Preview object={current} assets={project.assets} edit={edit} />
         <aside className="ie-inspector">
+          <PropArtPanel
+            projectId={project.projectId}
+            definitionId={current.definitionId}
+            objectName={current.displayName}
+            imageId={current.visual.assetId}
+            disabled={!ready || busy || !draftWritable}
+            onBusy={setBusy}
+            beforeGenerate={async () => {
+              await persist(true);
+              const url = new URL(location.href);
+              url.searchParams.delete('task');
+              url.searchParams.set('project', latest.current.project.projectId);
+              url.searchParams.set('object', current.definitionId);
+              history.replaceState(null, '', url.pathname + url.search);
+            }}
+            onAdopt={(target, asset) => {
+              setProject(applyPropArt(latest.current.project, target, asset));
+            }}
+          />
           <Field label="物件名称">
             <input
               value={current.displayName}

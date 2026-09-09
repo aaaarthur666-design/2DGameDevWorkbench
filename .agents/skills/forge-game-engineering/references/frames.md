@@ -81,4 +81,4 @@ Do not call the restart line on every update. Missing clips return false without
 
 For a new standalone visual test, instantiate `visual.tscn`, call `show_action`, inspect both loop and one-shot actions. For a real controller test, exercise input→state→clip, attack interruption/replay, damage count and pause in the target project. Passing the first does not prove the second.
 
-API references for Godot 4.6: [SpriteFrames](https://docs.godotengine.org/en/4.6/classes/class_spriteframes.html), [AnimatedSprite2D](https://docs.godotengine.org/en/4.6/classes/class_animatedsprite2d.html). `animation_finished` is not emitted for looping clips.
+API references for Godot 4.7: [SpriteFrames](https://docs.godotengine.org/en/4.7/classes/class_spriteframes.html), [AnimatedSprite2D](https://docs.godotengine.org/en/4.7/classes/class_animatedsprite2d.html). `animation_finished` is not emitted for looping clips.

@@ -1,3 +1,5 @@
+import {unwrapGodotMapZip} from '../godot-export/package.mjs';
+import {offerGodotExport} from '@/lib/workbench/godot-export';
 import JSZip from 'jszip';
 import {
   listWorkItems,
@@ -207,7 +209,7 @@ export async function readMap(fileOrItem: File | WorkItem): Promise<SceneMap> {
   // Preserve the original world origin in engine-only packages; the map editor's
   // recovery importer intentionally rebases them into a single editable tile.
   if (fileOrItem.name.endsWith('.zip')) {
-    const zip = await JSZip.loadAsync(fileOrItem);
+    const zip = unwrapGodotMapZip(await JSZip.loadAsync(fileOrItem));
     let total = 0;
     for (const entry of Object.values(zip.files)) {
       total +=
@@ -307,9 +309,6 @@ export async function exportScene(scene: Scene) {
     throw new Error(result.error || '场景导出失败。');
   const output = result.outputs.find((p) => p.endsWith('/scene-godot.zip'));
   if (!output) throw new Error('导出结果缺少场景包。');
-  const a = document.createElement('a');
-  a.href = `/api/workbench/artifacts?path=${encodeURIComponent(output)}`;
-  a.download = `${scene.name}_godot.zip`;
-  a.click();
+  offerGodotExport({name:scene.name,url:`/api/workbench/artifacts?path=${encodeURIComponent(output)}`});
   return result;
 }

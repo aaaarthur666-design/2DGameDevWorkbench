@@ -108,7 +108,7 @@ OpenAI 原图使用 `/v1/images/generations`，扩图继续使用 `/v1/images/ed
 | 顶层区域 PNG | 顶层区域裁出的透明前景 |
 | 分层 PSD | 按图片类型分层保存，参考和派生层也可检查 |
 | Pixelwork 编辑状态 | 原始卡片素材、几何、区域、羽化、锁与显示偏好 |
-| Godot 包 | PNG、`map_scene.tscn`、碰撞多边形、`regions.json`、读取脚本、项目文件及 `source_state.zip` |
+| Godot 包 | PNG、`map_scene.tscn`、碰撞多边形、`regions.json`、读取脚本及 `source_state.zip`，按独立目录组织，不含项目配置 |
 
 “导出效果”使用实际导出合成算法：全部参与输出且有图片的卡片都具备独立地表和物件时，使用“地表 + 物件 + 顶层”；否则保留“整体 + 顶层”。单纯隐藏标注不会改变输出。
 
@@ -192,11 +192,19 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 
 手动验收：生成一张方形原图，预览后“用作中心图”；选择一个相邻空卡片生成整体层，检查已有区域像素保持、过渡自然；导出并重新打开草稿。换回原有模型后也应能继续使用。自动回归使用隔离模拟服务，不消耗真实额度。
 
+## 内部素材联用
+
+当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+
+## 面向已有游戏的 Godot 包
+
+当前地图导出默认不再包含示例 project.godot，资源位于 forge_maps/map-<内容标识>/，res 引用自动重写，图像、碰撞、区域清单与源状态保留。多个不同地图可并存，不重复注册 FrameRoninRegions 全局类。导出窗口可选择游戏目录并交给 WorkBuddy 完成挂载；“仅下载 ZIP”可直接解压到项目根目录。地图与场景组装均支持新包回导。参见 [Godot 交付](godot-delivery.md)。
+
 ## 完整工程持久化
 
 前端 `PUT /api/workbench/map-stitcher/projects/<id>` 代理 Bridge 同路径的 `/v1/` 接口，以 `application/zip` 和 `X-Map-Revision` 提交完整工程。GET 返回已保存源包和版本；过期版本返回 409。记录在 manifest 的 `workspace.mapProjectDirectory`，不可变源包版本在 `outputs/map-project-<hash>/<revision>-<uuid>/map-source.zip`，成功写完源包才原子切换记录。256 MB 上限包含解压后的字节。此接口只供人工编辑器持久化，不新增 MCP/CLI 地图生产能力。
 
-资产库只收录这些工程，下载不生成 PNG、PSD 或 Godot。打开下载包中的 `map-source.zip` 会导入为新工程；从资产详情进入则继续保存到原工程。恢复的未完成队列始终暂停。历史 Pixelwork / SceneMaker / Godot 导入继续保留。
+资产库新增这些工程，同时保留已保存地图图片与历史素材；通过“地图工程”或“地图原图 / 历史素材”筛选。工程下载只读取编辑源文件，不自动生成 PNG、PSD 或 Godot。打开下载包中的 `map-source.zip` 会导入为新工程；从资产详情进入则继续保存到原工程。恢复的未完成队列始终暂停。历史 Pixelwork / SceneMaker / Godot 导入继续保留。
 
 ### 地图工程卡预览
 

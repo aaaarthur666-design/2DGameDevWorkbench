@@ -1,5 +1,7 @@
+import {offerGodotExport} from '../../lib/workbench/godot-export';
 import JSZip from 'jszip';
-import { canvasToBlob, downloadBlob, safeFileName } from './image-utils';
+import {prepareGodotPackage} from '../godot-export/package.mjs';
+import { canvasToBlob, safeFileName } from './image-utils';
 import type {
   FrameRoninTile,
   MapDisplayLayer,
@@ -212,9 +214,10 @@ export async function exportGodotPackage(
     'INSTALL.md',
     '# Godot 地图资源\n\n将资源复制到 Godot 4 项目，打开 map_scene.tscn。regions.json 使用世界像素坐标。\n\nsource_state.zip（若存在）保存完整编辑源，可通过地图工具的“打开状态 / Godot”恢复原始卡片、图层和区域。只有合成图片的旧包会恢复为单个地图块。\n',
   );
-  const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+  const prepared=await prepareGodotPackage(await zip.generateAsync({type:'uint8array',compression:'STORE'}));
+  const blob=new Blob([prepared.bytes],{type:'application/zip'});
   const fileName = `${safeFileName(projectName.replace(/\.[^.]+$/, ''))}_godot.zip`;
-  downloadBlob(blob, fileName);
+  offerGodotExport({name:projectName,blob});
   return { blob, fileName, manifest, layers: exportedLayers };
 }
 

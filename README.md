@@ -14,7 +14,7 @@ Forge 是面向 2D 游戏美术制作与工程交接的本地工作台，也是 
 | 交互物 | 查看、切换、拾取、序列行为，源工程与 Godot 资源包 | MCP 模板、save-project、export-godot；通用或 CopyWorms 兼容包 |
 | 场景组装 | 摆放已完成地图和交互物、调整遮挡、导出完整场景 | 手动网页模块，不是 MCP 生产能力 |
 | 资产库 | 分页查找已有作品、准确定位候选、勾选下载真实素材 ZIP | 三个只读资产工具；范围不含浏览器草稿和外部工程 |
-| 游戏工程 Skill | 按 CopyWorms 方法整理已就绪资产、设计架构并写 Godot 4.6 脚本 | 外部 Agent 在获授权目标工程中实施；不是新的 MCP 生图工具 |
+| 游戏工程 Skill | 按 CopyWorms 方法整理已就绪资产、设计架构并写 Godot 4.7 脚本 | 外部 Agent 在获授权目标工程中实施；不是新的 MCP 生图工具 |
 
 地图原图与扩图支持清单配置的 Nano Banana 2、GPT Image 2 和混元 Image 3.0（`hy-image-v3`）。混元生图适配范围是地图，角色原图和动画继续使用 PixelLab。地图手动边界同样适用于 CLI、HTTP 和浏览器工具。
 
@@ -81,3 +81,5 @@ PixelLab Key 在原图或序列帧设置中保存一次，两处共用；由 Spr
 `sprite-pipeline` 适配器把 Manifest 的 camelCase 输入转换成 Python `/v1/jobs` 协议；`map-stitcher` 适配器在本地执行 `compose`，仅在 `generate-layer` 时调用所选官方图片 API。也可以在地图设置窗口保存密钥：它持久保存在被 Git 忽略的本机配置文件中，重启后自动恢复；Windows 使用当前账户加密，macOS 使用钥匙串保护，其他系统使用权限受限的文件。服务端不会把密钥回传给页面，也不会写入任务记录或日志。完整请求与响应约定见 [`docs/connector-contract.md`](docs/connector-contract.md)。
 
 修改前阅读 [贡献指南](CONTRIBUTING.md)、[开发验证矩阵](docs/development.md) 和 [安全策略](SECURITY.md)。本仓库以 [MIT](LICENSE) 发布；组件来源、上游同步基线与 CopyWorms 复用边界见 [第三方声明](THIRD_PARTY_NOTICES.md)。本地集成更新不代表独立上游仓库已同步。
+
+导出到已有游戏：在 Godot 导出窗口选择项目，后续资源安装、场景挂载和脚本连接由 WorkBuddy 按 [游戏交付流程](docs/godot-delivery.md)完成。

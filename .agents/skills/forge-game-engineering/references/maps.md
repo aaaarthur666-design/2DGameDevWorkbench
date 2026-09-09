@@ -46,4 +46,4 @@ When the game reparents a live Pixelwork map, call `request_ready()` **before** 
 
 Legacy import acceptance must include actually entering, leaving, re-entering and runtime reparenting, with actor detection, visible tiles, region collision and no leftover loads. A generated static Frame Ronin fixture only validates static map mounting; it does not validate this legacy plugin or a whole level.
 
-[Godot 4.6 PackedScene reference](https://docs.godotengine.org/en/4.6/classes/class_packedscene.html) is for API verification; architecture decisions come from the project sources above.
+[Godot 4.7 PackedScene reference](https://docs.godotengine.org/en/4.7/classes/class_packedscene.html) is for API verification; architecture decisions come from the project sources above.

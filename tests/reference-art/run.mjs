@@ -34,6 +34,7 @@ const image = await sharp({
   ])
   .png()
   .toBuffer();
+let returnedImage = image;
 let configured = true;
 let providerStatus = 'running';
 let submits = 0;
@@ -60,11 +61,11 @@ const mock = createServer(async (request, response) => {
     polls++;
     result =
       providerStatus === 'completed'
-        ? { status: 'completed', image: image.toString('base64') }
+        ? { status: 'completed', image: returnedImage.toString('base64') }
         : { status: providerStatus, error: 'Provider failed' };
   } else if (request.url === '/v1/reference-art/import') {
     imports++;
-    assert.deepEqual(Buffer.from(body.image, 'base64'), image);
+    assert.deepEqual(Buffer.from(body.image, 'base64'), returnedImage);
     result = { characterId: body.characterId };
   } else {
     response.writeHead(404);
@@ -233,6 +234,22 @@ try {
     'utf8',
   );
   assert.ok(!sourceJson.includes(savedKey));
+  assert.ok(validateInput(capability, {...input, size: 96}).length);
+  assert.ok(validateInput(capability, {...input, subject: 'prop', size: 64}).length);
+  assert.ok(validateInput(capability, {operation: 'transfer', sourceTaskId: task.id, size: 64}).length);
+  returnedImage = await sharp(image).resize(64,64,{kernel:'nearest'}).png().toBuffer();
+  const coarse = await runConnector(manifest, capability, {...input, size:64, prompt: 'coarse keeper '.repeat(90)});
+  coarse.task.adapter.lastPolledAt = 0; await persistTask(manifest,coarse.task);
+  const coarseDone = await refreshTask(manifest,coarse.task.id);
+  assert.equal(coarseDone.task.status,'completed');
+  const coarseResult = JSON.parse(await readFile(path.join(repositoryRoot,coarseDone.task.outputs.find(p=>p.endsWith('result.json'))),'utf8'));
+  assert.equal(coarseResult.width,64); assert.equal(coarseResult.height,64);
+  await runConnector(manifest,capability,{operation:'transfer',sourceTaskId:coarse.task.id});
+  assert.equal(received.at(-1).body.size,64);
+  assert.equal(received.at(-1).body.reuseIdentity,true);
+  assert.ok(received.at(-1).body.prompt.length < 300);
+  assert.equal((await readTask(manifest,coarse.task.id)).input.prompt,'coarse keeper '.repeat(90));
+  console.log('PASS native 64px generation, metadata, transfer and invalid size rejection');
   console.log(
     JSON.stringify(
       {

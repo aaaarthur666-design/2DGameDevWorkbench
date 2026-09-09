@@ -68,7 +68,7 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 ### 5.0 角色原图
 
-`reference-art` 通过 Node 适配器调用 SpritePipeline 中的窄接口，共用服务实例的受保护 PixelLab Key。Pixflux 后台任务 ID 记录在 runtime task 中；get/status 只查询原任务，完成后校验 128×128 透明 PNG 并写入任务产物。`transfer` 根据已完成源任务创建可复用角色预设，序列帧界面通过角色链接预选参考图，不生成动画。详见 [角色原图](reference-art.md)。
+`reference-art` 同时支持角色（默认 subject=character）与交互物原图（subject=prop）。物品以 kind=prop 收录，使用交互物编辑器的 artTask 精确预览入口，采用后成为具有来源 / 哈希的物件图片；不移送角色。两种用途通过 Node 适配器调用 SpritePipeline 中的窄接口，共用服务实例的受保护 PixelLab Key。Pixflux 后台任务 ID 记录在 runtime task 中；get/status 只查询原任务，完成后校验 128×128 透明 PNG 并写入任务产物。`transfer` 根据已完成源任务创建可复用角色预设，序列帧界面通过角色链接预选参考图，不生成动画。详见 [角色原图](reference-art.md)。
 
 ### 5.1 序列帧生成
 
@@ -80,11 +80,11 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 ### 5.3 独立交互物编辑
 
-`interactable-editor` 在本地校验项目并导出 Godot 4.6.x 资源。当前支持 inspect、toggle、pickup、sequence 四类对象，以及 proximity_press、pointer_click、automatic_enter、external_request 四类触发方式。导出不要求本机安装 Godot，也不调用外部生成 API。
+`interactable-editor` 在本地校验项目并导出 Godot 4.7.x 资源。当前支持 inspect、toggle、pickup、sequence 四类对象，以及 proximity_press、pointer_click、automatic_enter、external_request 四类触发方式。导出不要求本机安装 Godot，也不调用外部生成 API。
 
 ## 6. Agent 调用面
 
-仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和 16 个工具。基础任务工具为：
+仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和 18 个工具。基础任务工具为：
 
 1. `workbench_list_capabilities`：读取当前能力目录。
 2. `workbench_describe_capability`：读取目标能力 schema、连接器和输出契约。
@@ -150,6 +150,18 @@ Web 工作台提供生产台、场景台、专业工具和高级配置。它负�
 ## 资产与工程交接
 
 `asset-catalog.mjs` 按来源身份合并任务产物与原生候选，并从 manifest 的 sceneExportDirectory 收录完整场景导出；浏览器草稿不自动收录。场景保留每次导出的独立版本与两个 ZIP，不冒充生产任务。执行历史归档与资产可见性分离，资产保留创建时间和来源记录；历史搜索先过滤全量未归档记录，再按快照分页。清单描述资产，下载 ZIP 才交付文件。Sprite 导出同时提供 PNG 和单动作 Godot SpriteFrames 包，旧记录保留可选字段兼容。工程 Skill 优先消费现成包；它在授权目标项目按 CopyWorms 契约接入角色与地图，保留玩法计时、场景生命周期和第三方依赖。详见 [资产目录](asset-catalog.md) 与 [游戏工程](game-engineering.md)。
+
+## 执行步骤到前端的确认通道
+
+MCP 0.9.0 的 workbench_present 通过共享 runtime 写入 workspace.presentationDirectory 的短期请求，前端定期经 HTTP Bridge 回报页面身份并接收目标。页面保存草稿后在原标签切换，再确认地址到达。workbench_get_frontend_context 只读查询页面和确认；浏览器草稿仍未进入服务端资产目录。启用跟随的 MCP 连接在 run/get_task 后自动发布当前步骤；展示通道故障不改变生产任务结果。详见 [页面跟随](agent-preview-follow.md)。
+
+## 内部素材联用
+
+当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+
+## Godot 游戏交付层
+
+[Godot 交付](godot-delivery.md)在生产导出与外部 Agent 游戏工程之间建立可核对的交付记录。features/godot-export 统一包结构，lib/workbench/game-export 负责项目选择、收件、安装计划、备份与证据；网页、MCP 和 CLI 共享实现。外部 Agent 根据实际项目写接入代码；不新增通用网页 Agent 或地图生产 capability。状态与目录由 manifest.gameExport/workspace.gameExportDirectory 描述。
 
 完整地图工程通过人工编辑器保存到 `workspace.mapProjectDirectory`，源 ZIP 位于版本化 outputs 目录，IndexedDB 保留本地备份。持久化独立于生产任务，资产库 map 类型仅索引完整工程。协议、冲突恢复和源包格式见 [地图工具](map-stitcher.md)；`npm run test:map-stitcher` 包含完整源包往返、并发版本冲突及文件完整性检查。
 

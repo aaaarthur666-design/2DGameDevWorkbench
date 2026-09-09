@@ -139,12 +139,16 @@ npm run workbench -- doctor --json
 
 “4 · 导出”的按钮为“导出 PNG + Godot 包”。通过现有检查并采用候选后，一次导出 PNG、预览/配方/QA 及 `<文件名>.godot.zip`。下方“Godot SpriteFrames 包（ZIP）”可直接下载；重新选择已有导出作品可重新下载，不会重复生成。旧导出记录没有 ZIP 时仍可读取原文件，需在当前审批规则允许时重新导出获得新包。
 
-将 ZIP 中整个 `forge_sprites` 文件夹放进 Godot 4.6.x 项目根目录，再将包内 `sprite_frames.tres` 赋给 AnimatedSprite2D 的 Sprite Frames 属性；也可直接把 `animated_sprite.tscn` 拖入场景，运行时自动播放。无需手动切图、排序或逐帧添加。多个作业/候选按独立目录区分；请保持目录结构。包不含 project.godot，不覆盖游戏设置。
+将 ZIP 中整个 `forge_sprites` 文件夹放进 Godot 4.7.x 项目根目录，再将包内 `sprite_frames.tres` 赋给 AnimatedSprite2D 的 Sprite Frames 属性；也可直接把 `animated_sprite.tscn` 拖入场景，运行时自动播放。无需手动切图、排序或逐帧添加。多个作业/候选按独立目录区分；请保持目录结构。包不含 project.godot，不覆盖游戏设置。
 
 SpriteFrames 保留导出配方中的准确格位/有效帧顺序、动作映射名、运行 FPS 和 loop。纹理无裁切、缩放或重排。示例场景按角色锚点设置脚底原点并使用 nearest 过滤；仅替换资源不会改变原角色碰撞/偏移。当前包只包含所选动作；给已有多动作角色更新时应合并该动作，保留其他动画，见[工程 Skill](game-engineering.md)。
 
 MCP/CLI 的 `sprite-generator export` 同步返回 `godotPackage` 和实际 ZIP 文件，资产库下载也包含已有 Godot 包。服务端记录新增可选 `godot_package_path` / `godot_sha256`，下载接口为 `/v1/jobs/{job_id}/exports/godot`；旧记录无包时返回 404。ZIP 与 PNG 使用同一份已验证快照，并与其他导出文件一起原子发布/回滚；不绕过审批、不调用模型，不要求安装 Godot。
 
-验证：SpritePipeline `tests/test_godot_export.py` 覆盖包内容、下载、旧记录、UI 回调、源文件修改拒绝和回滚。设置 `GODOT_46_BIN` 后还会真实导入并播放，验证非规则帧序、别名、FPS、循环和脚底偏移。
+验证：SpritePipeline `tests/test_godot_export.py` 覆盖包内容、下载、旧记录、UI 回调、源文件修改拒绝和回滚。设置 `GODOT_47_BIN` 后还会真实导入并播放，验证非规则帧序、别名、FPS、循环和脚底偏移。
 
 表单、像素修补编辑器与动画播放器跟随工作台深浅主题。API Key 等输入框使用可见边框和聚焦色；切换主题通过消息同步，不重载播放器。
+
+## 将已导出动画交给游戏项目
+
+工作区顶部“已导出动画 → 游戏项目”读取当前作业已经保存的 Godot 包，打开统一目录选择窗口；不存在包时提示先完成采用/导出，不触发生产。要交付某个精确候选，用它的资产详情入口。帧序、别名、FPS、loop 与原包保持一致，WorkBuddy 应合并到原角色动作中，保留其他动画与控制器。详见 [Godot 交付](godot-delivery.md)。

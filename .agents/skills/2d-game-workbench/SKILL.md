@@ -1,6 +1,6 @@
 ---
 name: 2d-game-workbench
-description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off pixel character reference art, sprite-animation frames, saved map assets, independent Godot interactable objects, or completed scene exports. Map and scene production remain manual in the frontend; use forge-game-engineering for game architecture and scripts.
+description: Drive this repository's reusable 2D game production capabilities when a user asks to create, organize, preview, export, or hand off pixel character or item reference art, sprite-animation frames, saved map assets, independent Godot interactable objects, or completed scene exports. Map and scene production remain manual in the frontend; use forge-game-engineering for game architecture and scripts.
 ---
 
 # Forge asset production
@@ -57,7 +57,9 @@ Use the `conversationGuidance` returned by `workbench_list_capabilities`, or rea
 
 ## Capability selection
 
-- Use `reference-art` `generate` for PixelLab character images (128x128 transparent PNG, prompt and optional name/facing/seed). It shares the SpritePipeline protected key. Use `transfer` with the completed source task ID to import a reusable character; this never generates animation. Poll with get/status and never resubmit to recover an ambiguous paid POST.
+- Use `reference-art` `generate` with `subject=prop` for a single isolated PixelLab item (128x128 transparent side-view PNG, prompt up to 1800 characters). Poll the same task, inspect the image and use the exact `artTask` editor link. Inventory uses `kind=prop`. The image is not an interactive object or a character preset; never transfer it. For a requested complete object, bind the returned PNG path/data and `generation: {sourceTaskId, sha256}` metadata into the selected existing project's assets, preserve project/definition IDs, set the selected default visual, and save/export through interactable-editor. Do not silently replace state-specific art. Read [item art](../../../docs/prop-art.md).
+
+- Use `reference-art` `generate` for PixelLab character images (64x64 or 128x128 transparent PNG, default 128; prompt and optional name/facing/seed/size). It shares the SpritePipeline protected key. Use `transfer` with the completed source task ID to import a reusable character; this never generates animation. Poll with get/status and never resubmit to recover an ambiguous paid POST.
 
 - Use `sprite-generator` for SpritePipeline `create`, `create-and-generate`, `generate-existing`, `get`, `export`, `check`, `safety`, `review-frame`, `approve`, `reject`, `recover`, and `attach-provider-job`. Use declared preset IDs; do not derive IDs from free text.
 - Map original-image generation, stitching and extension are manual frontend workflows. MCP excludes map-stitcher; direct the user to /tools/map-stitcher. Do not bypass this boundary through CLI, HTTP or browser tools.
@@ -84,6 +86,8 @@ Use workbench_interactable_template for a complete inspect/toggle/pickup/sequenc
 
 ## Present work in WorkBuddy
 
+Use [execution-stage preview following](../../../docs/agent-preview-follow.md): call workbench_present before execution to arm this MCP connection, then run/get_task publish their current step automatically. After reading a different existing artwork or candidate, explicitly present its exact identity. Check requestId with workbench_get_frontend_context; never claim pending as displayed. Pause/busy/save failures keep the current page; do not use host navigation to override them. Repeated polls do not reload the page. Current-page summaries identify browser work but do not expose draft pixels or full map state.
+
 Follow the shared conversation guide's presentation section. Prefer `presentation.summary`, `viewUrl` and `actions`; retain the full structured result for reasoning rather than pasting it into chat. Query a native animation with `get_result(jobId, candidateIndex?)` and a workbench record with `get_result(taskId, candidateIndex?)`; exactly one identifier is required. Neither lookup creates a task or starts generation. Text-only clients can request `detail:true` to read complete artifacts and review evidence; keep those details out of routine user replies.
 
 On the first conversation preview, open the known artwork's exact URL when available. Use only a discovered host tool with its real schema. Later reuse the existing preview if supported and editing is safely saved, otherwise provide the exact link. Never reopen after dismissal or on reconnection without the user's request. Tool URLs and `browserOpened:false` are not evidence that a browser opened. Ask only the material unresolved choice through the available host question tool; no answer or cancellation means no selection.
@@ -108,13 +112,29 @@ The SpriteFrames pack preserves exact selected frame order/regions, action alias
 
 ## Diagnose configuration accurately
 
-Check API compatibility and UI readiness separately; `sprite-pipeline:api` does not serve the embedded UI. PixelLab Key is shared and persists in protected SpritePipeline settings; map UI keys currently last only for the Bridge process, with server environment as the persistent alternative. Dedicated settings return configured state, never key values. Startup tools do not install dependencies or restart occupied/incompatible services. Read `docs/development.md` before maintaining or restarting a service, and retain the user's data directory and in-flight work.
+Check API compatibility and UI readiness separately; `sprite-pipeline:api` does not serve the embedded UI. PixelLab Key is shared and persists in protected SpritePipeline settings; map keys also persist in protected local configuration, with server environment as an alternative. Dedicated settings return configured state, never key values. Startup tools do not install dependencies or restart occupied/incompatible services. Read `docs/development.md` before maintaining or restarting a service, and retain the user's data directory and in-flight work.
+
+## Export directly to the selected game
+
+Read [Godot delivery](../../../docs/godot-delivery.md) when exporting ready assets to an existing game. The frontend remembers the chosen project and writes an immutable delivery; export_to_game does the same for an exact saved assetId/revision. Only an existing Godot package can be delivered: no generation, implicit approval or replacement candidate. Map/scene production remains manual.
+
+When continuing an authorized game task, list_game_exports then get_game_export finds the package and target without asking the user to locate files. Switch to the engineering Skill for install_game_export and actual code integration. Do not stop at copied resources or ask the user to delete project.godot, repair res paths or mount nodes. Preserve existing controllers, custom changes and other clips. The host Agent is not automatically awakened by a browser export; pending, assets installed, integrated and engine-verified are different outcomes.
 
 ## Continue into a game project
 
 When the user wants architecture, Godot scripts or integration of ready assets, read the Skill at `agentAssets.engineering.skill` in the manifest. This is an external Agent workflow grounded in CopyWorms, not a new production operation. Keep the exact asset selections and their readiness evidence. Map production remains manual; the engineering Skill consumes exported scenes/maps. Preserve a planning-only request and the distinction between the read-only reference game and the authorized target project.
 
-Map catalog entries contain complete editable projects only. Individual generated, expanded, stitched and imported images are excluded without deleting their files or history. Follow the exact project editor link to resume; download supplies map-source.zip, which is an editor source package, not an engine export. Legacy browser drafts are indexed only after opening and saving in their original browser. Do not bypass the manual-map boundary to migrate or produce maps.
+## Internal frontend reuse
+
+See [internal imports](../../../docs/internal-imports.md) for asset-library source selection, map/object/scene handoff and editing existing materials. These frontend imports read existing assets without production tasks or generation; map editing and scene placement remain manual. Static props are appearance only; preserve behavior, project/object identity, source hashes and exact animation candidate/FPS/loop. Changes in an editor require explicit replacement in an existing scene. Older prop metadata can omit subject only when the original task explicitly says prop and content checks pass.
+
+Project selection uses the in-page folder browser or an explicit typed path. Browsing is read-only and cancellable; it must not start an OS dialog or lock the export window. Selecting a folder alone does not create a delivery or authorize generation.
+
+Current Forge export and engine verification baseline: Godot 4.7.x. Use GODOT_47_BIN for engine tests. Read the actual executable version before running; historical 4.6.x reports and previously exported assets remain provenance, not current validation.
+
+For coarse pixel characters, choose size=64 at generation, inspect actual gameplay-scale appearance, then transfer the original bytes. transfer may include identityDescription (up to 300 characters) with appearance only; do not copy standing-pose instructions into motion generation. Long source prompts use the reference-image identity lock by default. Full original prompts stay in source tasks.
+
+Map assets include complete saved projects (mapType=project) and durable image/history assets (mapType=image); kind=map without mapType returns both. Preserve legacy asset IDs and exact source files. Resume a project through its exact editorPath; map-source.zip is editable source and can be imported into the map editor or scene composer, not used as a prop image or claimed as an existing Godot export. Project thumbnails remain display attachments. Browser-only legacy drafts require a manual open/save before server indexing; never bypass the manual-map boundary.
 
 Map project thumbnails are optional, version-bound display attachments rendered locally by the manual editor. They are not separate map assets or engine exports. Missing previews do not imply missing source; legacy projects gain a thumbnail on the next manual open/save. Asset reads never render or generate a thumbnail.
 

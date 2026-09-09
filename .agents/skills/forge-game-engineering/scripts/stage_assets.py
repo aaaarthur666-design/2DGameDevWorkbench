@@ -1,4 +1,4 @@
-"""Stage ready art as Godot 4.6 resources in a NEW directory; no provider or game edits."""
+"""Stage ready art as Godot 4.7 resources in a NEW directory; no provider or game edits."""
 import argparse
 import hashlib
 import json
@@ -164,7 +164,7 @@ def stage_sprite(spec_path, output, namespace):
         f'source_faces_right = {str(spec["sourceFacing"] == "right").lower()}',
         f'frame_events = {quote(events)}', '',
     ])
-    report = {"format": "forge-godot-sprite-handoff", "version": 1, "engine": "4.6.x", "resourceRoot": namespace,
+    report = {"format": "forge-godot-sprite-handoff", "version": 1, "engine": "4.7.x", "resourceRoot": namespace,
               "spriteFrames": "res://" + frames_path, "visualScene": f"res://{namespace}/visual.tscn",
               "sourceFacing": spec["sourceFacing"], "offset": offset, "animations": records,
               "sourceFiles": sources, "engineValidated": False, "modifiesSource": False}
@@ -190,6 +190,20 @@ def stage_map(archive, output, namespace):
             seen.add(name.rstrip("/").lower())
             if not entry.is_dir():
                 files[name] = z.read(entry)
+    roots = [name[:-len("map_export.json")] for name in files if re.fullmatch(r"forge_maps/[^/]+/map_export.json", name)]
+    if roots:
+        if len(roots) != 1:
+            raise ValueError("Select a package containing one map")
+        prefix = roots[0]
+        flattened = {}
+        for name, data in files.items():
+            if not name.startswith(prefix):
+                continue
+            local = name[len(prefix):]
+            if local.endswith((".gd", ".tscn", ".tres", ".json")):
+                data = data.decode("utf-8-sig").replace("res://" + prefix, "res://").encode("utf-8")
+            flattened[local] = data
+        files = flattened
     if "map_export.json" not in files:
         raise ValueError("Requires a Frame Ronin Godot export (map_export.json); use the documented Pixelwork/scene-composer workflow for other formats")
     manifest = json.loads(files["map_export.json"])
@@ -221,9 +235,9 @@ def stage_map(archive, output, namespace):
                 text = re.sub(r"(?m)^class_name FrameRoninRegions\s*$", "", text)
             data = text.encode("utf-8")
         if name == "INSTALL.md":
-            data = f"Open res://{namespace}/map_scene.tscn. Import this staged directory into your existing Godot 4.6.x project. project.godot was intentionally omitted. Region runtime is loaded by path, without a duplicate global class.\n".encode("utf-8")
+            data = f"Open res://{namespace}/map_scene.tscn. Import this staged directory into your existing Godot 4.7.x project. project.godot was intentionally omitted. Region runtime is loaded by path, without a duplicate global class.\n".encode("utf-8")
         copied[f"{namespace}/{name}"] = data
-    report = {"format": "forge-godot-map-handoff", "version": 1, "engine": "4.6.x", "resourceRoot": namespace,
+    report = {"format": "forge-godot-map-handoff", "version": 1, "engine": "4.7.x", "resourceRoot": namespace,
               "scene": f"res://{namespace}/map_scene.tscn", "sourceArchive": str(archive), "sourceSha256": digest(raw),
               "sourceFiles": source_hashes, "canvas": manifest.get("canvas"), "coordinateSystem": regions["coordinateSystem"],
               "engineValidated": False, "modifiesSource": False}

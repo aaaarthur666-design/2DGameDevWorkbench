@@ -89,10 +89,10 @@ const mapOut = path.join(dir, 'map');
 await run(python, ['-X', 'utf8', stage, 'sprite', path.join(fixtures, 'sprite.json'), '--output', spriteOut, '--resource-root', 'Assets/Hero']);
 await run(python, ['-X', 'utf8', stage, 'map', path.join(fixtures, 'map.zip'), '--output', mapOut, '--resource-root', 'LevelModule/Forest']);
 const report = { staging: 'passed', discovery: 'passed', engine: 'not-run', directory: dir, fixturesOnly: true, paidCalls: 0 };
-const godot = process.env.GODOT_46_BIN;
+const godot = process.env.GODOT_47_BIN;
 if (godot) {
   const version = (await run(godot, ['--version'])).trim();
-  assert.match(version, /^4\.6\./, `Engine must be 4.6.x, got ${version}`);
+  assert.match(version, /^4\.7\./, `Engine must be 4.7.x, got ${version}`);
   const project = path.join(dir, 'project');
   await mkdir(project);
   await cp(path.join(spriteOut, 'Assets'), path.join(project, 'Assets'), { recursive: true });
@@ -101,7 +101,7 @@ if (godot) {
   await cp(`${skill}/assets/sprite_frames_merge.gd`, path.join(project, 'sprite_frames_merge.gd'));
   await cp('tests/game-engineering/probe.gd', path.join(project, 'probe.gd'));
   await cp('tests/game-engineering/lifecycle_fixture.gd', path.join(project, 'lifecycle_fixture.gd'));
-  await writeFile(path.join(project, 'project.godot'), '[application]\nconfig/name="Forge engineering acceptance fixture"\nconfig/features=PackedStringArray("4.6", "GL Compatibility")\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
+  await writeFile(path.join(project, 'project.godot'), '[application]\nconfig/name="Forge engineering acceptance fixture"\nconfig/features=PackedStringArray("4.7", "GL Compatibility")\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
   const imported = await run(godot, ['--headless', '--path', project, '--editor', '--import']);
   await writeFile(path.join(dir, 'godot-import.log'), imported);
   assert.doesNotMatch(imported, /SCRIPT ERROR|Parse Error|ERROR:/);
@@ -112,7 +112,7 @@ if (godot) {
   report.engine = 'passed'; report.godotVersion = version;
   console.log(played);
 } else {
-  console.log('SKIP Godot runtime: set GODOT_46_BIN to a Godot 4.6.x executable. Staging success is not engine validation.');
+  console.log('SKIP Godot runtime: set GODOT_47_BIN to a Godot 4.7.x executable. Staging success is not engine validation.');
 }
 await writeFile(path.join(dir, 'report.json'), JSON.stringify(report, null, 2));
 console.log(`Engineering acceptance: ${path.join(dir, 'report.json')}`);

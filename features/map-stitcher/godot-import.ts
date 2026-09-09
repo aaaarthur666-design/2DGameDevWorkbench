@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {unwrapGodotMapZip} from '../godot-export/package.mjs';
 import { unpackMapProject } from './project-client';
 import { blobToAsset } from './image-utils';
 import { createFrameRoninCenterTile } from './frame-ronin-geometry';
@@ -24,6 +25,7 @@ export async function loadMapProject(
   let zip = file.name.toLowerCase().endsWith('.zip')
     ? await JSZip.loadAsync(file)
     : null;
+  if(zip)zip=unwrapGodotMapZip(zip);
   if (zip?.file('map-project.json')) {
     const draft = await unpackMapProject(await file.arrayBuffer());
     return { ...draft.snapshot, pending: draft.pending, warnings: [], sourceFormat: 'forge-map-project' };

@@ -39,7 +39,7 @@ MCP 是客户端调用工作台工具的接口；Skill 是告诉 Agent 怎样完
 
 ### 首次准备
 
-使用 Node.js 22.13 或更高版本。需要角色原图或序列帧时，还需要 Python 3.11 或更高版本；项目 CI 使用 Python 3.12。仅地图、交互物和场景组装不需要 Python。导出 Godot 包无需安装 Godot；实际导入和播放验收使用 Godot 4.6.x。
+使用 Node.js 22.13 或更高版本。需要角色原图或序列帧时，还需要 Python 3.11 或更高版本；项目 CI 使用 Python 3.12。仅地图、交互物和场景组装不需要 Python。导出 Godot 包无需安装 Godot；实际导入和播放验收使用 Godot 4.7.x。
 
 先把仓库放到稳定目录。Windows 可在该目录打开 PowerShell；macOS 可使用终端。以下命令都从仓库根目录执行：
 
@@ -171,7 +171,7 @@ npm ci 安装锁定的前端与 Node 依赖。setup 查找 Python，在 Tools/Sp
 
 ### 导入资源包
 
-在序列帧导出页下载“Godot SpriteFrames 包（ZIP）”。解压后，把其中整个 forge_sprites 文件夹放到 Godot 4.6.x 项目根目录，保持目录结构。
+在序列帧导出页下载“Godot SpriteFrames 包（ZIP）”。解压后，把其中整个 forge_sprites 文件夹放到 Godot 4.7.x 项目根目录，保持目录结构。
 
 | 包内文件 | 使用方式 |
 | --- | --- |
@@ -246,13 +246,21 @@ npm ci 安装锁定的前端与 Node 依赖。setup 查找 Python，在 Tools/Sp
 | 以后回来编辑或换机器 | Pixelwork 编辑源文件 |
 | 接入 Godot | Godot 包，包含场景、图片、碰撞及完整编辑源 |
 
-当前地图 Godot 包包含 map_scene.tscn、regions.json、图片、读取脚本、示例项目文件与 source_state.zip。导入已有游戏时不要用示例 project.godot 覆盖原配置；通过工程 Skill 识别格式、整理资源路径后接入。
+当前地图 Godot 包包含独立 forge_maps 目录下的 map_scene.tscn、regions.json、图片、读取脚本与 source_state.zip，不再包含示例 project.godot。导出窗口选择已有游戏后，由 WorkBuddy 安装资源并完成场景与脚本连接；旧包交付时会自动转换。
 
 新包能从内嵌源状态恢复原卡片、区域和素材。旧包只有合成图时，最多恢复其实际包含的内容，不能推断出完整编辑历史或原始分层。工作台也不会反向解析任意手改的 Godot 脚本。
 
 可点击“用于制作场景”，把当前地图完整快照交给场景组装；不必先下载再上传。地图自动保存与下载源文件是不同动作，重要项目应两者都保留。
 
 ## 10 制作交互物
+
+### 没有物品图片时
+
+选择物件后，展开右侧“生成物品原图”。输入电池、宝箱或开关等单个物品的描述，确认 PixelLab 已配置，点击生成。它与角色原图和序列帧共用已保存的 Key；输出为 128×128 侧视透明 PNG，每次生成使用账户额度。
+
+先检查预览，再下载 PNG 或点击“采用到当前物件”。采用会替换默认图片，停用默认待机 / 聚焦动画选择，但保留已有动画帧、状态专用图片、其他素材和行为。草稿自动保存；重新进入可从最近物品原图或资产库的“物品原图”恢复。生成不会自动采用或生成动画，切换物件后以采用按钮上的目标名称为准。
+
+通过 WorkBuddy 可说：“为当前电池物件生成一张侧视像素原图，先预览，不要改行为。”对应 reference-art 的 subject=prop；只要求图片时不会创建角色预设。采用后再配置行为或导出。详见[物品原图](prop-art.md)。
 
 ### 先选行为
 
@@ -404,7 +412,7 @@ Helper 不自动合并到游戏，不生成美术，不需要 API Key。Agent �
 
 ### 验收层级
 
-“已写代码”“已暂存资源”“引擎导入通过”“实际播放通过”“画面人工检查通过”“全游戏通过”是不同结论。设置 GODOT_46_BIN 后运行 npm run test:engineering 可以执行隔离的 4.6.x 契约检查；未配置时引擎部分会跳过，不能报告为通过。
+“已写代码”“已暂存资源”“引擎导入通过”“实际播放通过”“画面人工检查通过”“全游戏通过”是不同结论。设置 GODOT_47_BIN 后运行 npm run test:engineering 可以执行隔离的 4.7.x 契约检查；未配置时引擎部分会跳过，不能报告为通过。
 
 目标工程最终仍需测试输入到状态再到动画、重复攻击、暂停、朝向、碰撞、关卡离开重进及实际依赖。fixture 或资产播放器成功不能替代真实游戏验收。
 
@@ -469,7 +477,7 @@ Helper 不自动合并到游戏，不生成美术，不需要 API Key。Agent �
 | Agent 展示和资产 | test:presentation 或 test:assets，加 Agent acceptance |
 | 前端壳层 | test:workbench-shell、lint、typecheck、build |
 | 具体工具 | development 中该模块的专项测试 |
-| 工程 helper | test:engineering；实际引擎检查使用 Godot 4.6.x |
+| 工程 helper | test:engineering；实际引擎检查使用 Godot 4.7.x |
 
 会写任务的测试使用隔离 runtime workspace；Vite 测试使用独立缓存。不得把 fixture 写成正式作品、把测试次数统计为用户任务，或为了文档验收运行收费生成。
 
@@ -500,6 +508,26 @@ Helper 不自动合并到游戏，不生成美术，不需要 API Key。Agent �
 仓库上游和参考项目：Forge 位于 https://github.com/flxBurnOut/2DGameDevWorkbench；序列帧组件位于 https://github.com/flxBurnOut/NativeFramesGeneration；CopyWorms 参考工程位于 https://github.com/flxBurnOut/copyWorms。复用代码前检查对应仓库条款与具体依赖，不能把工作台 MIT 许可自动套用到参考游戏或插件。
 
 序列帧设置中的 API Key 等输入框在深浅主题下均显示边框，聚焦时改变边框颜色。像素修补编辑器和动画播放器跟随工作台主题，切换主题无需重新打开播放器。
+
+## 随 Agent 执行展示当前步骤
+
+升级后重启本机后台与 WorkBuddy MCP 连接，刷新已有工作台。执行时右下角显示当前作品与步骤，页面随原图、动画、交互物保存和导出切换；无需逐步说“打开”。暂停跟随或通过工作台导航手动离开时停止切换，继续跟随可恢复当前步骤。正在输入、工具忙碌或保存失败时保留原页面。关闭预览不会自动重开。页面到达不等于作品通过审核。
+
+看不到当前地图时，先让 Agent 用 workbench_get_frontend_context 确认页面摘要；该摘要只提供名称/身份和编辑状态，完整地图仍需源包或 Godot 包。详见 [步骤跟随与验收](agent-preview-follow.md)。
+
+## 内部素材联用
+
+当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+
+## 直接导出到游戏项目
+
+地图、交互物和场景组装的“导出 Godot”会打开统一窗口。首次“选择项目…”在页面内浏览包含 project.godot 的游戏文件夹，点“使用这个项目”，或直接粘贴游戏根目录；导出后记住选择。点击“导出到此项目”，再在 WorkBuddy 说“接入刚导出的资源”。Agent 负责资源安装、场景挂载、动画合并和交互脚本连接，不需手动解压或改 res 路径。角色工作区和资产详情也有交付入口，只读取已导出的包。
+
+“仅下载 ZIP”保留；新地图包无 project.godot，可直接解压到现有游戏根目录。等待 Agent、资源已安装、代码已接入及引擎已验收分别展示。网页不会自行启动一个关闭的 WorkBuddy 会话。详见 [完整交付流程](godot-delivery.md)。
+
+### 角色像素颗粒
+
+角色原图可选择 64×64（粗像素）或 128×128（精细像素，默认）。小角色优先检查原生 64 像素在游戏实际显示尺寸下的轮廓；移送保留原生尺寸。物品原图保持 128×128。角色 transfer 可用简短 identityDescription 锁定外观，源提示词完整保留。
 
 ### 地图工程卡预览
 

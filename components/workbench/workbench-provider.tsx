@@ -1,6 +1,5 @@
 'use client';
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -12,6 +11,8 @@ import {
 } from 'react';
 import { workbenchModules, productionLines } from '@/lib/workbench/modules';
 import { readTaskHistory } from '@/lib/workbench/task-history';
+import { AgentFollow } from './agent-follow';
+import { GodotExportDialog } from './godot-export-dialog';
 import {
   listWorkItems,
   subscribeWorkItems,
@@ -35,9 +36,8 @@ function subscribePath(fn: () => void) {
   window.addEventListener('popstate', fn);
   return () => window.removeEventListener('popstate', fn);
 }
-const context = createContext<ReturnType<typeof useWorkbenchState> | null>(
-  null,
-);
+import {workbenchContext as context} from './workbench-context';
+export type WorkbenchState=ReturnType<typeof useWorkbenchState>;
 
 function useWorkbenchState() {
   const pathname = useSyncExternalStore(
@@ -148,6 +148,7 @@ function useWorkbenchState() {
   const navigate = useCallback(async (href: string) => {
     if (navigating.current) return;
     navigating.current = true;
+    window.dispatchEvent(new Event('workbench:manual-navigation'));
     setNavigationError('');
     try {
       await saveBeforeNavigation();
@@ -252,6 +253,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   return (
     <context.Provider value={value}>
       <AgentBridge />
+      <AgentFollow />
+      <GodotExportDialog />
       {children}
     </context.Provider>
   );

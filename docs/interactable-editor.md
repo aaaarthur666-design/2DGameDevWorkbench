@@ -2,7 +2,7 @@
 
 > 状态：当前维护。项目字段的编辑源是 `features/interactable-editor/contract.mjs`，同步后的机器契约位于 `workbench/manifest.json`。
 
-工作台能力为 `interactable-editor`，页面为 `/tools/interactable-editor`，运行时为 **Workbench Interaction Kit 1.0.0**，目标引擎为 Godot 4.6.x。实现基于 copyWorms 的范围感知、最近物件选择和一次性完成逻辑，整理为独立配置与运行时，不依赖原游戏的单例、人物、背包或关卡。
+工作台能力为 `interactable-editor`，页面为 `/tools/interactable-editor`，运行时为 **Workbench Interaction Kit 1.0.0**，目标引擎为 Godot 4.7.x。实现基于 copyWorms 的范围感知、最近物件选择和一次性完成逻辑，整理为独立配置与运行时，不依赖原游戏的单例、人物、背包或关卡。
 
 | 使用方式 | 适合场景 | 数据去向 |
 | --- | --- | --- |
@@ -10,6 +10,10 @@
 | MCP / CLI `export-godot` | Agent 已有结构化项目，需要可审计导出 | `work/tasks/` 与 `outputs/<task-id>/` |
 
 两种入口使用相同导出器，但浏览器草稿只有在执行导出后才成为 runtime 任务；它不会自动变成外部 Agent 发起的任务。交互物与地图可以分别导入 Godot，也可以通过[场景组装](scene-composer.md)手动摆放后统一导出。本编辑器继续只负责物件素材与行为。
+
+## 物品原图生成
+
+右侧提供“生成物品原图”面板，复用 PixelLab Key 与原图异步任务：描述 → 预览 → 明确采用到当前物件。输出 128×128 侧视透明 PNG，历史以 kind=prop 保存；图片生成与本编辑器的 save-project / export-godot 分开。采用保留物件身份和行为，图片来源 / SHA-256 随源包保存，保存与导出检查来源图片是否被改动。详见[物品原图](prop-art.md)。
 
 ## 开始编辑
 
@@ -85,7 +89,7 @@ func trigger_from_game() -> void:
 
 兼容包输出为 `interactables-copyworms.zip`，放在独立的 `addons/workbench_interaction_copyworms/` 目录，不覆盖普通包、原游戏脚本或 `project.godot`。在**实际关卡根节点**下放置 `compat/copyworms/v1/interaction_runtime_2d.tscn`，然后放置包内物件；每关一个兼容运行时。MainEntry 模式也放在其关卡子节点下。
 
-兼容基线为 copyWorms `bb1581d12c9626e294e403a01db5f3cffb229cd8`、Godot 4.6.x。自动连接 `GameManager.player_ref` / `player` group、人物碰撞位 4、`ui_accept`（默认 Enter，保留原改键），并接入原输入锁、对话状态、鼠标释放令牌和 UI 层 100。完成、取消、移除只释放本运行时的资源；暂停、转场、其他输入锁期间不发起新交互。新旧物件同时可用时，更近者响应，同距离优先原物件，一次输入只触发一个。
+兼容基线为 copyWorms `bb1581d12c9626e294e403a01db5f3cffb229cd8`、Godot 4.7.x。自动连接 `GameManager.player_ref` / `player` group、人物碰撞位 4、`ui_accept`（默认 Enter，保留原改键），并接入原输入锁、对话状态、鼠标释放令牌和 UI 层 100。完成、取消、移除只释放本运行时的资源；暂停、转场、其他输入锁期间不发起新交互。新旧物件同时可用时，更近者响应，同距离优先原物件，一次输入只触发一个。
 
 “触发 → 高级接入 → copyWorms 原事件物件 ID”可留空；留空执行编辑器行为。填写后，每次成功完成再发送 `interactive_object_triggered`，数据为 `{object_id: ID, workbench_context: context}`。取消、状态恢复不会发送。例如 `notice` 仍需要第一关处于卧室阶段。该映射不替换原节点，不绕过原 FSM，不会为自定义 ID 自动生成剧情处理器。四种物件原有的自定义信号仍可连接。
 
@@ -150,7 +154,7 @@ npm run lint
 npm run build
 ```
 
-Godot 参数也可通过 `GODOT_46_BIN` 提供；无参数只运行 JavaScript 检查。引擎回归测试生成隔离项目，覆盖四类行为、重叠焦点、输入消费、碰撞 mask、自动进入、文本、取消、冷却、媒体、释放、实例隔离和状态恢复。HTTP 测试覆盖上传、直接导出和源包导回。这些开发检查均不会在用户导出时执行。
+Godot 参数也可通过 `GODOT_47_BIN` 提供；无参数只运行 JavaScript 检查。引擎回归测试生成隔离项目，覆盖四类行为、重叠焦点、输入消费、碰撞 mask、自动进入、文本、取消、冷却、媒体、释放、实例隔离和状态恢复。HTTP 测试覆盖上传、直接导出和源包导回。这些开发检查均不会在用户导出时执行。
 
 修改 `contract.mjs` 后运行 `npm run schema:interactable`，将完整字段 schema 同步到 manifest；JavaScript 测试会检查两者一致。此脚本只更新交互物能力的 project 字段，保留其他能力配置。同步结果必须与代码一起提交，并运行 doctor。Windows 隔离环境偶尔无法读取系统根证书，离线引擎测试会单独报告该环境提示，仍严格检查脚本错误和测试退出状态。
 
@@ -164,3 +168,11 @@ Godot 参数也可通过 `GODOT_46_BIN` 提供；无参数只运行 JavaScript �
 4. Agent 继续修改时，通过 get_task/read_artifact 读取已有源文件，修改后再次 save-project；需要交付包时才 export-godot。已保存不等于已导出。模板没有生成美术，缺图片时只能称为交互逻辑草稿。
 
 人工验收：重连 MCP 后说“制作一扇靠近按 E 开关的门，先保存逻辑草稿，不要生成美术或导出”。应出现一个可继续编辑的物件，前端可查看触发与切换状态；再说“把按键改为 F，然后导出 Godot”，应沿用原物件 ID 并给出真实 ZIP。另说“把地图自动拼起来”，应引导至地图前端，任务数量不增加。
+
+## 内部素材联用
+
+当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+
+## 交付到游戏项目
+
+“导出 Godot”及 CopyWorms 兼容导出完成打包后，共用项目选择窗口。Agent 安装已有运行时和选中物件，再按目标项目连接人物检测、交互信号及已确定的业务逻辑；新窗口不改变选中对象或兼容配置。保存到资产库仍只是保存编辑源。详见 [Godot 交付](godot-delivery.md)。

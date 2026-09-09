@@ -193,14 +193,16 @@ export function useSceneDocument() {
     await save();
   };
   const perform = async (fn: () => Promise<void>) => {
-    if (busyRef.current) return;
+    if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     setError('');
     try {
       await fn();
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
