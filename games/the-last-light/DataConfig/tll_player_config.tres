@@ -4,9 +4,9 @@
 
 [resource]
 script = ExtResource("1_cfg")
-move_speed = 160.0
+move_speed = 120.0
 gravity = 1200.0
-jump_velocity = -720.0
+jump_velocity = -600.0
 air_state_threshold = 0.05
 input_dead_zone = 0.1
 facing_velocity_threshold = 10.0
