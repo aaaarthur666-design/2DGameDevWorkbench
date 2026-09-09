@@ -5,6 +5,7 @@ import net from 'node:net';
 import process from 'node:process';
 
 import sharp from 'sharp';
+import { mapProjectFixture } from '../helpers/map-project.mjs';
 import { loadManifest, agentRequest } from '../../lib/workbench/runtime.mjs';
 
 const port = await availablePort();
@@ -32,6 +33,18 @@ try {
   const health = await jsonFetch(`${baseUrl}/health`);
   assert.equal(health.ok, true);
   assert.equal(health.service, '2d-game-workbench-runtime');
+  const projectPng = await sharp({ create: { width: 16, height: 16, channels: 4, background: '#abcdef' } }).png().toBuffer();
+  const { bytes: projectBytes } = await mapProjectFixture(projectPng, 'map:http');
+  const projectUrl = `${baseUrl}/v1/map-stitcher/projects/map%3Ahttp`;
+  assert.equal((await fetch(projectUrl)).status, 404);
+  const saveProject = (revision) => fetch(projectUrl, { method: 'PUT',
+    headers: { 'content-type': 'application/zip', 'x-map-revision': String(revision) }, body: projectBytes });
+  assert.equal((await saveProject(0)).status, 200);
+  assert.equal((await saveProject(0)).status, 409);
+  const projectRead = await fetch(projectUrl);
+  assert.equal(projectRead.status, 200);
+  assert.equal(projectRead.headers.get('x-map-revision'), '1');
+  assert.deepEqual(Buffer.from(await projectRead.arrayBuffer()), Buffer.from(projectBytes));
 
   const guidanceResponse = await fetch(`${baseUrl}/v1/agent/guidance`, {
     method: 'POST',

@@ -19,6 +19,8 @@ import {
   type MapWorkspaceDraft,
 } from '@/features/map-stitcher/workspace-draft';
 import type { MapEditorController } from './use-map-editor-controller';
+import { persistMapProject } from '@/features/map-stitcher/project-client';
+import { createMapPreviewCache } from '@/features/map-stitcher/project-preview';
 
 export function useMapWorkspace(c: MapEditorController) {
   const latest = useRef(c);
@@ -28,6 +30,9 @@ export function useMapWorkspace(c: MapEditorController) {
   const completed = useRef('');
   const savedRef = useRef(saved);
   const chain = useRef(Promise.resolve());
+  const revisions = useRef(new Map<string, number>());
+  const previewCache = useRef<ReturnType<typeof createMapPreviewCache> | null>(null);
+  previewCache.current ||= createMapPreviewCache();
   const currentSnapshot = c.getWorkspaceSnapshot();
   const { tiles: _tiles, shapes: _shapes, ...settings } = currentSnapshot;
   const fingerprint = `${c.workspaceId}:${c.revision}:${JSON.stringify(settings)}:${JSON.stringify(c.queueState)}`;
@@ -98,7 +103,14 @@ export function useMapWorkspace(c: MapEditorController) {
     };
     const write = chain.current
       .catch(() => undefined)
-      .then(() => saveWorkspaceDraft(draft.id, draft, [storedItem], 'map-current'));
+      .then(async () => {
+        const serverRevision = revisions.current.get(draft.id) || 0;
+        await saveWorkspaceDraft(draft.id, { ...draft, serverRevision, serverSynced: false }, [storedItem], 'map-current');
+        const preview = await previewCache.current!(draft.snapshot);
+        const nextRevision = await persistMapProject(draft, serverRevision, preview);
+        revisions.current.set(draft.id, nextRevision);
+        await saveWorkspaceDraft(draft.id, { ...draft, serverRevision: nextRevision, serverSynced: true }, [storedItem], 'map-current');
+      });
     chain.current = write;
     try {
       await write;
@@ -106,16 +118,17 @@ export function useMapWorkspace(c: MapEditorController) {
       if (fingerprintRef.current === mark) markEditorSaved('map-stitcher');
       setSaved(savedRef.current);
       setError('');
-    } catch {
-      setError('地图草稿保存失败。请在原工具中保存状态文件后重试。');
-      throw new Error('地图草稿保存失败，请保留页面并下载源文件。');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '地图工程保存失败，请保留页面并下载源文件。';
+      setError(message);
+      throw new Error(message);
     }
   }, [makeItem]);
   useEffect(() => {
     let alive = true;
     const revision = latest.current.revision;
     const id = new URLSearchParams(location.search).get('map') || undefined;
-    void loadMapWorkspace(id)
+    void loadMapWorkspace(id, new URLSearchParams(location.search).get('saved') === '1')
       .then((draft) => {
         if (!draft) return;
         if (!alive || latest.current.revision !== revision) {
@@ -126,6 +139,7 @@ export function useMapWorkspace(c: MapEditorController) {
           );
           return;
         }
+        revisions.current.set(draft.id, draft.serverRevision || 0);
         latest.current.restoreWorkspaceSnapshot(draft.snapshot, draft.id);
         if (draft.pending?.length) {
           latest.current.queue.pause(
@@ -205,6 +219,7 @@ export function useMapWorkspace(c: MapEditorController) {
     if (loading || !c.workspaceId || !c.sourceAsset) return;
     const url = new URL(location.href);
     url.searchParams.set('map', c.workspaceId);
+    url.searchParams.delete('saved');
     window.history.replaceState(window.history.state, '', url);
   }, [loading, c.workspaceId, c.sourceAsset]);
   const newProject = async () => {

@@ -78,7 +78,6 @@ import {
 } from '@/features/map-stitcher/map-production';
 import { loadMapProject } from '@/features/map-stitcher/godot-import';
 import {
-  downloadPixelworkState,
   type FrameRoninEditorSnapshot,
 } from '@/features/map-stitcher/state-package';
 import { exportGodotPackage } from '@/features/map-stitcher/engine-export';
@@ -607,6 +606,10 @@ export function useMapEditorController() {
       );
       setExportPreview(false);
       setHint(loaded.warnings.join(' ') || '地图状态已恢复。');
+      if (loaded.pending?.length) {
+        queue.pause('已恢复未完成队列；确认后点击继续。');
+        queue.add(loaded.pending);
+      }
       if (loaded.warnings.length)
         toast.add({
           title: '地图已恢复',
@@ -1213,7 +1216,16 @@ export function useMapEditorController() {
         sourceAsset.height,
         sourceAsset.name,
       ] as const;
-      if (format === 'state') return await downloadPixelworkState(data);
+      if (format === 'state') {
+        const { createMapProjectPackage } = await import('@/features/map-stitcher/project-package.mjs');
+        const bytes = await createMapProjectPackage({ version: 1, id: workspaceId, snapshot: data,
+          pending: queue.snapshot().jobs.filter((job) => ['pending', 'running', 'failed'].includes(job.status))
+            .map(({ tileKey, layer, request }) => ({ tileKey, layer, request })),
+        });
+        const fileName = `${sourceAsset.name.replace(/\.[^.]+$/, '')}-map-source.zip`;
+        downloadBlob(new Blob([new Uint8Array(bytes)], { type: 'application/zip' }), fileName);
+        return { fileName };
+      }
       if (format === 'godot') return await exportGodotPackage(...args, data);
       if (format === 'psd') return await exportFrameRoninPsd(...args);
       if (format === 'all-png') return await downloadAllPng(...args);

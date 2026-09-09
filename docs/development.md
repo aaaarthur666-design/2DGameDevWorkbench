@@ -217,3 +217,11 @@ npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健�
 完整操作正文维护在 `docs/operations-manual.md`。更新 DOCX 时使用可用的文档工具，从同一正文生成分级标题、目录和表格；逐页渲染检查中文、换行、目录与表格分页后再交付。正文或 DOCX 更新不代表运行过真实模型或目标游戏。
 
 纯规范变更至少检查 `git diff --check`、相对链接、所有引用脚本存在、MCP 名单与 manifest 一致；两个 Skill 分别执行宿主提供的 `quick_validate.py <skill-directory>`。对 discovery 共用引导的修改再运行 `test:mcp` 和 `test:engineering`，确认入口与共享内容一致。不要为文档验收调用收费生成或改动正式资产。
+
+完整地图工程通过人工编辑器保存到 `workspace.mapProjectDirectory`，源 ZIP 位于版本化 outputs 目录，IndexedDB 保留本地备份。持久化独立于生产任务，资产库 map 类型仅索引完整工程。协议、冲突恢复和源包格式见 [地图工具](map-stitcher.md)；`npm run test:map-stitcher` 包含完整源包往返、并发版本冲突及文件完整性检查。
+
+地图缩略图验证：`npm run test:map-stitcher` 覆盖缓存失效、保存降级与版本附件；`npm run test:assets` 覆盖真实预览字节和过期版本拒绝。运行 `node tests/map-stitcher/preview-web.mjs` 后用浏览器打开命令返回的隔离地址，页面执行真实 Canvas 像素断言，并展示实际资产库组件的正常、超宽、旧工程、缺失预览状态。测试不读取生产地图，不调用图片服务；Ctrl+C 关闭测试服务。
+
+完整地图保存链路的浏览器验收：运行 `node tests/map-stitcher/workspace-web.mjs`，打开返回地址。页面挂载实际地图编辑器控制器与保存 Hook，使用真实 IndexedDB、ZIP 持久化与资产目录；依次验证旧工程补预览、视图变化、图片编辑、源包恢复和单件收录。通过后点击“查看真实资产库记录”，再点击地图卡继续编辑，验证从资产库返回后图片编辑、视图和暂停队列完整恢复。所有记录进入唯一的 test-runs 目录，图片服务强制禁用，Ctrl+C 关闭测试服务。
+
+资产回收站变更运行 `test:assets`、`test:http`、`test:mcp`、`test:adapters`、`test:agent-acceptance`、`test:presentation`、`test:workbench-shell`、doctor、lint、typecheck、build。`test:assets` 覆盖五类素材、别名、独立候选、整批失败、离线恢复、损坏索引和源文件不变。`node tests/map-stitcher/workspace-web.mjs` 的隔离页面使用 `?catalog=1` 可手动验证选择、取消、移入、回收站、恢复及刷新持久性，不触及正式资产。

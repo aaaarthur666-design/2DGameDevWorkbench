@@ -36,3 +36,9 @@ For game architecture and scripting after art is ready, route to `agentAssets.en
 The inventory includes saved full-scene exports as kind=scene, one asset per exportId with its sceneId/revision and original source/Godot ZIPs. Browser drafts remain excluded. History archiving hides operations only; assets and their provenance stay readable. Search all unarchived tasks with offset/snapshot pagination until nextOffset is null instead of stopping at 200 records.
 
 Use asset inventory for actual artworks and execution history for operations. A manifest is a description, while ZIP download delivers existing textures/frames/packages. Current approved sprite exports can include a single-action Godot SpriteFrames pack; retain candidate identity and frame timing, and preserve other clips during engineering integration. An old missing package is not created by a read. Task completion, review approval, export and engine playback are separate facts. Refer human procedures to `docs/operations-manual.md`.
+
+Map catalog entries are complete editable projects saved by the manual editor, never individual generated, stitched or imported images. Use the exact project editor link; downloads contain map-source.zip, not an automatically generated engine package. Legacy browser-only drafts enter the catalog only after opening and saving in their original browser.
+
+地图卡缩略图是当前工程版本的显示附件，不是新的图片资产或引擎导出。无预览不等于工程损坏；旧工程需人工打开并保存后补齐。预览读取不生成图片。
+
+资产回收站仅整理目录：默认 list_assets 查询 active，scope=trashed 查询回收站；精确详情返回 trashedAt。用户通过前端核对选择后移入/恢复，生产源文件、任务历史和已有引用保持原样。来源离线仍可恢复目录状态，不代表文件已验证。

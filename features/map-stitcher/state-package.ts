@@ -56,7 +56,8 @@ export interface FrameRoninEditorSnapshot {
 
 export interface LoadedFrameRoninState extends FrameRoninEditorSnapshot {
   warnings: string[];
-  sourceFormat: 'pixelwork-v2' | 'scenemaker-v5';
+  sourceFormat: 'pixelwork-v2' | 'scenemaker-v5' | 'forge-map-project';
+  pending?: import('./workspace-draft').MapWorkspaceDraft['pending'];
 }
 
 export async function createPixelworkStatePackage(

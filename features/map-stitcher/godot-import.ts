@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { unpackMapProject } from './project-client';
 import { blobToAsset } from './image-utils';
 import { createFrameRoninCenterTile } from './frame-ronin-geometry';
 import {
@@ -23,6 +24,10 @@ export async function loadMapProject(
   let zip = file.name.toLowerCase().endsWith('.zip')
     ? await JSZip.loadAsync(file)
     : null;
+  if (zip?.file('map-project.json')) {
+    const draft = await unpackMapProject(await file.arrayBuffer());
+    return { ...draft.snapshot, pending: draft.pending, warnings: [], sourceFormat: 'forge-map-project' };
+  }
   if (zip?.file('source_state.zip'))
     return loadFrameRoninState(
       new File(

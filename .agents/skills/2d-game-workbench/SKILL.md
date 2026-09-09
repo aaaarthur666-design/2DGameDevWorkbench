@@ -113,3 +113,11 @@ Check API compatibility and UI readiness separately; `sprite-pipeline:api` does 
 ## Continue into a game project
 
 When the user wants architecture, Godot scripts or integration of ready assets, read the Skill at `agentAssets.engineering.skill` in the manifest. This is an external Agent workflow grounded in CopyWorms, not a new production operation. Keep the exact asset selections and their readiness evidence. Map production remains manual; the engineering Skill consumes exported scenes/maps. Preserve a planning-only request and the distinction between the read-only reference game and the authorized target project.
+
+Map catalog entries contain complete editable projects only. Individual generated, expanded, stitched and imported images are excluded without deleting their files or history. Follow the exact project editor link to resume; download supplies map-source.zip, which is an editor source package, not an engine export. Legacy browser drafts are indexed only after opening and saving in their original browser. Do not bypass the manual-map boundary to migrate or produce maps.
+
+Map project thumbnails are optional, version-bound display attachments rendered locally by the manual editor. They are not separate map assets or engine exports. Missing previews do not imply missing source; legacy projects gain a thumbnail on the next manual open/save. Asset reads never render or generate a thumbnail.
+
+## Recoverable asset recycle bin
+
+Asset listing defaults to `scope=active`; use `scope=trashed` to inspect the recoverable recycle bin. Exact details expose `trashedAt`. The frontend confirms explicit selections before trash/restore; source files, original tool content, task history and existing scene references remain intact. This organizes the catalog and does not free disk space. A source being offline does not mean deletion; restoring a catalog entry does not repair missing files. Do not clean existing assets merely because the user requested implementation of the feature.

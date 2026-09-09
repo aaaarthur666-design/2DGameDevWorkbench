@@ -42,18 +42,14 @@ export async function renderExportPreview(
     height,
   );
   const context = base.canvas.getContext('2d')!;
-  if (separated)
-    context.drawImage(
-      (await renderStitchedMap(tiles, 'object', shapes, width, height)).canvas,
-      0,
-      0,
-    );
-  if (shapes.some((shape) => shape.layer === 'top'))
-    context.drawImage(
-      (await renderStitchedMap(tiles, 'top', shapes, width, height)).canvas,
-      0,
-      0,
-    );
+  for (const layer of [
+    ...(separated ? ['object' as const] : []),
+    ...(shapes.some((shape) => shape.layer === 'top') ? ['top' as const] : []),
+  ]) {
+    const overlay = await renderStitchedMap(tiles, layer, shapes, width, height);
+    context.drawImage(overlay.canvas, 0, 0);
+    overlay.canvas.width = overlay.canvas.height = 1;
+  }
   return {
     ...base,
     composition: separated

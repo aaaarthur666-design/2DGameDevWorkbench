@@ -7,16 +7,20 @@ import type { FrameRoninEditorSnapshot } from './state-package';
 import type { GenerationJob } from './generation-queue';
 import { MAP_IMAGE_LAYERS } from './frame-ronin-types';
 import { blobToAsset } from './image-utils';
+import { fetchMapProject } from './project-client';
 
 export type MapWorkspaceDraft = {
   version: 1;
   id: string;
+  serverRevision?: number;
+  serverSynced?: boolean;
   snapshot: FrameRoninEditorSnapshot;
   pending: Pick<GenerationJob, 'tileKey' | 'layer' | 'request'>[];
 };
 
 export async function loadMapWorkspace(
   id?: string,
+  preferSavedProject = false,
 ): Promise<MapWorkspaceDraft | undefined> {
   if (!id) id = await readWorkspaceDraft<string>('map-current');
   if (id === 'new') return;
@@ -28,6 +32,13 @@ export async function loadMapWorkspace(
     : items
         .filter((item) => item.capabilityId === 'map-stitcher' && item.draftKey)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const local = item?.draftKey ? await readWorkspaceDraft<MapWorkspaceDraft>(item.draftKey) : undefined;
+  id ||= item?.draftKey;
+  // A failed save stays local with its original base revision; never silently overwrite it.
+  if (id && (preferSavedProject || !local || local.serverSynced)) {
+    const remote = await fetchMapProject(id);
+    if (remote) return remote;
+  }
   if (!item?.draftKey) {
     if (id)
       throw new Error(
@@ -35,7 +46,7 @@ export async function loadMapWorkspace(
       );
     return;
   }
-  const draft = await readWorkspaceDraft<MapWorkspaceDraft>(item.draftKey);
+  const draft = local;
   if (!draft || draft.version !== 1 || !Array.isArray(draft.snapshot?.tiles))
     throw new Error('地图草稿格式无法读取，原记录已保留。');
   const created: string[] = [];

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import { mapProjectFixture } from '../helpers/map-project.mjs';
 
 // Only emulate browser file/image decoding; exercise the real ZIP format and PNG bytes.
 export async function registerGenerationPersistenceTests(server, test) {
@@ -82,6 +83,16 @@ export async function registerGenerationPersistenceTests(server, test) {
       regionLocks: {},
     };
     try {
+      const importer = await server.ssrLoadModule('/features/map-stitcher/godot-import.ts');
+      const { bytes: projectBytes, draft } = await mapProjectFixture(await sharp(png).resize(16, 16).png().toBuffer());
+      const project = await importer.loadMapProject(new File([projectBytes], 'map-source.zip'));
+      for (const tile of project.tiles) for (const asset of Object.values(tile.images)) loadedUrls.push(asset.url);
+      assert.deepEqual(project.pending, draft.pending);
+      assert.deepEqual(project.shapes, draft.snapshot.shapes);
+      assert.deepEqual(project.editorPreferences, draft.snapshot.editorPreferences);
+      assert.equal(project.activeMapLayer, 'object');
+      assert.equal(project.tiles[0].images.black.width, 16);
+      assert.equal(project.sourceFormat, 'forge-map-project');
       const packed = await storage.createPixelworkStatePackage(snapshot);
       const roundTrip = await storage.loadFrameRoninState(
         new File([packed.blob], 'map.zip'),
