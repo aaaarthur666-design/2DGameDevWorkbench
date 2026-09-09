@@ -41,7 +41,7 @@ export type Clip = {
     duration: number;
   }[];
 };
-export type Asset = { id: string; name: string; mime: string; source: string };
+export type Asset = { id: string; name: string; mime: string; source: string; generation?: { sourceTaskId: string; sha256: string } };
 export type Interactable = {
   definitionId: string;
   displayName: string;

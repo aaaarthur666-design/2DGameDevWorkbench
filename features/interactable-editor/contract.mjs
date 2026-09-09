@@ -198,6 +198,10 @@ export const assetSchema = z.object({
     'audio/mpeg',
   ]),
   source: z.string().min(1).max(90000000),
+  generation: z.object({
+    sourceTaskId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,199}$/i),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).optional(),
 });
 export const projectSchema = z.object({
   schemaVersion: z.literal(1).default(1),

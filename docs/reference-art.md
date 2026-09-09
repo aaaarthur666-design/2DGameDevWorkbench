@@ -1,12 +1,14 @@
 # 角色原图生成
 
-`reference-art` 是工作台独立能力。它使用 PixelLab Pixflux 生成 128×128 透明背景像素角色，供现有序列帧工作区直接使用。输入和输出以 `workbench/manifest.json` 为准。
+`reference-art` 是工作台独立能力。它使用 PixelLab Pixflux 生成 64×64 或 128×128 透明背景像素角色，供现有序列帧工作区直接使用。输入和输出以 `workbench/manifest.json` 为准。
+
+物品原图复用本适配器的 `generate`，传入 `subject: prop`，从交互物编辑器制作与采用，不能执行角色 transfer。角色请求省略 subject 保持原行为。详见[物品原图](prop-art.md)。
 
 ## 使用流程
 
 1. 用 `npm run dev` 启动完整工作台，在 `/player` 选择“制作角色原图”。此能力复用 SpritePipeline 服务；首次安装仍使用 `npm run sprite-pipeline:setup`，无需增加一套服务或 Python 依赖。
 2. 在原图的 PixelLab 设置中保存 Key；如果已在序列帧设置中保存，无需再输入。两处使用同一个服务实例的受保护凭据，页面只显示配置状态。环境变量 `PIXELLAB_API_KEY` 可覆盖本地存储，启用覆盖时不能从界面修改。
-3. 输入角色描述、可选名称和朝向，点击“生成一张原图”。当前固定 128×128、侧视、透明背景，提示词原样传给 PixelLab；不额外调用付费提示词增强。每次生成都是新的付费任务。
+3. 输入角色描述、可选名称和朝向，点击“生成一张原图”。可选原生 64×64 粗像素或 128×128 精细像素（默认），侧视、透明背景，提示词原样传给 PixelLab；不额外调用付费提示词增强。每次生成都是新的付费任务。
 4. 等待完成，检查人物、武器、朝向及边缘。页面按整数倍显示，下载保持原始 PNG。
 5. 点击“用于制作序列帧”。原图被创建为可复用角色预设，随后在序列帧生成页预选该角色、显示参考图、名称与外观提示词。选择动作后再主动生成动画。
 
@@ -44,8 +46,14 @@ npm run workbench -- run reference-art --input examples/requests/reference-art.j
 npm run workbench -- status <task-id> --json
 ```
 
-生成输入：`operation: generate`，必需 prompt，可选 name、facing（right/left）及 seed。移送输入只有 `operation: transfer` 与 `sourceTaskId`；名称、提示词和朝向来自已保存的源任务。移送任务产出 `result.json`，包含 characterId、sourceTaskId 和序列帧打开链接。MCP 通过通用工作台任务工具执行；使用 get_result 读取移送的 characterId，使用 read_artifact 查看原图，无需直接读取磁盘 JSON。
+生成输入：`operation: generate`，必需 prompt，可选 name、facing（right/left）及 seed、size（64/128）。移送输入包含 `operation: transfer` 与 `sourceTaskId`，可选不超过 300 字符的 identityDescription 仅描述外观；名称、提示词和朝向来自已保存的源任务。移送任务产出 `result.json`，包含 characterId、sourceTaskId 和序列帧打开链接。MCP 通过通用工作台任务工具执行；使用 get_result 读取移送的 characterId，使用 read_artifact 查看原图，无需直接读取磁盘 JSON。
 
 ## 验证
 
 `npm run test:reference-art` 覆盖准备、配置缺失、异步恢复、产物校验、移送和 HTTP；SpritePipeline 的 `tests/test_reference_art.py` 覆盖官方请求结构、一次提交、密钥共用与不回显、图片校验、幂等角色导入及真实 Gradio 角色选择回调。测试使用模拟服务或内存传输，不产生 PixelLab 费用。真实付费生成需要用户在界面或 Agent 中另行发起。
+
+长于 300 字符的生图提示词默认不原样附入动画提示，改用参考图身份锁定，避免“站立不动”等原图要求污染动作或超过动画 API 上限。完整生图提示保留在源任务。物品原图仍固定 128×128。
+
+## 2026-09-09 原生粗像素验收
+
+原生 64×64 角色已实际生成、移送并产出三个动画。14 项 Python 网关测试、Node 原图/物品测试、doctor、适配器、HTTP、MCP、Agent acceptance、资产和壳层检查通过；lint、类型、隔离构建与两份 Skill 校验通过。引擎验收及未采用尝试见游戏的 [资产交接](../games/the-last-light/Docs/asset-handoff.md)。重复移送未显式提供 identityDescription 时沿用现有角色的已确认身份描述；图片、名称、朝向和锚点仍核验。

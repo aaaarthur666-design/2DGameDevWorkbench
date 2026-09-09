@@ -55,6 +55,7 @@ export function ReferenceArtEditor() {
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [facing, setFacing] = useState('right');
+  const [size, setSize] = useState(128);
   const [apiKey, setApiKey] = useState('');
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [settingsMessage, setSettingsMessage] = useState('');
@@ -91,7 +92,7 @@ export function ReferenceArtEditor() {
       if (epoch !== selectionEpoch.current) return;
       if (
         task.capabilityId !== 'reference-art' ||
-        task.input?.operation !== 'generate'
+        task.input?.operation !== 'generate' || task.input.subject === 'prop'
       )
         throw new Error('这不是原图生成任务。');
       setSelected(task);
@@ -99,6 +100,7 @@ export function ReferenceArtEditor() {
         setPrompt(textField(task.input.prompt));
         setName(textField(task.input.name));
         setFacing(task.input.facing === 'left' ? 'left' : 'right');
+        setSize(task.input.size === 64 ? 64 : 128);
       }
       history.replaceState(null, '', `?task=${encodeURIComponent(id)}`);
     } catch (error) {
@@ -195,6 +197,7 @@ export function ReferenceArtEditor() {
                   operation,
                   prompt: prompt.trim(),
                   facing,
+                  size,
                   ...(name.trim() ? { name: name.trim() } : {}),
                 }
               : { operation, sourceTaskId: selected!.id },
@@ -241,7 +244,7 @@ export function ReferenceArtEditor() {
   const historyTasks = tasks.filter(
     (task) =>
       task.capabilityId === 'reference-art' &&
-      task.input?.operation === 'generate',
+      task.input?.operation === 'generate' && task.input.subject !== 'prop',
   );
   return (
     <main className="ra-workspace">
@@ -301,8 +304,11 @@ export function ReferenceArtEditor() {
               </NativeSelect>
             </div>
             <div>
-              <div className="ra-field-label">参考规格</div>
-              <p className="ra-spec">128 × 128 · 透明 PNG</p>
+              <label htmlFor="ra-size">像素规格</label>
+              <NativeSelect id="ra-size" className="w-full" value={size} onChange={(event) => setSize(Number(event.target.value))} disabled={busy || selected?.status === 'running'}>
+                <NativeSelectOption value={128}>128 × 128 · 精细像素</NativeSelectOption>
+                <NativeSelectOption value={64}>64 × 64 · 粗像素</NativeSelectOption>
+              </NativeSelect>
             </div>
           </div>
           <button
@@ -389,8 +395,8 @@ export function ReferenceArtEditor() {
               <img
                 src={artifactUrl(png)}
                 alt={textField(selected?.input?.name, '生成的像素角色')}
-                width={128}
-                height={128}
+                width={selected?.input?.size === 64 ? 64 : 128}
+                height={selected?.input?.size === 64 ? 64 : 128}
               />
             ) : (
               <div className="ra-empty">

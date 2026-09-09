@@ -27,6 +27,8 @@ func _load_level() -> void:
 		await get_tree().process_frame
 	if ResourceLoader.exists(LEVEL_PATH):
 		_current_level = load(LEVEL_PATH).instantiate()
+		if "run_id" in _current_level:
+			_current_level.run_id = run_id
 		_level_slot.add_child(_current_level)
 	else:
 		_show_placeholder()

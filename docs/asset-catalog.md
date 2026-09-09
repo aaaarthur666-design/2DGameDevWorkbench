@@ -1,5 +1,7 @@
 # 阶段二：资产目录与交接清单
 
+物品原图以 `kind=prop` 收录；保留 `reference:<task-id>` 来源身份，独立于角色和已配置交互物。详情的编辑链接直达 `/tools/interactable-editor?artTask=...`，下载交付真实 `prop.png`，不会自动采用、创建行为或导出 Godot。
+
 MCP 0.8.0 增加三个只读工具，前端入口为“资产库”。资产与执行任务分开：查询不会 prepare/run，不会调用生图或检查模型，也不会修改源文件。游戏架构设计和脚本编写由[第三阶段工程 Skill](game-engineering.md)承接。
 
 ## 资产来源与身份
@@ -28,7 +30,7 @@ MCP 0.8.0 增加三个只读工具，前端入口为“资产库”。资产与�
 | workbench_get_asset | asset | assetId |
 | workbench_get_asset_manifest | asset-manifest | assetIds，1–100 个；projectName 可选 |
 
-kind 为 character / animation / map / interactable / scene。sortBy 为 createdAt（默认）或 updatedAt；原生素材没有创建时间时保留未知，不把最近打开时间伪装成生成时间。limit 默认为 24，最高 100。返回 nextOffset 不为空时继续分页，并带回 snapshot；目录变化时从第一页重新查询，避免重复或漏项。
+kind 为 character / prop / animation / map / interactable / scene。sortBy 为 createdAt（默认）或 updatedAt；原生素材没有创建时间时保留未知，不把最近打开时间伪装成生成时间。limit 默认为 24，最高 100。返回 nextOffset 不为空时继续分页，并带回 snapshot；目录变化时从第一页重新查询，避免重复或漏项。
 
 `query` 是名称关键词。让 Agent 将“最新一组三个候选中的第二个”映射为 candidateCount=3、candidateIndex=2、kind=animation、sortBy=createdAt、limit=1；不要把整句指令作为关键词搜索。
 
@@ -88,3 +90,11 @@ Web 的 `/api/workbench/tasks` 代理 `/v1/tasks`，支持相同的本地任务�
 前端下载已改为真实 ZIP，JSON 交接工具继续供 Agent 使用。隔离浏览器实际勾选两个动画，收到一个 ZIP，解压得到两个作品文件夹、32 张 PNG 帧和 2 个 GIF；全部帧图逐个校验为源文件原字节。详情页单件原图下载也通过。模拟文件缺失时显示错误，没有下载 JSON 或残缺 ZIP。打包前后检查的 1,203 个文件无变化，正式任务没有增加。
 
 自动化补充混合原图、动画、地图和交互物源工程打包，来源别名去重、候选隔离、路径越界拒绝、缺失文件、打包期间字节变化和 HTTP 二进制下载回归。
+
+## 内部素材联用
+
+当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+
+## 导出到游戏项目
+
+具体作品详情可将已有 Godot ZIP 交付到选定游戏。严格匹配 assetId/revision 与原文件 SHA；缺失导出包不会自动生成或审批。此操作创建独立的游戏交付记录，不新增美术资产或生产任务。源图不能当作可执行交互物；见 [Godot 交付](godot-delivery.md)。

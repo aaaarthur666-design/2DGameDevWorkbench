@@ -1,5 +1,7 @@
 # WP-01 基线与建项记录
 
+> 当前引擎基线：Godot 4.7.stable.official.5b4e0cb0f（2026-09-09 用户授权迁移）。下文原 4.6.2 冻结与测试记录仅作历史；本次验证见 [迁移记录](godot-47-migration.md)。
+
 ```text
 工作包：WP-01 / 基线与建项
 直接负责人：James（兼 WP-05 角色美术、玩法脚本）
@@ -36,8 +38,22 @@
 
 随导出包到达再建（不手工预建）：`forge_sprites/`、`scenes/<scene-id>/`、`addons/workbench_interaction/runtime/v1/` —— 这些是 WP-07 / WP-08 导出产物，以真实包内容为准。
 
+## 引擎版本（2026-09-09 冻结，当日经 James 迁移更新）
+
+- **Godot 4.7.stable.official.5b4e0cb0f**（WinGet 安装；迁移与模板校验记录见 `Docs/godot-47-migration.md`，4.6.x 已删除，旧 4.6 证据不得标为当前基线通过）。
+- 导出模板：官方 4.7.stable 已安装（SHA-512 校验见 work/godot-47-migration/templates.json）。
+- headless 用法（WinGet 路径）：`Godot_v4.7-stable_win64_console.exe --headless --path . --editor --import --quit`（V2 导入）；`--script res://tests/<name>.gd`（V3 行为）。
+
 ## 下一步
 
-1. James 安装 Godot 4.6.x，冻结补丁版本与导出模板版本后回填本文与 `source-to-target.md` 待办。
+1. ~~James 安装 Godot 4.6.x~~（已完成，见上）。
 2. 打开工程运行，确认占位画面出现（G0 → WP-02 灰盒关卡）。
 3. WP-02 起在 `LevelModule/` 内建灰盒 LevelRoot + 五个实例锚点（策划案 §5.2）。
+
+## 2026-09-09 引擎迁移（当前基线）
+
+用户明确将当前基线改为 Godot 4.7，取代上文 4.6.2 冻结决定。实际版本：4.7.stable.official.5b4e0cb0f。启动和测试使用已验证的 4.7 可执行文件；历史 4.6.2 验收保持原样。迁移验证见 godot-47-migration.md。
+
+## 当前显示与边界（2026-09-09）
+
+游戏默认最大化；恢复窗口保持 1280×720。逻辑画面 640×360，镜头缩放 0.5；新增四周 8px 空气墙。设计调整、实测记录与操作见 [窗口和地图边界](view-boundary-adjustment.md)。

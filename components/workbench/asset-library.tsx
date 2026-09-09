@@ -3,6 +3,8 @@
 /* oxlint-disable next/no-html-link-for-pages -- Native links use the workbench draft guard. */
 import { useEffect, useState } from 'react';
 import manifest from '@/workbench/manifest.json';
+import {offerGodotExport} from '@/lib/workbench/godot-export';
+import { importLink } from '@/lib/workbench/asset-import';
 import { operationLabel } from '@/lib/workbench/work-items';
 
 type Asset = {
@@ -42,6 +44,7 @@ type Catalog = {
 };
 const labels: Record<string, string> = {
   character: '角色原图',
+  prop: '物品原图',
   animation: '动画',
   map: '地图素材',
   interactable: '交互物',
@@ -209,7 +212,7 @@ export function AssetLibrary() {
               {asset.sceneRevision !== undefined ? ` · 场景版本 ${asset.sceneRevision}` : ''}
             </p>
             {asset.kind === 'scene' && (
-              <p>包含 {asset.materialCount ?? '未知'} 件场景素材、{asset.instanceCount ?? '未知'} 个实例。下载并解压素材包后，可将 scene-source.zip 导入场景组装器继续编辑。</p>
+              <p>包含 {asset.materialCount ?? '未知'} 件场景素材、{asset.instanceCount ?? '未知'} 个实例。可直接继续组装，也可下载源包备份。</p>
             )}
             {asset.readiness?.issues.map((message) => (
               <p className="wb-notice" key={message}>
@@ -217,7 +220,12 @@ export function AssetLibrary() {
               </p>
             ))}
             <div className="wb-tool-links">
-              {asset.editorPath && (
+              {asset.kind === 'map' && <><a className="wb-button" href={importLink('map-stitcher','map',asset.id)}>导入地图编辑器</a><a className="wb-button" href={importLink('scene-composer','map',asset.id)}>用于制作场景</a></>}
+              {asset.kind === 'interactable' && <><a className="wb-button" href={importLink('interactable-editor','interactable',asset.id)}>编辑交互物项目</a><a className="wb-button" href={importLink('scene-composer','interactable',asset.id)}>加入场景</a></>}
+              {asset.kind === 'scene' && <a className="wb-button" href={importLink('scene-composer','scene',asset.id)}>继续组装此场景</a>}
+              {['prop','character','map'].includes(asset.kind) && <a className="wb-button" href={importLink('interactable-editor','image',asset.id)}>用于交互物外观</a>}
+              {asset.kind === 'animation' && <a className="wb-button" href={importLink('interactable-editor','animation',asset.id)}>用于交互物动画</a>}
+              {asset.editorPath && !['map','interactable','scene'].includes(asset.kind) && (
                 <a className="wb-button" href={asset.editorPath}>
                   {asset.kind === 'map' ? '进入地图工具' : '在原工具中打开'}
                 </a>
@@ -230,6 +238,7 @@ export function AssetLibrary() {
                 {exporting ? '正在打包…' : '下载素材（ZIP）'}
               </button>
             </div>
+            {['map','scene','interactable','animation'].includes(asset.kind) && asset.revision && <button className="wb-primary" onClick={()=>offerGodotExport({name:asset.title,assetId:asset.id,revision:asset.revision})}>导出到游戏项目</button>}
             <details style={{ marginTop: 20 }}>
               <summary>来源文件与版本</summary>
               <p>创建时间：{asset.createdAt ? new Date(asset.createdAt).toLocaleString() : '未知'}</p>

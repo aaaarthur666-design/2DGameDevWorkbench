@@ -16,10 +16,10 @@ const arg = (key) =>
 const reference = path.resolve(
   arg('--project') || process.env.COPYWORMS_PROJECT || '../copyWorms',
 );
-const godot = arg('--godot') || process.env.GODOT_46_BIN;
+const godot = arg('--godot') || process.env.GODOT_47_BIN;
 assert(
   godot,
-  'Supply --godot or GODOT_46_BIN. This optional development test is not part of export.',
+  'Supply --godot or GODOT_47_BIN. This optional development test is not part of export.',
 );
 const out = arg('--reuse')
   ? path.resolve(arg('--reuse'))

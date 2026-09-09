@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "reference-art-production",
   "capabilityId": "reference-art",
-  "name": "角色原图制作",
+  "name": "角色与物品原图制作",
   "steps": [
     {
       "id": "describe",
-      "name": "描述角色外观与朝向",
+      "name": "描述角色或独立物品外观",
       "kind": "expert"
     },
     {
@@ -21,7 +21,7 @@
     },
     {
       "id": "handoff",
-      "name": "移送为序列帧角色参考",
+      "name": "角色移送序列帧，或在交互物编辑器采用物品原图",
       "kind": "handoff"
     }
   ]

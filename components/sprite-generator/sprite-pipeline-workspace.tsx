@@ -1,4 +1,5 @@
 'use client';
+import {offerGodotExport} from '@/lib/workbench/godot-export';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -201,6 +202,7 @@ export function SpritePipelineWorkspace({
 
         <div className="flex items-center gap-1.5">
           <EditorTaskSummary compact />
+          <Button variant="outline" size="sm" disabled={!activeJob} onClick={()=>offerGodotExport({name:"已导出的角色动画",jobId:activeJob})}>已导出动画 → 游戏项目</Button>
           <Button
             type="button"
             variant="ghost"

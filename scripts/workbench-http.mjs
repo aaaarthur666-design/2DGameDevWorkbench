@@ -2,6 +2,8 @@
 import {
   readAssetPreview,
   buildAssetArchive,
+  buildAssetImport,
+  readAssetGodotPackage,
 } from '../lib/workbench/asset-catalog.mjs';
 
 import { createReadStream } from 'node:fs';
@@ -33,6 +35,15 @@ import {
 
 import { referenceServiceRequest } from '../lib/workbench/adapters/reference-art.mjs';
 import { exportSceneRequest } from '../lib/workbench/scene-export.mjs';
+import { frontendHeartbeat } from '../lib/workbench/preview-follow.mjs';
+
+import {randomUUID} from 'node:crypto';
+import {selectedGameProject,selectGameProject,deliverGodotPackage,listGameExports,readGamePackageRequest} from '../lib/workbench/game-export.mjs';
+import {browseGameProjects} from '../lib/workbench/game-project-browser.mjs';
+import {prepareGodotPackage} from '../features/godot-export/package.mjs';
+import {requestBinary, endpointUrl, bearerHeaders} from '../lib/workbench/adapters/http.mjs';
+const gameExportToken=randomUUID();
+const requireGameToken=request=>{if(request.headers['x-forge-game-token']!==gameExportToken)throw new Error('项目导出会话已失效，请关闭导出窗口后重试。');};
 
 const host = process.env.WORKBENCH_RUNTIME_HOST || '127.0.0.1';
 const port = readPort(process.env.WORKBENCH_RUNTIME_PORT, 8790);
@@ -50,6 +61,49 @@ const server = http.createServer(async (request, response) => {
         version: 1,
         service: '2d-game-workbench-runtime',
       });
+      return;
+    }
+    if(url.pathname.startsWith('/v1/game-export/')) {
+      try {
+        if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.socket.remoteAddress) || !['localhost','127.0.0.1','[::1]'].includes(url.hostname))throw new Error('游戏项目交付仅可通过本机回环服务使用。');
+        const manifest=await loadManifest();
+        const action=url.pathname.slice('/v1/game-export/'.length);
+        if(request.method==='GET' && action==='settings') {sendJson(response,200,{token:gameExportToken,project:await selectedGameProject(repositoryRoot,manifest),...(await listGameExports(repositoryRoot,manifest,{pendingOnly:false,limit:10}))});return;}
+        if(request.method!=='POST')throw new Error('Unsupported method.');
+        requireGameToken(request);
+        if(action==='browse') {sendJson(response,200,await browseGameProjects(repositoryRoot,await readJsonBody(request)));return;}
+        if(action==='pick') throw new Error('路径选择已改为页面内浏览，请关闭并重新打开导出窗口。');
+        if(action==='select') {
+          const selected=(await readJsonBody(request)).projectPath;
+          sendJson(response,200,{project:selected?await selectGameProject(repositoryRoot,manifest,selected):null,cancelled:!selected});return;
+        }
+        if(action==='deliver') {
+          const bytes=await readGamePackageRequest(request);
+          const projectPath=decodeURIComponent(request.headers['x-forge-project']||'');
+          const title=decodeURIComponent(request.headers['x-forge-title']||'Godot');
+          sendJson(response,200,await deliverGodotPackage(repositoryRoot,manifest,{bytes,title,projectPath}));return;
+        }
+        if(action==='package') {
+          const input=await readJsonBody(request);let pack;
+          if(input.jobId) {
+            if(typeof input.jobId!=='string' || !/^[a-zA-Z0-9_-]{1,200}$/.test(input.jobId))throw new Error('Invalid jobId.');
+            const {connector}=findCapability(manifest,'sprite-generator');
+            const url=endpointUrl(process.env[connector.urlEnv]||connector.defaultUrl,'/v1/jobs/'+encodeURIComponent(input.jobId)+'/exports/godot');
+            const result=await requestBinary(url,{headers:bearerHeaders(process.env[connector.tokenEnv]),maxBytes:256*1024*1024,timeoutMs:30000});pack={bytes:result.buffer};
+          } else pack=await readAssetGodotPackage(manifest,input);
+          const prepared=await prepareGodotPackage(pack.bytes);
+          response.writeHead(200,{'content-type':'application/zip','cache-control':'no-store','content-length':prepared.bytes.length});response.end(prepared.bytes);return;
+        }
+        throw new Error('Unknown game export action.');
+      } catch(error) {sendJson(response,400,{error:error.message});}
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/assets/import') {
+      try {
+        const result = await buildAssetImport(await loadManifest(), await readJsonBody(request));
+        response.writeHead(200, { 'Content-Type': 'application/zip', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Length': result.bytes.length });
+        response.end(result.bytes);
+      } catch (error) { sendJson(response, 400, { error: error.message }); }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/v1/assets/download') {
@@ -100,8 +154,17 @@ const server = http.createServer(async (request, response) => {
       }
       return;
     }
+    if (request.method === 'POST' && url.pathname === '/v1/frontend/heartbeat') {
+      try {
+        sendJson(response, 200, await frontendHeartbeat(repositoryRoot, await loadManifest(), await readJsonBody(request)));
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+      }
+      return;
+    }
     if (request.method === 'POST' && url.pathname.startsWith('/v1/agent/')) {
       const operation = url.pathname.slice('/v1/agent/'.length);
+      if(['export-to-game','install-game-export','complete-game-export'].includes(operation))requireGameToken(request);
       try {
         sendJson(
           response,

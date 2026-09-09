@@ -162,3 +162,28 @@ def test_transfer_rejects_invalid_references(service, encoded):
     with TestClient(create_api(service=service)) as client:
         result = client.post('/v1/reference-art/import', json={'characterId': 'reference_' + 'b' * 24, 'image': encoded, 'name': 'ranger', 'prompt': 'ranger'})
         assert result.status_code == 422
+
+def test_native_64_reference_preserves_size_through_generation_and_transfer(service, monkeypatch):
+    encoded = image_base64((64, 64))
+    calls = []
+    def provider(_service, method, route, payload=None):
+        calls.append((method, route, payload))
+        if method == 'POST':
+            assert payload['image_size'] == {'width': 64, 'height': 64}
+            return {'background_job_id': 'coarse-64'}
+        return {'id': 'coarse-64', 'status': 'completed', 'last_response': {'image': {'base64': encoded}}}
+    monkeypatch.setattr(reference_art, '_provider_request', provider)
+    with TestClient(create_api(service=service)) as client:
+        assert client.post('/v1/reference-art/jobs', json={'prompt': 'coarse keeper', 'size': 64}).status_code == 202
+        polled = client.get('/v1/reference-art/jobs/coarse-64')
+        assert polled.json()['status'] == 'completed'
+        body = {'characterId': 'reference_' + 'c' * 24, 'image': polled.json()['image'], 'name': 'Coarse keeper', 'prompt': 'coarse keeper', 'size': 64}
+        assert client.post('/v1/reference-art/import', json=body).status_code == 200
+        assert client.post('/v1/reference-art/import', json={**body, 'prompt': 'default lock', 'reuseIdentity': True}).status_code == 200
+        assert client.post('/v1/reference-art/import', json={**body, 'prompt': 'different explicit identity'}).status_code == 409
+        assert client.post('/v1/reference-art/import', json={**body, 'size': 128}).status_code == 422
+        assert client.post('/v1/reference-art/jobs', json={'prompt': 'keeper', 'size': 96}).status_code == 422
+    character, preset_path = service.presets.load_character(body['characterId'])
+    with Image.open(preset_path.parent / character.reference_frame) as image:
+        assert image.size == (64, 64)
+    assert len(calls) == 2

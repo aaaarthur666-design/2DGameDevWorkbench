@@ -122,9 +122,9 @@ npm run workbench -- doctor --json
 | SpritePipeline 总控 | `npm run test:dev-supervisor` |
 | SpritePipeline 上游组件 | 在 `Tools/SpritePipeline` 安装 `requirements.lock` 后运行 `python -m pytest -q` 和 `python -m pip check` |
 | 资产目录与素材 ZIP | `npm run test:assets`（含场景导出收录、历史归档保留资产、超过 200 条的分页及来源时间），以及 MCP / HTTP / Agent acceptance 对应检查 |
-| Agent 结果展示与导航 | `npm run test:presentation`，以及 MCP / HTTP / Agent acceptance；页面改动加壳层检查 |
+| Agent 结果展示与导航 | `npm run test:presentation`、`npm run test:preview-follow`，以及 MCP / HTTP / Agent acceptance；页面改动加壳层检查 |
 | 前端服务启动与就绪 | `npm run test:frontend`、`npm run test:mcp`；桌面初始化加 `npm run test:desktop-services` |
-| 工程 Skill helper | `npm run test:engineering`；引擎行为设置 `GODOT_46_BIN` |
+| 工程 Skill helper | `npm run test:engineering`；引擎行为设置 `GODOT_47_BIN` |
 | 仓库 Skill | 对每个变更 Skill 运行 validator，核对元数据、工具名、授权边界与相对链接 |
 | 纯文档 | `git diff --check`、相对链接检查、示例命令与当前清单核对 |
 
@@ -208,7 +208,7 @@ npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健�
 
 ## 游戏工程 Skill 验证
 
-`npm run test:engineering` 检查 Skill 的发现入口、真实 Frame Ronin 导出包接入、显式帧顺序/哈希与拒绝用例。设置 `GODOT_46_BIN` 后还会在隔离项目执行 Godot 4.6.x 的资源加载、播放/重播/事件、朝向、地图碰撞与重挂载契约检查。未配置引擎时明确跳过引擎检查，不能报告为引擎通过。产物保留在 `work/engineering-test-*`；不会读写用户游戏或调用外部模型。新 Skill 与原生产 Skill 均用 bundled `quick_validate.py` 校验。
+`npm run test:engineering` 检查 Skill 的发现入口、真实 Frame Ronin 导出包接入、显式帧顺序/哈希与拒绝用例。设置 `GODOT_47_BIN` 后还会在隔离项目执行 Godot 4.7.x 的资源加载、播放/重播/事件、朝向、地图碰撞与重挂载契约检查。未配置引擎时明确跳过引擎检查，不能报告为引擎通过。产物保留在 `work/engineering-test-*`；不会读写用户游戏或调用外部模型。新 Skill 与原生产 Skill 均用 bundled `quick_validate.py` 校验。
 
 ## 规范与操作手册维护
 
@@ -217,3 +217,13 @@ npm run dev 启动本机 Runtime Bridge、SpritePipeline 与前端，已有健�
 完整操作正文维护在 `docs/operations-manual.md`。更新 DOCX 时使用可用的文档工具，从同一正文生成分级标题、目录和表格；逐页渲染检查中文、换行、目录与表格分页后再交付。正文或 DOCX 更新不代表运行过真实模型或目标游戏。
 
 纯规范变更至少检查 `git diff --check`、相对链接、所有引用脚本存在、MCP 名单与 manifest 一致；两个 Skill 分别执行宿主提供的 `quick_validate.py <skill-directory>`。对 discovery 共用引导的修改再运行 `test:mcp` 和 `test:engineering`，确认入口与共享内容一致。不要为文档验收调用收费生成或改动正式资产。
+
+## 物品原图回归
+
+`npm run test:prop-art` 使用隔离任务目录和模拟 PixelLab 网关，通过真实 MCP 握手覆盖生成 / 恢复、kind=prop 清单与 PNG 下载、禁止角色 transfer、采用的完整性与目标保护，以及交互物源 / Godot ZIP 的来源保留。不会触发真实付费生成。相关回归包括 test:reference-art、test:interactable、test:http、test:mcp、test:assets、test:presentation、test:agent-acceptance 和工作台 / 前端构建检查。
+
+内部导入改动运行 npm run test:asset-import，覆盖五类源文件、旧 prop 分类、候选帧顺序/FPS、碰撞与地图原点、版本校验及无新增任务；按受影响编辑器补充浏览器验收，测试保持独立运行目录与 Vite 缓存。
+
+## 游戏项目导出验收
+
+新增共享 game-export 服务、标准 Godot 包转换器及统一导出窗口。运行 npm run test:game-export，另按改动执行地图/交互物/场景、资产导入、MCP/HTTP、工程、壳层检查和构建。此测试仅写隔离游戏目录，不调用模型。项目选择使用页面内只读目录浏览，不启动系统弹窗；需验收取消、慢请求、关闭和手输路径不被锁定。清单配置、状态、写入边界和人工验收见 [Godot 交付](godot-delivery.md)。

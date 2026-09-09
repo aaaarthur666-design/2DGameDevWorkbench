@@ -172,12 +172,12 @@ def test_package_preserves_irregular_order_alias_alpha_and_is_deterministic(tmp_
         build_godot_package(sheet, target, recipe, anchor_x=30, ground_y=60, facing='left')
 
 
-def test_package_import_and_playback_in_godot_46(tmp_path):
-    godot = os.environ.get('GODOT_46_BIN')
+def test_package_import_and_playback_in_godot_47(tmp_path):
+    godot = os.environ.get('GODOT_47_BIN')
     if not godot:
-        pytest.skip('Set GODOT_46_BIN for real engine import/playback; static success is not engine validation')
+        pytest.skip('Set GODOT_47_BIN for real engine import/playback; static success is not engine validation')
     version = subprocess.check_output([godot, '--version'], text=True).strip()
-    assert version.startswith('4.6.'), version
+    assert version.startswith('4.7.'), version
     project = tmp_path / 'project'
     project.mkdir()
     results = []
@@ -190,7 +190,7 @@ def test_package_import_and_playback_in_godot_46(tmp_path):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(z.read(name))
         results.append(result)
-    (project / 'project.godot').write_text('[application]\nconfig/name="Sprite package test"\nconfig/features=PackedStringArray("4.6")\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n', encoding='utf-8')
+    (project / 'project.godot').write_text('[application]\nconfig/name="Sprite package test"\nconfig/features=PackedStringArray("4.7")\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n', encoding='utf-8')
     gd = Path(__file__).with_name('godot_package_probe.gd').read_text(encoding='utf-8')
     gd = gd.replace('ONCE', json.dumps(results[0]['scene_path'])).replace('REPEATING', json.dumps(results[1]['scene_path']))
     (project / 'probe.gd').write_text(gd, encoding='utf-8')

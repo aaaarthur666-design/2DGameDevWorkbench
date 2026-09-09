@@ -34,6 +34,8 @@ import {
 } from '@/components/workbench/editor-chrome';
 import { MapWorkArea } from './map-work-area';
 import { MapSceneButton } from '@/components/scene-composer/map-scene-button';
+import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
+import { mapImportFile, clearImportQuery, readEditorHandoff, type ImportBundle } from '@/lib/workbench/asset-import';
 import {
   Dialog,
   DialogContent,
@@ -61,6 +63,8 @@ import { MapOriginGenerator } from './panels/map-origin-generator';
 import './frame-ronin-editor.css';
 
 export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOriginOpen?: boolean }) {
+  const [library, setLibrary] = useState<{assetId?:string}|null>(null);
+  const importStarted = useRef(false);
   const c = useMapEditorController();
   const workspace = useMapWorkspace(c);
   useMapAgentTools(c);
@@ -81,6 +85,13 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
     [exportOpen, setExportOpen] = useState(false),
     [newProjectOpen, setNewProjectOpen] = useState(false),
     [creating, setCreating] = useState(false);
+  const importFromLibrary = async (bundle: ImportBundle) => { await c.openProject([await mapImportFile(bundle)]); };
+  useEffect(()=>{
+    if(workspace.loading || importStarted.current)return;importStarted.current=true;
+    const params=new URLSearchParams(location.search),assetId=params.get('importAsset');
+    if(assetId&&params.get('importPurpose')==='map'){queueMicrotask(()=>setLibrary({assetId}));clearImportQuery();}
+    else if(params.has('handoff'))c.perform(async()=>{const record=await readEditorHandoff('map-stitcher');if(record?.purpose==='map'){const payload=record.payload as {source:string;name:string};if(!payload.source.startsWith('data:'))throw new Error('地图源文件无效。');const blob=await(await fetch(payload.source)).blob();await c.openProject([new File([blob],payload.name,{type:blob.type})]);}clearImportQuery();});
+  },[workspace.loading,c]);
   const createProject = () =>
     c.perform(async () => {
       setCreating(true);
@@ -113,6 +124,7 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
     });
   return (
     <Toaster>
+      <AssetImportPicker open={!!library} onClose={()=>setLibrary(null)} purposes={['map']} initialAsset={library?.assetId} onImport={importFromLibrary} />
       <main
         className="map-workspace"
         data-map-editor
@@ -137,6 +149,7 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
           <div className="map-project-actions">
             <EditorDraftControl capabilityId="map-stitcher" />
             <MapSceneButton c={c} />
+            <Button size="sm" variant="outline" disabled={c.busy || workspace.loading} onClick={()=>setLibrary({})}>从资产库导入</Button>
             <Button
               className="map-project-wide-action"
               variant="outline"

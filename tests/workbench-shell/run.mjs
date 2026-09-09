@@ -39,7 +39,7 @@ try {
       read: async (key) => records.get(key),
       save: async (key, value, _items, mapping) => { records.set(key, value); records.set(mapping, key); },
       items: () => [],
-      request: async (url) => { requests++; return Response.json(url.includes('/tasks/') ? { task: { capabilityId: 'interactable-editor', status: 'completed', input: { operation: 'save-project' }, outputs: ['outputs/t1/interactable-project.json'] } } : project); },
+      request: async function (url) { assert.equal(this, undefined, 'Native fetch must be called without the storage receiver'); requests++; return Response.json(url.includes('/tasks/') ? { task: { capabilityId: 'interactable-editor', status: 'completed', input: { operation: 'save-project' }, outputs: ['outputs/t1/interactable-project.json'] } } : project); },
     };
     const loaded = await restoreTaskProject('t1', storage);
     assert.notEqual(loaded.projectId, project.projectId);
@@ -58,6 +58,12 @@ try {
     assert.equal(lines.find((line) => line.id === 'player').name, '角色美术');
   });
 
+  test('prop generation records open the exact image in scene art, not the character editor', () => {
+    const [item] = taskWorkItems([{id:'prop-task',capabilityId:'reference-art',status:'completed',input:{operation:'generate',subject:'prop'}}], modules);
+    assert.equal(item.capabilityId,'interactable-editor');
+    assert.equal(item.title,'物品原图');
+    assert.equal(item.href,'/tools/interactable-editor?artTask=prop-task');
+  });
   const at = '2026-09-05T10:00:00.000Z';
   const later = '2026-09-05T10:01:00.000Z';
   const task = (overrides = {}) => ({

@@ -1,0 +1,53 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" path="res://addons/workbench_interaction/runtime/v1/interaction_runtime_2d.tscn" id="runtime"]
+[ext_resource type="PackedScene" path="res://scenes/scene-fe3fd0ff-8b14-4020-8c2a-9083dfda4275/objects/material-4a9081d6-f305-4b6f-9ce8-9f4209c653ed/objects/object-2d9c7f0c-3181-4aa2-8373-3eb9ede088ad/object.tscn" id="material-4a9081d6-f305-4b6f-9ce8-9f4209c653ed"]
+[ext_resource type="PackedScene" path="res://scenes/scene-fe3fd0ff-8b14-4020-8c2a-9083dfda4275/objects/material-b4ba7ada-65bf-4f5a-82bb-fe4360c74550/objects/object-8fd4964d-ac00-443d-a0d7-6c272af9fc1c/object.tscn" id="material-b4ba7ada-65bf-4f5a-82bb-fe4360c74550"]
+[ext_resource type="Texture2D" path="res://scenes/scene-fe3fd0ff-8b14-4020-8c2a-9083dfda4275/map/map_overall.png" id="map_overall"]
+
+[node name="Scene" type="Node2D"]
+[node name="InteractionRuntime" parent="." instance=ExtResource("runtime")]
+scene_key = "scene-fe3fd0ff-8b14-4020-8c2a-9083dfda4275"
+[node name="ActorSlot" type="Node2D" parent="."]
+z_index = 5
+[node name="instance-65c3867d-7354-4d56-890e-51cdaddcc390" parent="." instance=ExtResource("material-b4ba7ada-65bf-4f5a-82bb-fe4360c74550")]
+instance_id = "instance-65c3867d-7354-4d56-890e-51cdaddcc390"
+position = Vector2(1039, 459)
+scale = Vector2(1, 1)
+z_index = 4
+[node name="instance-8eb5dd2b-5b17-4e68-b373-480f4e05fbfa" parent="." instance=ExtResource("material-4a9081d6-f305-4b6f-9ce8-9f4209c653ed")]
+instance_id = "instance-8eb5dd2b-5b17-4e68-b373-480f4e05fbfa"
+position = Vector2(313, 849)
+scale = Vector2(1, 1)
+z_index = 3
+[node name="instance-67959b63-c7ac-4fa0-b1c8-c1428a69058b" parent="." instance=ExtResource("material-4a9081d6-f305-4b6f-9ce8-9f4209c653ed")]
+instance_id = "instance-67959b63-c7ac-4fa0-b1c8-c1428a69058b"
+position = Vector2(1246, 831)
+scale = Vector2(1, 1)
+z_index = 2
+[node name="map_overall" type="Sprite2D" parent="."]
+texture = ExtResource("map_overall")
+centered = false
+texture_filter = 1
+z_index = 1
+position = Vector2(0, 0)
+[node name="MapCollisions" type="StaticBody2D" parent="."]
+position = Vector2(0, 0)
+[node name="Collision_0" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(32.73986564975359, 872.8653440763442, 734.0982335212999, 872.8653440763442, 734.0982335212999, 1022.4580717183543, 32.73986564975359, 1022.4580717183543)
+[node name="Collision_1" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(736.9687080999905, 910.2634883092857, 973.3063783030608, 910.2634883092857, 973.3063783030608, 1024, 736.9687080999905, 1024)
+[node name="Collision_2" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(970.4359037243702, 864.2349973029636, 1534.9672577447004, 864.2349973029636, 1534.9672577447004, 1023.4168902913315, 970.4359037243702, 1023.4168902913315)
+[node name="Collision_3" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(1423.0176965080157, 610.1195158727764, 1533.0533573903942, 610.1195158727764, 1533.0533573903942, 869.0296930088256, 1423.0176965080157, 869.0296930088256)
+[node name="Collision_4" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(864.4093679409867, 727.6643793727446, 1121.1669314400935, 727.6643793727446, 1121.1669314400935, 749.5058225741265, 864.4093679409867, 749.5058225741265)
+[node name="Collision_5" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(1109.5890277390147, 607.5364149470059, 1424.9171943842528, 607.5364149470059, 1424.9171943842528, 630.0604066006982, 1109.5890277390147, 630.0604066006982)
+[node name="Collision_6" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(419.6807390659446, 701.7276454574996, 754.0785263837887, 701.7276454574996, 754.0785263837887, 731.0770948161585, 419.6807390659446, 731.0770948161585)
+[node name="Collision_7" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(587.9012061668271, 509.9324958112372, 843.2966539036049, 509.9324958112372, 843.2966539036049, 554.2979038481725, 587.9012061668271, 554.2979038481725)
+[node name="Collision_8" type="CollisionPolygon2D" parent="MapCollisions"]
+polygon = PackedVector2Array(841.4175825242453, 513.2510783096864, 1094.3807211596015, 513.2510783096864, 1094.3807211596015, 539.4559710866904, 841.4175825242453, 539.4559710866904)

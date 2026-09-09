@@ -59,7 +59,7 @@ default_tools_approval_mode = "writes"
 
 ## 4. MCP 能力面
 
-Server 暴露只读资源 `workbench://manifest`，以及 16 个工具：
+Server 暴露只读资源 `workbench://manifest`，以及 18 个工具：
 
 | 工具 | 行为 |
 | --- | --- |
@@ -180,7 +180,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 手动验收：
 
-1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（MCP 0.8.0 总计 16 个工具），然后新建本项目对话。
+1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（MCP 0.9.0 总计 18 个工具），然后新建本项目对话。
 2. 发送“看看工作台现在有哪些功能”，无需要求打开网页。预期内部浏览器打开工作台首页，Agent 继续回答原问题。
 3. 再发送“列出已有角色”。预期复用页面，不增加重复预览；手动关掉预览后再发消息，也不应强行重开。
 4. 可选冷启动：正常关闭工作台开发服务，重新开启 WorkBuddy 项目对话并重复第 2 步。预期自动启动前端和 Runtime Bridge；无需 PixelLab Key 或 Python。若首次编译超过 60 秒，Agent 报告仍在启动和日志位置，不应谎报成功。
@@ -228,3 +228,11 @@ MCP 默认文本只给简明展示信息；原有完整结果仍在 `structuredC
 ## 阶段三：游戏工程 Skill
 
 MCP `workbench_list_capabilities` 的 `conversationGuidance.engineering` 返回清单中的工程 Skill 及使用指南路径。可读取项目文件的 WorkBuddy/Codex 应读取该入口后继续架构与脚本任务。它不是新增的 MCP 生图工具，也不会自动安装宿主 Skill 或修改目标游戏。若宿主只能调用 MCP、不能读取仓库文件或执行脚本，需由宿主启用项目文件能力，不能声称已写入工程。具体输入、边界与验收见 [游戏工程](game-engineering.md)。
+
+## 执行过程中的页面跟随（MCP 0.9.0）
+
+新增 workbench_present（提交展示请求、无生成）和 workbench_get_frontend_context（只读页面摘要与确认）。首次宿主开页后，执行前调用 present 启用当前 MCP 连接的自动跟随；run_task/get_task 随步骤更新已有页面，选择旧作品或候选时明确 present。后续跳转由页面保存保护处理，不反复调用宿主打开工具。pending 不代表已展示，paused/blocked 不可绕过。完整协议、升级步骤及人工验收见 [执行过程与页面跟随](agent-preview-follow.md)。
+
+## 游戏交付工具（MCP 0.10.0）
+
+新增 workbench_list_game_exports / get_game_export / export_to_game / install_game_export / complete_game_export。它们消费已有包、安装到用户选择的目标并记录 Agent 接入结果，不生成地图或启动通用 Agent。长期 MCP 进程需重连；新交付不会自行向 WorkBuddy 发送聊天消息。下一次相关对话按 [Godot 交付](godot-delivery.md)继续。

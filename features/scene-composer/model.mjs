@@ -59,6 +59,7 @@ export const sceneSchema = z.object({
     y: coordinate,
     zoom: z.number().min(0.02).max(16),
     grid: z.number().int().min(1).max(256),
+    aidsVersion: z.number().int().min(0).max(1).default(0),
     showGrid: z.boolean(),
     showNames: z.boolean(),
     showShapes: z.boolean(),
@@ -82,15 +83,19 @@ export function createScene(name = '未命名场景') {
       y: 0,
       zoom: 1,
       grid: 1,
-      showGrid: false,
+      aidsVersion: 1,
+      showGrid: true,
       showNames: true,
-      showShapes: false,
+      showShapes: true,
       showActor: true,
     },
   };
 }
 export function validateScene(input) {
   const scene = sceneSchema.parse(input);
+  if (scene.view.aidsVersion < 1) Object.assign(scene.view, {
+    aidsVersion: 1, showGrid: true, showNames: true, showShapes: true, showActor: true,
+  });
   scene.materials = scene.materials.map((m) => ({
     ...m,
     project: normalizeProject(m.project),

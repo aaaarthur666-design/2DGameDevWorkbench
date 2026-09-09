@@ -62,7 +62,7 @@ def build_godot_package(sheet_path: str | Path, destination: str | Path, recipe:
         raise ValueError("Godot animation name is invalid")
     offset = [cell_width / 2 - anchor_x, cell_height / 2 - ground_y]
     contract = {
-        "format": "sprite-pipeline-godot", "version": 1, "godot": "4.6.x",
+        "format": "sprite-pipeline-godot", "version": 1, "godot": "4.7.x",
         "job_id": recipe["job_id"], "candidate_index": recipe["candidate_index"],
         "character_id": recipe["character_id"], "action_id": recipe["action_id"],
         "animation": animation, "frame_count": count, "fps": fps, "loop": recipe["loop"],
@@ -92,7 +92,7 @@ def build_godot_package(sheet_path: str | Path, destination: str | Path, recipe:
     contract.update(sprite_frames=resource_path, scene=scene_path, engine_validated=False)
     instructions = f"""# Godot 序列帧资源包
 
-1. 将 ZIP 中的整个 `forge_sprites` 文件夹复制到 Godot 4.6.x 项目根目录，保持目录层级。
+1. 将 ZIP 中的整个 `forge_sprites` 文件夹复制到 Godot 4.7.x 项目根目录，保持目录层级。
 2. 已有 AnimatedSprite2D：把 `{resource_path}` 拖到它的 Sprite Frames 属性，帧已经排列好，无需逐帧添加。
 3. 新建角色画面：将 `{scene_path}` 拖入场景，运行后自动播放 `{animation}`。
 
