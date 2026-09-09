@@ -67,3 +67,15 @@
 - [ ] 若引入任何 CopyWorms 源文件：重记实际提交、依赖与许可
 
 当前版本约定已更新为 Godot 4.7.x；此前 4.6.x 安装/验收状态属于历史，见 wp-01-baseline.md 的迁移说明。
+
+## 7. 电池解锁开关（2026-09-09）
+
+当前关卡必须先拾取两块不同的 `thebattery`，才能操作 `theswitch`；此规则取代早期「先开关后电池也可」的约定。数量继续读取 [demo_config.tres](../DataConfig/demo_config.tres) 的 `required_cells = 2`，重复拾取信号不增加计数，开关切换不消耗电池。
+
+[DemoRunState](../LevelModule/demo_run_state.gd) 提供 `can_toggle_line()` 并拒绝电池不足时的线路写入；[InteractionBridge](../LevelModule/interaction_bridge.gd) 按真实实例 ID 绑定开关，通过现有 `set_enabled()` 接口同步可操作状态。收齐前隐藏操作提示、拒绝交互请求，第二块电池成功提交后解锁，关卡重开后重新锁定。逻辑位于关卡外层，不改导出物件和共享交互运行时。
+
+开关切换成功后，Bridge 的 `line_switch_used` 由 LevelRoot 连接至聚光遮罩的 `expand_and_dismiss()`，触发本局一次的圆形扩散退场，见[聚光效果记录](character-focus.md)。
+
+LevelRoot 另挂 [MapRevealCamera](../LevelModule/presentation/map_reveal_camera.gd)，复用聚光的 `dismissal_progressed` 同步拉远现有玩家 Camera2D。最终缩放按真实地图及视口宽高计算，保持铺满并由原 limits 限制位置；无第二相机或独立动画时钟，重开随关卡释放。
+
+使用 Godot 4.7.2 在隔离副本运行一次现有 `tests/headless_smoke.gd`，全部通过；其中实际走过电池拾取、对话提交、开关开启/关闭/再次开启，并检查零块/一块拒绝和重开锁定。日志：`work/verification/the-last-light-battery-switch-20260909/headless-smoke.log`（工作台根目录）。未追加图形录制或完整人工游玩测试。

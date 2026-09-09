@@ -6,9 +6,12 @@ extends Node2D
 const SCENE_PATH := "res://scenes/scene-fe3fd0ff-8b14-4020-8c2a-9083dfda4275/scene.tscn"
 const PLAYER_PATH := "res://PlayerModule/Formal/Player_Maintainer.tscn"
 const MapBoundary = preload("res://LevelModule/map_boundary.gd")
+const WEATHER_SCENE = preload("res://LevelModule/weather/RainStorm.tscn")
+const CHARACTER_FOCUS_SCENE = preload("res://LevelModule/presentation/CharacterFocus.tscn")
+const MAP_REVEAL_CAMERA = preload("res://LevelModule/presentation/map_reveal_camera.gd")
 
-## 显示设置独立于世界坐标；0.5 倍镜头显示约 1280x720 的地图区域。
-@export_range(0.25, 1.0, 0.05) var camera_zoom: float = 0.5
+## 360 / 1.2 = 300 世界像素高，人物聚光圆直径保持 252。
+@export_range(0.25, 3.0, 0.05) var camera_zoom: float = 1.2
 
 const DEMO_CONFIG_PATH := "res://DataConfig/demo_config.tres"
 ## §7.4 点灯演出 2.8 秒占位（WP-10 前由定时器代替 BeaconPresentation）
@@ -66,6 +69,17 @@ func _ready() -> void:
 	_bridge = InteractionBridge.new()
 	add_child(_bridge)
 	_bridge.bind(scene, run_state, demo_config, run_id, input_lock)
+	# 屏幕雨幕随关卡释放；在世界上方、对话层下方，不参与交互输入。
+	add_child(WEATHER_SCENE.instantiate())
+	var character_focus := CHARACTER_FOCUS_SCENE.instantiate()
+	add_child(character_focus)
+	character_focus.bind_player(_player)
+	var camera_reveal := MAP_REVEAL_CAMERA.new()
+	camera_reveal.name = "MapRevealCamera"
+	add_child(camera_reveal)
+	camera_reveal.configure(camera, world_bounds)
+	character_focus.dismissal_progressed.connect(camera_reveal.apply_progress)
+	_bridge.line_switch_used.connect(character_focus.expand_and_dismiss)
 	run_state.begin_playing()
 
 func _on_phase_changed(phase: StringName, p_run_id: int) -> void:

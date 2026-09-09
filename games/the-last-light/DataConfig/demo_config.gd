@@ -3,7 +3,7 @@
 class_name TllDemoConfig
 extends Resource
 
-## 点灯所需的不同电池实例数量；v1.0 只允许 1 或 2
+## 解锁线路开关及点灯所需的不同电池实例数量；当前关卡为 2
 @export var required_cells: int = 2
 ## 本关可计入修复条件的电池实例白名单（scene-composer 导出的真实 instanceId）
 @export var available_cell_ids: Array[String] = []

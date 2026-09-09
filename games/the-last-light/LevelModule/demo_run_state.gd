@@ -56,8 +56,11 @@ func collected_total() -> int:
 func cells_ready() -> bool:
 	return collected_total() >= _config.required_cells
 
+func can_toggle_line() -> bool:
+	return phase == PHASE_PLAYING and not paused and cells_ready()
+
 func can_start() -> bool:
-	return phase == PHASE_PLAYING and not paused and cells_ready() and line_enabled
+	return can_toggle_line() and line_enabled
 
 ## §8.4 register_cell：只在未暂停的 PLAYING 受理；非当前局、非白名单、重复实例均不得改变数量（T08）。
 func register_cell(instance_id: String, p_run_id: int) -> bool:
@@ -71,9 +74,9 @@ func register_cell(instance_id: String, p_run_id: int) -> bool:
 	_emit()
 	return true
 
-## §8.4 set_line_enabled：写入当前真实开关值；相同值幂等，不自行反转（§4.5）。
+## 电池收齐后才接受线路切换；写入真实开关值，相同值幂等。
 func set_line_enabled(enabled: bool, p_run_id: int) -> bool:
-	if p_run_id != run_id or phase != PHASE_PLAYING or paused:
+	if p_run_id != run_id or not can_toggle_line():
 		return false
 	if line_enabled == enabled:
 		return false

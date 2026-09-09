@@ -65,38 +65,51 @@ func _main() -> void:
 
 	# ---- 信号桥接（真实信号 → 状态）----
 	var battery_a = null
+	var battery_b = null
 	var switch_obj = null
 	for o in runtime.objects:
 		if not is_instance_valid(o):
 			continue
 		if o.effective_instance_id() == "instance-8eb5dd2b-5b17-4e68-b373-480f4e05fbfa":
 			battery_a = o
+		elif o.effective_instance_id() == "instance-67959b63-c7ac-4fa0-b1c8-c1428a69058b":
+			battery_b = o
 		elif o.effective_instance_id() == "instance-65c3867d-7354-4d56-890e-51cdaddcc390":
 			switch_obj = o
-	check(battery_a != null and switch_obj != null, "桥接目标物件可定位")
+	check(battery_a != null and battery_b != null and switch_obj != null, "桥接目标物件可定位")
+	var focus = level.get_node("CharacterFocus")
+	check(not switch_obj.request_interaction() and not switch_obj.toggle_state and not state.line_enabled, "零电池时拒绝开关交互，物件与线路保持关闭")
+	check(not focus._dismiss_started, "被锁定的开关不触发遮罩退场")
 	var ctx := {"definitionId": "object-2d9c7f0c-3181-4aa2-8373-3eb9ede088ad", "instanceId": "instance-8eb5dd2b-5b17-4e68-b373-480f4e05fbfa", "source": null, "kind": "pickup", "result": {"completed": true, "toggleState": false, "sequenceIndex": 0, "successCount": 1}}
-	battery_a.picked_up.emit(ctx)
+	await _complete_interaction(battery_a, runtime)
 	check(state.collected_total() == 1, "picked_up → register_cell 计数=1（T06）")
 	battery_a.picked_up.emit(ctx)
 	check(state.collected_total() == 1, "重复 picked_up 不重复计数（T08 重复实例）")
-	switch_obj.toggled.emit({"instanceId": "instance-65c3867d-7354-4d56-890e-51cdaddcc390", "kind": "toggle", "result": {"toggleState": true}})
-	check(state.line_enabled == true, "toggled → 写入 toggleState 新值（§4.5）")
+	check(not switch_obj.request_interaction() and not switch_obj.toggle_state, "仅一块电池时仍拒绝开关交互")
+	check(not state.set_line_enabled(true, state.run_id) and not state.line_enabled, "状态层也拒绝提前接通线路")
+	await _complete_interaction(battery_b, runtime)
+	check(state.cells_ready() and switch_obj.enabled, "两块不同电池拾取成功后解锁开关")
+	check(not focus._dismiss_started, "仅收齐电池仍保留聚光遮罩")
+	await _complete_interaction(switch_obj, runtime)
+	check(switch_obj.toggle_state and state.line_enabled, "解锁后真实交互接通开关与线路")
+	check(focus._dismiss_started and not focus._dismissed, "开关成功提交后开始扩散，而非立即隐藏遮罩")
 	switch_obj.toggled.emit({"instanceId": "instance-65c3867d-7354-4d56-890e-51cdaddcc390", "kind": "toggle", "result": {"toggleState": true}})
 	check(state.line_enabled == true, "相同值幂等（§8.4）")
+	await create_timer(0.25).timeout
+	await _complete_interaction(switch_obj, runtime)
+	check(not switch_obj.toggle_state and not state.line_enabled, "解锁后可再次交互关闭线路")
+	await create_timer(0.25).timeout
+	await _complete_interaction(switch_obj, runtime)
 
 	# ---- 单元级判定表（§4.4 / T09-T14 / T20 / T25）----
 	_truth_table()
 	# ---- 本局点灯闭环（T14 + 演出占位 → WON）----
-	var battery_b_ctx := ctx.duplicate()
-	battery_b_ctx["instanceId"] = "instance-67959b63-c7ac-4fa0-b1c8-c1428a69058b"
-	for o in runtime.objects:
-		if is_instance_valid(o) and o.effective_instance_id() == "instance-67959b63-c7ac-4fa0-b1c8-c1428a69058b":
-			o.picked_up.emit(battery_b_ctx)
-	check(state.cells_ready(), "两块电池就绪（顺序无关 T09：先开关后电池）")
+	check(state.cells_ready(), "两块电池就绪，开关切换不消耗电池")
 	check(state.request_start(state.run_id) == &"STARTED", "request_start → STARTED（唯一一次点灯）")
 	check(state.request_start(state.run_id) == &"IGNORED", "LIGHTING 中再次请求被忽略（T14）")
 	await create_timer(3.1).timeout
 	check(state.phase == DemoRunState.PHASE_WON, "演出占位 2.8s 后进入 WON")
+	check(focus._dismissed and not focus._mask.visible, "扩散完成后遮罩消失，反复切换开关不会恢复遮罩")
 
 	# ---- 玩家物理：跳跃 / 朝向 / 越界恢复 ----
 	await _player_physics(player)
@@ -117,8 +130,23 @@ func _main() -> void:
 		check(new_level.run_state.run_id == 2, "新局状态携带新 run_id")
 		check(new_level.run_state.collected_total() == 0 and not new_level.run_state.line_enabled, "新局电池/线路归零（T18）")
 		check(new_level.run_state.phase == DemoRunState.PHASE_PLAYING, "新局进入 PLAYING")
+		var new_switch = new_level._bridge._line_switch
+		check(new_switch != null and not new_switch.request_interaction(), "重开后开关重新锁定")
+		check(not new_level.get_node("CharacterFocus")._dismiss_started, "重开后恢复初始聚光遮罩")
 	else:
 		check(false, "新局 run_state 缺失")
+
+## 经过真实物件的请求、对话与提交流程，不手工伪造成功状态。
+func _complete_interaction(object: Node, runtime: Node) -> void:
+	var before: int = object.success_count
+	check(object.request_interaction(), "发起交互：" + object.definition.display_name)
+	for i in 12:
+		await process_frame
+		if runtime.dialogue.is_open():
+			runtime.dialogue.advance()
+		else:
+			break
+	check(object.success_count == before + 1 and not is_instance_valid(runtime.active_object), "交互提交并释放输入锁")
 
 func _truth_table() -> void:
 	var cfg := TllDemoConfig.new()
@@ -132,8 +160,8 @@ func _truth_table() -> void:
 	var st := DemoRunState.new(cfg, 7)
 	st.begin_playing()
 	st.register_cell("a", 7)
-	st.set_line_enabled(true, 7)
-	check(st.request_start(7) == &"MISSING_CELLS", "T11 一电池+线路开 → MISSING_CELLS")
+	check(not st.set_line_enabled(true, 7), "一电池时不能提前接通线路")
+	check(st.request_start(7) == &"MISSING_BOTH", "一电池且开关被锁定 → MISSING_BOTH")
 	var st12 := DemoRunState.new(cfg, 12)
 	st12.begin_playing()
 	st12.register_cell("a", 12)
@@ -156,13 +184,14 @@ func _truth_table() -> void:
 	check(st2.register_cell("b", 999) == false, "T20 旧 run_id 拒绝")
 	check(st2.collected_total() == 1, "T08 异常输入后集合不变")
 	check(st2.set_line_enabled(true, 999) == false, "T20 旧 run_id 写线路拒绝")
-	# T09 顺序无关
+	# 两块电池可按任意顺序拾取，但开关必须在收齐之后操作。
 	var st3 := DemoRunState.new(cfg, 9)
 	st3.begin_playing()
-	st3.set_line_enabled(true, 9)
-	st3.register_cell("a", 9)
+	check(not st3.set_line_enabled(true, 9), "零电池时状态层拒绝接通")
 	st3.register_cell("b", 9)
-	check(st3.request_start(9) == &"STARTED", "T09 先线路后电池 → 正常点灯")
+	st3.register_cell("a", 9)
+	st3.set_line_enabled(true, 9)
+	check(st3.request_start(9) == &"STARTED", "反向拾取两块电池后操作开关 → 正常点灯")
 	# 需求 1 变体（§4.4：两块仍可拾取，条件用 >=）
 	var cfg1 := TllDemoConfig.new()
 	cfg1.required_cells = 1
