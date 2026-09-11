@@ -13,6 +13,7 @@ const output = lines.join('\n');
 for (const name of ['app/theme-tokens.css', 'Tools/SpritePipeline/sprite_pipeline/static/theme-tokens.css']) {
   const file = path.join(root, name);
   if (process.argv.includes('--check')) {
-    if (await readFile(file, 'utf8') !== output) throw new Error(`${name} is stale; run npm run theme:sync`);
+    // Git may check out generated CSS with CRLF on Windows.
+    if ((await readFile(file, 'utf8')).replaceAll('\r\n', '\n') !== output) throw new Error(`${name} is stale; run npm run theme:sync`);
   } else await writeFile(file, output);
 }

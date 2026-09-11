@@ -26,6 +26,9 @@ export function AgentFollow() {
     let held = '';
     let active = read(KEY + '.active') === 'true';
     let acknowledged = read(KEY + '.handled') || '';
+    const incomingSession = new URL(location.href).searchParams.get('previewSession');
+    if (incomingSession && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(incomingSession)) store(KEY + '.session', incomingSession);
+    const sessionId = read(KEY + '.session') || undefined;
     const pageId = read(KEY + '.page') || crypto.randomUUID();
     store(KEY + '.page', pageId);
     following.current = read(KEY) !== 'paused';
@@ -42,9 +45,9 @@ export function AgentFollow() {
     const snapshot = () => {
       const sessions = getEditorSessions();
       const url = new URL(location.href);
-      const allowed = ['task', 'job', 'candidate', 'character', 'asset', 'project', 'object', 'artTask', 'scene', 'tab', 'importAsset', 'importPurpose', 'handoff', 'origin', 'fit'];
+      const allowed = ['task', 'job', 'candidate', 'character', 'asset', 'project', 'object', 'artTask', 'scene', 'tab', 'importAsset', 'importPurpose', 'handoff', 'origin', 'fit', 'map', 'saved'];
       for (const key of new Set(url.searchParams.keys())) if (!allowed.includes(key)) url.searchParams.delete(key);
-      return { pageId, viewPath: url.pathname + url.search, visible: document.visibilityState === 'visible',
+      return { pageId, ...(sessionId ? { sessionId } : {}), viewPath: url.pathname + url.search, visible: document.visibilityState === 'visible',
         focused: document.hasFocus(), following: following.current,
         dirty: sessions.some((s) => s.dirty), busy: sessions.some((s) => s.busy),
         items: sessions.flatMap((s) => s.items.map((i) => ({ id: i.id.slice(0, 200), title: i.title.slice(0, 160), capabilityId: s.capabilityId.slice(0, 80) }))).slice(0, 12),

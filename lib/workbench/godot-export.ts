@@ -5,6 +5,7 @@ export type GodotExportOffer = {
   assetId?: string;
   revision?: string;
   jobId?: string;
+  candidateIndex?: number;
 };
 export function offerGodotExport(offer: GodotExportOffer) {
   window.dispatchEvent(

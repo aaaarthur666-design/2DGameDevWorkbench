@@ -120,7 +120,7 @@ def test_default_ui_flow_has_ordered_next_steps_and_replay() -> None:
         'with gr.Tab("1 · 生成", id="generate", elem_id="generation-tab"):',
         'with gr.Tab("2 · 播放检查", id="review"):',
         'with gr.Tab("3 · 逐帧修补", id="repair"):',
-        'with gr.Tab("4 · 导出", id="export"):',
+        'with gr.Tab("4 · 导出", id="export") as export_tab:',
     ]
     positions = [source.index(marker) for marker in tab_markers]
 
@@ -132,7 +132,7 @@ def test_default_ui_flow_has_ordered_next_steps_and_replay() -> None:
     assert "有标记问题：进入逐帧修补" in source
     assert "全部可用：采用并进入导出" in source
     assert "导出 PNG + Godot 包" in source
-    assert "outputs=[review_action_status, workflow_tabs, *review_outputs, export_job, *export_outputs]" in source
+    assert "outputs=[review_action_status, workflow_tabs, *review_outputs, export_job, *export_outputs, exported_sheet, exported_godot, export_attachments]" in source
 
 
 def test_saved_assets_is_separate_and_startup_catalog_stays_lazy() -> None:

@@ -59,7 +59,7 @@ default_tools_approval_mode = "writes"
 
 ## 4. MCP 能力面
 
-Server 暴露只读资源 `workbench://manifest`，以及 18 个工具：
+Server 暴露只读资源 `workbench://manifest`，当前 MCP 0.11.0 提供 23 个工具：
 
 | 工具 | 行为 |
 | --- | --- |
@@ -68,6 +68,13 @@ Server 暴露只读资源 `workbench://manifest`，以及 18 个工具：
 | `workbench_prepare_task` | 显式输入校验，写准备记录，不运行适配器 |
 | `workbench_run_task` | 运行已获授权的操作，写任务及实际产物 |
 | `workbench_get_task` | 读取并按需要刷新原异步任务，不新建生成 |
+| `workbench_present` | 选择展示目标；WorkBuddy 返回本会话的宿主开页动作 |
+| `workbench_get_frontend_context` | 核对本会话页面与步骤到达确认 |
+| `workbench_list_game_exports` | 查询游戏项目交付 |
+| `workbench_get_game_export` | 检查指定包和目标工程 |
+| `workbench_export_to_game` | 交付已有 Godot 包 |
+| `workbench_install_game_export` | 校验并安装交付资源 |
+| `workbench_complete_game_export` | 记录接入文件与引擎证据 |
 | `workbench_get_environment` | 检查运行环境、服务兼容性、前端和 Key 配置状态 |
 | `workbench_start_services` | 离线时启动本机 SpritePipeline，不安装或生成 |
 | `workbench_start_frontend` | 启动本机 Web 与 Bridge，宿主另行打开预览 |
@@ -172,7 +179,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 ## WorkBuddy 首次对话自动打开
 
-在 WorkBuddy 连接本项目 MCP 后发送第一条消息，Agent 会先检查 `workbench_get_environment.frontend`。服务离线时调用 `workbench_start_frontend`，等待 `frontend.ready`，再用 WorkBuddy 自带的 `present_files` 打开 `frontend.hostAction.arguments.files` 中的地址。前端地址以清单 `workspace.frontend` 为准，默认 `http://localhost:3000`。同一对话复用已有预览，用户关闭后不会自动重开。
+在 WorkBuddy 连接本项目 MCP 后发送第一条消息，Agent 会先检查 `workbench_get_environment.frontend`。服务离线时调用 `workbench_start_frontend`，等待 `frontend.ready`，再用 WorkBuddy 自带的 `present_files` 打开 `preview.hostAction.arguments.files` 中带本会话 previewSession 的地址。前端地址以清单 `workspace.frontend` 为准，默认 `http://localhost:3000`。同一对话复用已有预览，用户关闭后不会自动重开。
 
 这是 MCP 初始化 instructions 与项目 AGENTS.md 约定的 **首次对话工作流**，执行依赖 WorkBuddy Agent；没有把“握手完成”伪装成打开浏览器事件。WorkBuddy 5.5.3 的原生 `present_files` 支持内部 URL 预览；项目 STDIO server 没有宿主会话浏览器的直接控制接口。宿主工具缺失、调用失败或前端冲突时，Agent 应明确报告并继续可完成的原请求。
 
@@ -180,7 +187,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 手动验收：
 
-1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（MCP 0.9.0 总计 18 个工具），然后新建本项目对话。
+1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（MCP 0.11.0 总计 23 个工具），然后新建本项目对话。
 2. 发送“看看工作台现在有哪些功能”，无需要求打开网页。预期内部浏览器打开工作台首页，Agent 继续回答原问题。
 3. 再发送“列出已有角色”。预期复用页面，不增加重复预览；手动关掉预览后再发消息，也不应强行重开。
 4. 可选冷启动：正常关闭工作台开发服务，重新开启 WorkBuddy 项目对话并重复第 2 步。预期自动启动前端和 Runtime Bridge；无需 PixelLab Key 或 Python。若首次编译超过 60 秒，Agent 报告仍在启动和日志位置，不应谎报成功。
@@ -217,7 +224,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 MCP 默认文本只给简明展示信息；原有完整结果仍在 `structuredContent`，旧客户端可用 `get_result(detail:true)` 获取完整 JSON 文本。图像读取仍返回 MCP image 内容。原图链接定位原生成任务，移送结果另提供选择角色动作入口；序列帧链接携带 job 和 candidate；交互物仍通过 task 恢复项目。执行详情页面优先展示预览与可点击操作，日志和输入折叠。
 
-浏览器与提问属于宿主：首次展示已知作品时以精确 URL 替换首页；已有预览只在宿主支持且编辑安全时复用，否则提供链接。关闭或重连不自动重开。`browserOpened:false` 只表示项目 MCP 没有操作浏览器，不能被说成打开成功。使用实际可用、已读取 schema 的提问工具；未回答不选择默认项。
+浏览器与提问属于宿主：首次展示已知作品时先 present，再使用返回的 preview.hostAction，保留会话参数；已有预览只在宿主支持且编辑安全时复用，否则提供链接。关闭或重连不自动重开。`browserOpened:false` 只表示项目 MCP 没有操作浏览器，不能被说成打开成功。使用实际可用、已读取 schema 的提问工具；未回答不选择默认项。
 
 完整手动验收见 [阶段一展示验收](agent-presentation-acceptance.md)。
 
@@ -236,3 +243,18 @@ MCP `workbench_list_capabilities` 的 `conversationGuidance.engineering` 返回�
 ## 游戏交付工具（MCP 0.10.0）
 
 新增 workbench_list_game_exports / get_game_export / export_to_game / install_game_export / complete_game_export。它们消费已有包、安装到用户选择的目标并记录 Agent 接入结果，不生成地图或启动通用 Agent。长期 MCP 进程需重连；新交付不会自行向 WorkBuddy 发送聊天消息。下一次相关对话按 [Godot 交付](godot-delivery.md)继续。
+
+### WorkBuddy 显式客户端标识
+
+在 WorkBuddy 的本项目 MCP 配置中追加 `"env": {"FORGE_MCP_HOST":"workbuddy"}`，不改命令、参数和其他连接器。保存配置后，先在 WorkBuddy 连接器管理中重新信任本 server，再重新连接。仅重启不会替新配置完成信任。重新连接后优先使用响应 `preview.hostAction`，而不是不带会话身份的首页链接。`preview_required` 表示制作尚未提交；预览连接成功后再继续。完整流程与例外见 [预览跟随](agent-preview-follow.md)。只有连接 MCP、不发消息不会打开浏览器。
+
+## 配置存在但原生工具未挂载
+
+WorkBuddy 5.5.4 的信任指纹包括 STDIO 命令、参数以及环境变量名称。新增 `FORGE_MCP_HOST` 会改变指纹；旧信任记录只对应旧配置，`disabled:false` 不表示新配置已经获信任。
+
+1. 在 WorkBuddy 连接器/MCP 管理中找到 `2d-game-workbench`，查看更新后的命令和参数，再点击“信任”或“信任并启用”（以当前界面文案为准）。
+2. 重新连接该 server，再新建或刷新项目会话。
+3. 明确要求“只用原生 MCP 调用 workbench_get_environment，不使用 CLI”。成功证据是宿主实际工具调用，而非终端 doctor 或手写 STDIO 客户端成功。
+4. 原生 MCP 成功后，再验收内部浏览器开页和任务跟随。CLI 共用生产运行时，但不验证 WorkBuddy 工具挂载及 MCP 会话预览流程。
+
+信任确认由用户在宿主界面完成，不直接改写 mcp-approvals.json、不删除安全迁移标记、不伪造审批记录。排查时分清“独立 MCP 握手通过”“宿主挂载通过”“页面已展示”三种证据。

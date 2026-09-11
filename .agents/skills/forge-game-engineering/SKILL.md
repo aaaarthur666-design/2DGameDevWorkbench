@@ -62,3 +62,15 @@ Map project thumbnails are optional, version-bound display attachments rendered 
 ## Recoverable asset recycle bin
 
 Asset listing defaults to `scope=active`; use `scope=trashed` to inspect the recoverable recycle bin. Exact details expose `trashedAt`. The frontend confirms explicit selections before trash/restore; source files, original tool content, task history and existing scene references remain intact. This organizes the catalog and does not free disk space. A source being offline does not mean deletion; restoring a catalog entry does not repair missing files. Do not clean existing assets merely because the user requested implementation of the feature.
+
+## WorkBuddy session preview
+
+WorkBuddy MCP 0.11: use the returned preview.hostAction (including its previewSession URL) with the discovered host-native present_files schema. A visible page from this MCP session is required before the first run_task; preview_required means createsTask=false and providerCalled=false, so open/confirm the preview before resubmitting the same request. Once connected, run_task automatically arms following. Existing-task and candidate selections can still use workbench_present. Paused/blocked pages are never forced. When the user declined or closed the preview in this conversation, or the host tool was verified unavailable, pass the matching previewPolicy (user-declined/user-dismissed/host-unavailable) and report the reason; never silently bypass the gate. Explicitly requested reopening can use previewPolicy=auto. Other MCP clients stay headless unless explicitly presenting. The server cannot open WorkBuddy UI itself; page acknowledgement, not a returned URL, proves arrival.
+
+## Sprite delivery from the native export step
+
+In the embedded sprite workspace, a successful PNG + Godot export opens the shared game-project delivery dialog; the saved-export button can reopen it. The bridge carries the exact job and candidate, and mismatched saved packages are rejected. Copy the animation-specific WorkBuddy handoff after delivery: merge only this clip into the existing SpriteFrames/controller and preserve other actions, facing, scale, offsets and gameplay timing. Export/clipboard success is not Agent execution or engine acceptance. Standalone SpritePipeline retains ZIP downloads.
+
+An approved/exported animation returns to export without another approval or generation. Library export and review return recover the exact candidate’s saved PNG/Godot files. Legacy PNG-only exports suggest a new filename for a complete package, preserving the old bundle; normal QA gates still govern rebuilding. Do not treat missing historical vision evidence as proof the user edited a frame.
+
+Local reference import: reference-art operation=import copies a repository-contained 64/128 transparent PNG (sourceImagePath) and records import provenance; prompt is a description added at import, not evidence of an API generation. It needs no model or PixelLab service. Imported characters appear in reference history and may be transferred through the normal hash-checked flow; transfer still needs the local SpritePipeline service.

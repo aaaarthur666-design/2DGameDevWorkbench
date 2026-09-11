@@ -97,6 +97,14 @@ export function SpritePipelineWorkspace({
         event.source !== iframe.current?.contentWindow
       )
         return;
+      if (event.data?.type === 'workbench:sprite-godot-export') {
+        const { jobId, candidateIndex } = event.data;
+        if (typeof jobId === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(jobId) && Number.isInteger(candidateIndex) && candidateIndex >= 1) {
+          const title = typeof event.data.name === 'string' ? event.data.name.slice(0,160) : '角色动画';
+          offerGodotExport({ name: title + ' · 候选 ' + candidateIndex, jobId, candidateIndex });
+        }
+        return;
+      }
       if (
         event.data?.type === 'workbench:sprite-job' &&
         typeof event.data.jobId === 'string' &&
@@ -202,7 +210,6 @@ export function SpritePipelineWorkspace({
 
         <div className="flex items-center gap-1.5">
           <EditorTaskSummary compact />
-          <Button variant="outline" size="sm" disabled={!activeJob} onClick={()=>offerGodotExport({name:"已导出的角色动画",jobId:activeJob})}>已导出动画 → 游戏项目</Button>
           <Button
             type="button"
             variant="ghost"

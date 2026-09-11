@@ -43,3 +43,5 @@ SpritePipeline can use providers configured within that component. Its provider-
 - The inspected game README states learning and competition use; this notice does not imply an MIT grant for that game or its third-party components. Any future source extraction must preserve provenance and applicable terms.
 
 The workbench-integrated SpritePipeline additionally includes a local Godot SpriteFrames package exporter (`processing/godot_export.py`) and its UI/API/artifact integration. These changes are local integration work beyond the recorded upstream synchronization baseline; they do not imply that the independent upstream repository has been updated.
+
+The Forge-specific `sprite_pipeline/workbench_export.py` bridge connects native sprite exports to the workbench project picker and Agent handoff. It is a workbench integration addition, not a claim of synchronization to the independent SpritePipeline upstream.

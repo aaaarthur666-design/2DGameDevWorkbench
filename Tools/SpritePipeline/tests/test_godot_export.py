@@ -133,6 +133,16 @@ def test_export_button_returns_download_and_restores_selection(approved):
         downloads = next(fn for fn in ui.fns.values() if fn.name == 'export_downloads')
         assert downloads.fn(job_id, 1)[1] == result[2]
         assert callback.outputs[2].label == 'Godot SpriteFrames 包（ZIP）'
+        button = next(c for c in ui.blocks.values() if getattr(c, 'elem_id', '') == 'forge-sprite-game-export')
+        assert not button.visible and not button.interactive
+        from types import SimpleNamespace
+        loader = next(fn for fn in ui.fns.values() if fn.name == 'load_workbench_export')
+        assert loader.fn(SimpleNamespace(query_params={'workbench_embedded':'1'}))[0]['visible'] is True
+        assert loader.fn(SimpleNamespace(query_params={}))[0]['visible'] is False
+        from sprite_pipeline.workbench_export import EXPORTED_GODOT_JS, REQUEST_GODOT_EXPORT_JS
+        config = ui.get_config_file()
+        assert any(d.get('js') == EXPORTED_GODOT_JS and d.get('trigger_after') is not None for d in config['dependencies'])
+        assert any(d.get('js') == REQUEST_GODOT_EXPORT_JS for d in config['dependencies'])
     finally:
         ui.close()
 
@@ -199,3 +209,64 @@ def test_package_import_and_playback_in_godot_47(tmp_path):
         output = run.stdout + run.stderr
         assert run.returncode == 0 and 'ERROR:' not in output, output
     assert 'SPRITE_GODOT_PACKAGE_OK' in output
+
+@pytest.mark.parametrize('legacy_png', [False, True])
+def test_exported_artwork_reopens_through_gradio_and_review_without_reapproval(approved, legacy_png):
+    import asyncio
+    from functools import partial
+    from gradio.state_holder import SessionState
+
+    service, job_id = approved
+    service.export_candidate(job_id, 1)
+    if legacy_png:
+        with service.store.locked_job(job_id) as job:
+            job.export.godot_package_path = None
+            job.export.godot_sha256 = None
+    service.archive_history()
+    before = service.get_job(job_id).model_dump_json()
+    old_sheet = service.settings.resolve_record_path(service.get_job(job_id).export.sheet_path)
+    old_bytes = old_sheet.read_bytes()
+    ui = build_ui(service=service)
+    state = SessionState(ui)
+    try:
+        render = next(fn for fn in ui.fns.values() if fn.name == 'apply')
+        asyncio.run(ui.process_api(render, inputs=[None, 'all', '', 1], state=state))
+        callback = next(fn for fn in state.blocks_config.fns.values()
+                        if isinstance(fn.fn, partial) and fn.fn.func.__name__ == 'artwork_action'
+                        and fn.fn.args == (f'animation:{job_id}:1', 'export'))
+        # Exercise Gradio's real File.postprocess, where a Path previously crashed
+        # the whole large event output group; checking callback.fn alone missed it.
+        result = asyncio.run(ui.process_api(callback, inputs=[], state=state))
+        values = dict(zip(callback.outputs, result['data']))
+        sheet = next(c for c in callback.outputs if getattr(c, 'label', '') == 'Sprite Sheet PNG')
+        godot = next(c for c in callback.outputs if getattr(c, 'label', '') == 'Godot SpriteFrames 包（ZIP）')
+        assert isinstance(values[sheet]['path'], str)
+        assert Path(values[sheet]['path']).read_bytes() == old_bytes
+        assert bool(values[godot]) is not legacy_png
+        assert len(callback.outputs) < 20
+        assert all(getattr(c, 'label', '') != '当前检查的动画' for c in callback.outputs)
+        refresh = next(fn for fn in ui.fns.values() if fn.name == 'refresh_exports')
+        projection = refresh.fn(job_id, 1)
+        assert job_id in {value for _label, value in projection[0]['choices']}
+        assert projection[0]['value'] == job_id and projection[1]['value'] == 1
+        if legacy_png:
+            assert projection[4]['value'] != old_sheet.name
+        review = next(fn for fn in state.blocks_config.fns.values()
+                      if isinstance(fn.fn, partial) and fn.fn.func.__name__ == 'artwork_action'
+                      and fn.fn.args == (f'animation:{job_id}:1', 'review'))
+        updates = review.fn()
+        button = next(c for c,v in updates.items() if isinstance(v,dict) and v.get('value') == '已采用：返回导出 →')
+        assert updates[button]['interactive'] is True
+        asyncio.run(ui.process_api(review, inputs=[], state=state))
+        approve = next(fn for fn in ui.fns.values() if fn.name == 'approve_candidate')
+        with patch.object(service, 'approve_candidate', side_effect=AssertionError('must not approve again')):
+            result = asyncio.run(ui.process_api(approve, inputs=[job_id,1,False],state=state))
+        assert result['data'][1]['selected'] == 'export'
+        assert service.get_job(job_id).model_dump_json() == before
+        if legacy_png:
+            export = next(fn for fn in ui.fns.values() if fn.name == 'export_one')
+            result = export.fn(job_id,1,projection[4]['value'],False)
+            assert result[-1]['ok'] is True and Path(result[2]).is_file()
+            assert old_sheet.read_bytes() == old_bytes
+    finally:
+        ui.close()

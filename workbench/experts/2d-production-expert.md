@@ -57,3 +57,17 @@ Map assets include complete saved projects (mapType=project) and durable image/h
 地图卡缩略图是当前工程版本的显示附件，不是新的图片资产或引擎导出。无预览不等于工程损坏；旧工程需人工打开并保存后补齐。预览读取不生成图片。
 
 资产回收站仅整理目录：默认 list_assets 查询 active，scope=trashed 查询回收站；精确详情返回 trashedAt。用户通过前端核对选择后移入/恢复，生产源文件、任务历史和已有引用保持原样。来源离线仍可恢复目录状态，不代表文件已验证。
+
+WorkBuddy MCP 0.11: use the returned preview.hostAction (including its previewSession URL) with the discovered host-native present_files schema. A visible page from this MCP session is required before the first run_task; preview_required means createsTask=false and providerCalled=false, so open/confirm the preview before resubmitting the same request. Once connected, run_task automatically arms following. Existing-task and candidate selections can still use workbench_present. Paused/blocked pages are never forced. When the user declined or closed the preview in this conversation, or the host tool was verified unavailable, pass the matching previewPolicy (user-declined/user-dismissed/host-unavailable) and report the reason; never silently bypass the gate. Explicitly requested reopening can use previewPolicy=auto. Other MCP clients stay headless unless explicitly presenting. The server cannot open WorkBuddy UI itself; page acknowledgement, not a returned URL, proves arrival.
+
+### 序列帧导出到游戏项目
+
+在角色美术的内嵌序列帧工具进入“4 · 导出”，导出 PNG + Godot 包成功后会打开统一项目选择窗口。选择或输入游戏根目录并点“导出到此项目”，再点“复制给 WorkBuddy”获取精确交付及动作接入请求。已有导出可通过“选择游戏项目并交付给 WorkBuddy”再次交付；路径会记住，仍可仅下载 ZIP。保持当前作业与候选一致；接入时只合并本次动作，保留其他动作与控制器。窗口不会自行启动 WorkBuddy，导出成功不代表脚本接好或引擎通过。独立 SpritePipeline 的 ZIP 下载保持可用。
+
+### 已导出动画再次使用
+
+作品库“导出”会恢复所选候选的 PNG、Godot 包和附加文件。播放检查中的已采用结果显示“已采用：返回导出”，只导航、不重复审批；手动进入导出页会刷新已采用列表。历史 PNG 若没有可用 Godot 包，会提示以新的文件名导出完整包，保留旧文件；重新打包仍遵守原有检查门槛，不会自动生成或跳过审核。旧页面已经出现的控件错误需刷新页面清除。
+
+### 导入已有角色原图
+
+`reference-art` 的 `import` 操作接受仓库内的 `sourceImagePath`、`prompt`（补充展示描述），以及名称、朝向、size（64/128）。只复制经过校验的透明 PNG；不调用模型，也不要求 PixelLab 服务或 Key。任务和结果记录导入来源、原始哈希、`generatedHere:false` 与 `promptOrigin:description-added-on-import`。原图历史显示“导入素材”，点击后恢复提示词并预览，可通过原有校验流程移送序列帧。移送需要本地序列帧服务，但不生成动画。不能把导入记录说成真实生图调用；不改图片、不倒填生成日期。

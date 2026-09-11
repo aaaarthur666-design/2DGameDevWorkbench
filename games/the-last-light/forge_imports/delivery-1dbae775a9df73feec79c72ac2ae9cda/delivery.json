@@ -4,7 +4,7 @@
   "deliveryId": "delivery-1dbae775a9df73feec79c72ac2ae9cda",
   "title": "港口守灯人·64像素 · 原地跳跃",
   "createdAt": "2026-09-09T11:47:36.575Z",
-  "updatedAt": "2026-09-09T11:54:12.516Z",
+  "updatedAt": "2026-09-09T12:14:12.130Z",
   "status": "integrated",
   "project": {
     "path": "D:\\2DGameDevWorkbench\\games\\the-last-light",
@@ -175,15 +175,27 @@
   "packageSha256": "e89850ea6de6cdd3bf4df8fb7d0fab1c7de5c24a9467382e1ed5fbaf8c3c8729",
   "inboxPath": "D:\\2DGameDevWorkbench\\games\\the-last-light\\forge_imports\\delivery-1dbae775a9df73feec79c72ac2ae9cda",
   "integration": {
-    "summary": "港口守灯人 v02 原生64px整套美术已替换；保留当前idle/walk/jump逻辑和10 FPS。视觉scale=1.5，脚底offset=(1,-28)，原版资源保留。",
+    "summary": "守灯人 v02.1：Sprite.scale从1.5调为1.8，按当前尺寸放大20%；默认朝右，视觉水平镜像适配；待机站定3秒→转头→停1.2秒→8 FPS缓慢转回。用户确认使用倒序转回，保留17张原帧及原导出。walk/jump与物理镜头参数不变。",
     "files": [
       {
         "path": "PlayerModule/Formal/Player_Maintainer.tscn",
-        "sha256": "98008f4076a8dc4b43c149276ddd139d19a359d139199dc1df14d1c7021efc84"
+        "sha256": "b17e7dd3a59df81ccf98b5a2a98ed179d616178127185b4dd822650cb35b7099"
       },
       {
-        "path": "Assets/Characters/maintainer/maintainer_frames_v02.tres",
-        "sha256": "691b08a1c1bd2e16e2b32c74169888d8faeedc5f57df302f6db4a8c5dcfc84a7"
+        "path": "PlayerModule/Formal/player_maintainer.gd",
+        "sha256": "a3db75525bd4ce3a6c25561c630fbd94fb5c88ae418142ebb560598268133469"
+      },
+      {
+        "path": "DataConfig/tll_player_config.gd",
+        "sha256": "fbcb2a544ea63cbc84c1094524030700114e2f54b8ee949871783e83439dc153"
+      },
+      {
+        "path": "DataConfig/tll_player_config.tres",
+        "sha256": "18ffe1c7a7890ba5931209ed1a8ad2d2c560817aae1cf34ef096253ec1d23883"
+      },
+      {
+        "path": "Assets/Characters/maintainer/maintainer_frames_v02_idle.tres",
+        "sha256": "cc5d633aec8a20249537891fc367f34e86665778b9c956d2dbd8700911dcac34"
       },
       {
         "path": "forge_sprites/reference_a9f5fd6d9344b2322a9d4623/20260909_reference_a9f5fd6d9344b2322a9d4623_jump_001_c01_538429a66cc7/sprite_frames.tres",
@@ -193,11 +205,11 @@
     "engine": {
       "status": "passed",
       "version": "4.7.stable.official.5b4e0cb0f",
-      "evidence": "Godot 4.7真实导入、合并；headless_smoke.gd 73项通过；view_boundary.gd 15项通过；实际OpenGL游戏截图对比已检查。控制器、物理配置、镜头及空气墙脚本哈希保持不变。日志 work/keeper-restyle-v02/；逐帧视觉审核共51帧，行走接缝轻微顿挫及部分接触像素已记录。",
+      "evidence": "本次 scale 1.8 调整已由 Godot 4.7 headless_smoke 73项实际运行通过，验证视觉scale、脚底offset、移动跳跃、朝向与重开。日志 work/keeper-idle-fix/scale-smoke.log。待机资源与控制器未改；此前待机29项和边界15项验证为前一版本历史证据，本次未重复执行。",
       "baselineValidated": true
     },
     "evidenceSource": "agent-reported",
-    "recordedAt": "2026-09-09T11:54:12.516Z"
+    "recordedAt": "2026-09-09T12:14:12.130Z"
   },
   "installedAt": "2026-09-09T11:48:33.324Z",
   "installedFiles": [

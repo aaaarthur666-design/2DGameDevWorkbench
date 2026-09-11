@@ -91,8 +91,8 @@ export function ReferenceArtEditor() {
       );
       if (epoch !== selectionEpoch.current) return;
       if (
-        task.capabilityId !== 'reference-art' ||
-        task.input?.operation !== 'generate' || task.input.subject === 'prop'
+        task.capabilityId !== 'reference-art' || !task.input ||
+        !['generate','import'].includes(String(task.input?.operation)) || task.input.subject === 'prop'
       )
         throw new Error('这不是原图生成任务。');
       setSelected(task);
@@ -243,8 +243,8 @@ export function ReferenceArtEditor() {
       : undefined;
   const historyTasks = tasks.filter(
     (task) =>
-      task.capabilityId === 'reference-art' &&
-      task.input?.operation === 'generate' && task.input.subject !== 'prop',
+      task.capabilityId === 'reference-art' && !!task.input &&
+      ['generate','import'].includes(String(task.input?.operation)) && task.input.subject !== 'prop',
   );
   return (
     <main className="ra-workspace">
@@ -386,10 +386,11 @@ export function ReferenceArtEditor() {
             </div>
             <span className="ra-status" aria-live="polite">
               {selected
-                ? taskLabels[selected.status] || '等待处理'
+                ? selected.input?.operation === 'import' ? '已导入' : taskLabels[selected.status] || '等待处理'
                 : '等待你的第一个角色'}
             </span>
           </div>
+          {selected?.input?.operation === 'import' && <p className="ra-note">导入素材 · 提示词为展示描述，此图并非由本次生图 API 生成。</p>}
           <div className="ra-canvas">
             {png ? (
               <img
@@ -457,7 +458,7 @@ export function ReferenceArtEditor() {
                 onClick={() => void selectTask(task.id)}
               >
                 <strong>{textField(task.input?.name, '角色原图')}</strong>
-                <span>{taskLabels[task.status] || task.status}</span>
+                <span>{task.input?.operation === 'import' ? '导入素材 · 已保存' : taskLabels[task.status] || task.status}</span>
                 <p>{textField(task.input?.prompt)}</p>
               </button>
             ))}

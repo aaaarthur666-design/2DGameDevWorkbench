@@ -90,11 +90,13 @@ const server = http.createServer(async (request, response) => {
           const input=await readJsonBody(request);let pack;
           if(input.jobId) {
             if(typeof input.jobId!=='string' || !/^[a-zA-Z0-9_-]{1,200}$/.test(input.jobId))throw new Error('Invalid jobId.');
+            if(input.candidateIndex!==undefined && (!Number.isInteger(input.candidateIndex)||input.candidateIndex<1))throw new Error('Invalid candidateIndex.');
             const {connector}=findCapability(manifest,'sprite-generator');
             const url=endpointUrl(process.env[connector.urlEnv]||connector.defaultUrl,'/v1/jobs/'+encodeURIComponent(input.jobId)+'/exports/godot');
             const result=await requestBinary(url,{headers:bearerHeaders(process.env[connector.tokenEnv]),maxBytes:256*1024*1024,timeoutMs:30000});pack={bytes:result.buffer};
           } else pack=await readAssetGodotPackage(manifest,input);
           const prepared=await prepareGodotPackage(pack.bytes);
+          if(input.jobId && (prepared.manifest.kind!=='animation' || prepared.manifest.details.jobId!==input.jobId || (input.candidateIndex!==undefined && prepared.manifest.details.candidateIndex!==input.candidateIndex)))throw new Error('当前已导出包与所选动画候选不一致，请回到导出页重新导出该候选。');
           response.writeHead(200,{'content-type':'application/zip','cache-control':'no-store','content-length':prepared.bytes.length});response.end(prepared.bytes);return;
         }
         throw new Error('Unknown game export action.');

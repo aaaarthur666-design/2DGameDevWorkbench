@@ -137,14 +137,31 @@
             "type": "string",
             "enum": [
               "generate",
-              "transfer"
+              "transfer",
+              "import"
             ]
           },
-          "identityDescription": {"type":"string","minLength":1,"maxLength":300,"description":"仅 transfer 可选：简短外观锁定描述，不包含站姿或动作要求；原始生图提示词保留在源任务。长提示词默认使用参考图身份锁定。"},
-          "size": {"type":"integer","enum":[64,128],"default":128,"description":"角色原生像素尺寸；64 适合粗像素风，128 为原默认。物品固定 128。仅 generate 可指定，transfer 沿用源任务。"},
+          "identityDescription": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "仅 transfer 可选：简短外观锁定描述，不包含站姿或动作要求；原始生图提示词保留在源任务。长提示词默认使用参考图身份锁定。"
+          },
+          "size": {
+            "type": "integer",
+            "enum": [
+              64,
+              128
+            ],
+            "default": 128,
+            "description": "角色原生像素尺寸；64 适合粗像素风，128 为原默认。物品固定 128。generate/import 可指定，transfer 沿用源任务。"
+          },
           "subject": {
             "type": "string",
-            "enum": ["character", "prop"],
+            "enum": [
+              "character",
+              "prop"
+            ],
             "default": "character",
             "description": "generate 的图片用途：character 角色；prop 独立侧视交互物品（128×128 透明 PNG），从交互物编辑器预览采用，不能 transfer 为角色。"
           },
@@ -152,7 +169,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 2000,
-            "description": "generate 必填。角色描述最多 2000 字符；物品描述最多 1800 字符，附加固定的独立物品与透明背景约束，无额外模型调用。"
+            "description": "generate/import 必填；import 为导入时补充的展示描述，不代表原始生成提示词。角色最多 2000 字符；物品生成最多 1800 字符。"
           },
           "name": {
             "type": "string",
@@ -176,7 +193,13 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200,
-            "description": "transfer 必填，已完成的原图生成任务 ID。移送不生成动画。"
+            "description": "transfer 必填，已完成的角色原图任务 ID（生成或导入）。移送不生成动画。"
+          },
+          "sourceImagePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "仅 import：仓库内已有 64/128 像素透明 PNG 的路径。本地复制并记录导入来源，不调用生成 API；prompt 为导入时补充的展示描述。"
           }
         }
       },

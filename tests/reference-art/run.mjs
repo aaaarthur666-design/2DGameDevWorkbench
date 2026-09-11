@@ -82,6 +82,24 @@ let bridge;
 try {
   const manifest = await loadManifest();
   const capability = findCapability(manifest, 'reference-art');
+  const importedPath = path.join(repositoryRoot, 'work', process.env.WORKBENCH_TEST_RUN+'-import.png');
+  await writeFile(importedPath,image);
+  const callsBefore=received.length;
+  const local=await runConnector(manifest,capability,{operation:'import',sourceImagePath:path.relative(repositoryRoot,importedPath),prompt:'配套展示描述',name:'导入角色',size:128});
+  assert.equal(local.task.status,'completed');assert.equal(local.task.input.operation,'import');
+  assert.equal(received.length,callsBefore,'local import must not call the image service');
+  const importedMetadata=JSON.parse(await readFile(path.join(repositoryRoot,local.task.outputs.find(p=>p.endsWith('/result.json'))),'utf8'));
+  assert.equal(importedMetadata.model,null);assert.equal(importedMetadata.provenance.generatedHere,false);
+  assert.equal(importedMetadata.provenance.promptOrigin,'description-added-on-import');
+  assert.deepEqual(await readFile(importedPath),image);
+  const importedResult=await agentRequest(manifest,'result',{taskId:local.task.id});
+  assert.match(importedResult.presentation.summary,/本地导入/);
+  const catalog=await agentRequest(manifest,'assets',{kind:'character',query:'导入角色'});
+  assert.ok(catalog.assets.some(a=>a.taskId===local.task.id||a.taskIds?.includes(local.task.id)));
+  const moved=await runConnector(manifest,capability,{operation:'transfer',sourceTaskId:local.task.id});
+  assert.equal(moved.task.status,'completed');assert.equal(submits,0);imports=0;received.length=0;
+  assert.ok(validateInput(capability,{operation:'import',prompt:'demo'}).length);
+  assert.ok(validateInput(capability,{operation:'generate',prompt:'demo',sourceImagePath:'secret'}).length);
   const input = {
     operation: 'generate',
     name: 'Forest ranger',

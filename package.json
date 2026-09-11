@@ -45,7 +45,7 @@
     "format": "oxfmt",
     "test:desktop-services": "node tests/desktop-services/run.mjs",
     "test:prop-art": "node tests/prop-art/run.mjs",
-    "test:preview-follow": "node tests/preview-follow/run.mjs",
+    "test:preview-follow": "node tests/preview-follow/run.mjs && node tests/preview-follow/workbuddy.mjs",
     "test:asset-import": "node tests/asset-import/run.mjs",
     "test:game-export": "node tests/game-export/run.mjs"
   },

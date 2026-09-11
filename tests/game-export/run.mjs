@@ -1,3 +1,5 @@
+import {gameHandoff} from '../../features/godot-export/handoff.mjs';
+import {createServer as createHttpServer} from 'node:http';
 import {browseGameProjects} from '../../lib/workbench/game-project-browser.mjs';
 import '../helpers/runtime-workspace.mjs';
 import assert from 'node:assert/strict';
@@ -64,6 +66,7 @@ const png = await sharp({
 })
   .png()
   .toBuffer();
+let spritePackage;
 const tests = [],
   test = (name, fn) => tests.push([name, fn]);
 const rawMap = new JSZip();
@@ -225,6 +228,7 @@ test('sprite delivery preserves selected action bytes, FPS, frame order and cand
     root + '/export.json',
     JSON.stringify({
       format: 'sprite-pipeline-godot',
+      job_id: 'fixture_export',
       animation: 'walk',
       fps: 12,
       loop: true,
@@ -245,6 +249,11 @@ test('sprite delivery preserves selected action bytes, FPS, frame order and cand
     frames,
   );
   assert.equal(p.manifest.details.candidateIndex, 2);
+  spritePackage = p.bytes;
+  const handoff = gameHandoff({title:'行走候选 2',deliveryId:'delivery-fixture',project:{path:game,name:'测试游戏'}},p.manifest);
+  assert.ok(handoff.prompt.includes(game) && handoff.prompt.includes('delivery-fixture'));
+  assert.ok(handoff.prompt.includes('walk') && handoff.prompt.includes('候选 2') && handoff.prompt.includes('FPS 12'));
+  assert.ok(handoff.prompt.includes('保留其他动作') && handoff.prompt.includes('不要重建人物系统') && handoff.prompt.includes('workbench_complete_game_export'));
   assert.equal(p.manifest.details.fps, 12);
   assert.deepEqual(p.manifest.details.frameRegions, [
     [16, 0, 16, 16],
@@ -439,9 +448,14 @@ test('HTTP rejects unauthenticated project writes and exposes remembered setting
   await new Promise((r) => reserve.listen(0, '127.0.0.1', r));
   const port = reserve.address().port;
   await new Promise((r) => reserve.close(r));
+  const pipeline = createHttpServer((req,res)=>{
+    if(req.method!=='GET'||req.url!=='/v1/jobs/fixture_export/exports/godot'){res.writeHead(404);res.end();return;}
+    res.writeHead(200,{'content-type':'application/zip'});res.end(spritePackage);
+  });
+  await new Promise(r=>pipeline.listen(0,'127.0.0.1',r));
   const child = spawn(process.execPath, ['scripts/workbench-http.mjs'], {
     cwd: repositoryRoot,
-    env: { ...process.env, WORKBENCH_RUNTIME_PORT: String(port) },
+    env: { ...process.env, WORKBENCH_RUNTIME_PORT: String(port), SPRITE_PIPELINE_API_URL:'http://127.0.0.1:'+pipeline.address().port },
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -475,6 +489,13 @@ test('HTTP rejects unauthenticated project writes and exposes remembered setting
       await fetch(url + '/v1/game-export/settings')
     ).json();
     assert.equal(settings.project.path, game);
+    const spriteRequest = input=>fetch(url+'/v1/game-export/package',{method:'POST',headers:{'content-type':'application/json','x-forge-game-token':settings.token},body:JSON.stringify(input)});
+    const matched = await spriteRequest({jobId:'fixture_export',candidateIndex:2});
+    assert.equal(matched.status,200);assert.equal((await prepareGodotPackage(new Uint8Array(await matched.arrayBuffer()))).manifest.details.candidateIndex,2);
+    const wrong = await spriteRequest({jobId:'fixture_export',candidateIndex:1});
+    assert.equal(wrong.status,400);assert.match((await wrong.json()).error,/候选不一致/);
+    assert.equal((await spriteRequest({jobId:'fixture_export',candidateIndex:'2'})).status,400);
+    assert.equal((await spriteRequest({jobId:'../escape',candidateIndex:2})).status,400);
     const browse=await fetch(url+'/v1/game-export/browse',{method:'POST',headers:{'content-type':'application/json','x-forge-game-token':settings.token},body:JSON.stringify({directory:game})});assert.equal(browse.status,200);assert.equal((await browse.json()).project.path,game);
     const oldPicker=await fetch(url+'/v1/game-export/pick',{method:'POST',headers:{'content-type':'application/json','x-forge-game-token':settings.token},body:'{}'});assert.equal(oldPicker.status,400);assert.match((await oldPicker.json()).error,/页面内浏览/);
 
@@ -504,6 +525,7 @@ test('HTTP rejects unauthenticated project writes and exposes remembered setting
     assert.equal((await response.json()).kind, 'map');
   } finally {
     child.kill();
+    await new Promise(r=>pipeline.close(r));
   }
 });
 test('MCP discovers all delivery tools and verifies the same delivery through stdio', async () => {

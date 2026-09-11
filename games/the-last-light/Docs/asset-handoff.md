@@ -72,13 +72,13 @@
 | 道具原图（PixelLab prop） | 3 | 3 | 3/3 全部选用 | 9/8 时为 29，本批后约 26 |
 | 角色原图 + 三动作（PixelLab character） | 4 | 4 | 4/4 全部选用（walk/jump 缺陷经 James 决策接受） | 40 额度制：本批后余 9 |
 
-## CHR-01 守灯人粗像素替换 v02（2026-09-09，当前使用）
+## CHR-01 守灯人粗像素替换 v02（2026-09-09，美术来源；当前播放见 v02.1）
 
 用户确认：老练的港口守灯人，深蓝与暗金配色。原角色造型和像素颗粒不符合地图，因此重新生成原图与 idle/walk/jump 三动作。
 
 - 原图：reference-art-20260909113209-osic，原生 64×64；角色 preset reference_a9f5fd6d9344b2322a9d4623。先前试制的 128px 原图 reference-art-20260909112442-4kah 未采用，因为颗粒仍过细。
 - 动作：20260909_reference_a9f5fd6d9344b2322a9d4623_{idle,walk,jump}_001，均为候选 1，全部 17 帧保留。导出任务 idle …114526-xsti、walk …114546-o2rx、jump …114537-k7d6。
-- 当前资源：Assets/Characters/maintainer/maintainer_frames_v02.tres；机器清单 maintainer_v02.json 保留来源、导出速度和最终运行速度。源导出 FPS 为 8/5/6，游戏在本次开工前实际已调为 10/10/10，合并时保留该现状；idle/walk 循环，jump 不循环。
+- 本次初始合并资源：Assets/Characters/maintainer/maintainer_frames_v02.tres；机器清单 maintainer_v02.json 保留来源、导出速度和最终运行速度。源导出 FPS 为 8/5/6，游戏在本次开工前实际已调为 10/10/10，合并时保留该现状；idle/walk 循环，jump 不循环。
 - 唯一视觉节点仍为 Sprite/AnimatedSprite2D，nearest 过滤，scale 1.5、offset (1,-28)，对应 64px 画布锚点 (31,60)；普通站姿高度约 84px，像素在相同游戏高度下约放大一倍。
 - 原 maintainer_frames.tres、旧 forge_sprites 和交付包均保留。控制器、物理参数、镜头、空气墙及 project.godot 的 SHA-256 与替换前完全相同。
 - 三份交付已通过 MCP 安装并完成，baselineValidated=true，实际引擎 4.7。包装层旧 MCP 进程曾写入 4.6.x 标签，该历史包装元数据未篡改；内层新 SpriteFrames 包由 4.7 导出器产生，并以 4.7 实际运行验证。后续使用重连后的客户端加载当前代码。
@@ -86,3 +86,28 @@
 审核：逐帧查看 51 帧。轮廓完整、身份与配色一致，无硬失败。边距 2–3px 警告经目检无裁切；行走接缝处质心速度变化约 4.54px，保留为轻微顿挫；部分帧含少量脚下灰色接触像素。跳跃有画布内起伏，保留原有物理跳跃和落地切回，不新增游戏位移。未把这些瑕疵宣称为已消除。
 
 验证：Godot 4.7 真实导入、合并及 OpenGL 游戏画面对比；headless_smoke 73 项、view_boundary 15 项通过。原测试对帧数与 FPS 的旧断言在替换前就有两项失败，现按当前游戏实际速度和新导出帧合同更新。日志、逐帧审核图、前后对比与备份位于 work/keeper-restyle-v02/。最终人工风格与手感由 James 验收。
+
+## CHR-01 v02.1 朝向与待机节奏（2026-09-09，当前使用）
+
+用户验收指出默认朝向反了、待机连续转向过于频繁，并明确接受“站定 3 秒 → 转头 → 停 1.2 秒 → 较慢转回 → 再站定”。此次只适配现有美术，不调用生成 API。
+
+- 原图和三动作的实际默认形象朝左，先前 preset 的 right 标签不能代替目检。`TllPlayerConfig.source_facing_right=false`，控制器在进入场景和更新朝向时按实际源朝向设置 `Sprite.flip_h`：朝右为 true，朝左为 false。仅视觉翻转；角色物理节点、碰撞体、镜头不镜像。
+- 修复前的待机与原导出逐帧一致，只有 17 帧顺序循环，没有追加倒序帧；因为首尾分别朝向两侧，循环时发生突然跳回。本次在用户确认后，才明确编排转回段。
+- 当前挂载 [maintainer_frames_v02_idle.tres](../Assets/Characters/maintainer/maintainer_frames_v02_idle.tres)。原始 17 帧和旧合并资源均保留。待机有 32 个播放槽位，引用的仍是同一套 17 张原始帧：`0…16 → 15…1 → 循环到 0`，不重复端点。它不是重新生成的 32 帧美术。
+
+| 阶段 | 零基源帧 | 实际节奏 |
+| --- | --- | --- |
+| 默认站姿 / 两段待机之间 | 0 | 保持 3 秒 |
+| 向另一侧转头 | 1–15 | 10 FPS |
+| 转头完成后观察 | 16 | 保持 1.2 秒 |
+| 回到原朝向 | 15–1，再接下一轮 0 | 8 FPS |
+
+一轮总长 7.575 秒。使用 SpriteFrames 的相对帧时长：基础 10 FPS，站姿 duration=30、观察 duration=12、转回 duration=1.25。无额外定时器或玩法状态；走路、跳跃沿用现有控制器切换，能直接打断任一停顿。停下或落地重新从站姿间隔开始。左右转头只是视觉，不改变玩家实际移动朝向。walk/jump 的帧顺序、时长、FPS、循环标记保持原样。完整编排记录在 [maintainer_v02.json](../Assets/Characters/maintainer/maintainer_v02.json)。
+
+Godot 4.7.stable.official.5b4e0cb0f 实测：`tests/keeper_idle.gd` 29 项（真实时序、两轮间隔、逐槽播放、走跳打断、左右朝向、暂停、关卡重开）通过；`tests/headless_smoke.gd` 73 项、`tests/view_boundary.gd` 15 项通过。另用独立 OpenGL 实例录制完整 8 秒待机，并查看站姿、转头、停顿、转回画面。记录在工作台 `work/keeper-idle-fix/`。此结论不是全游戏人工验收。
+
+人工复核：Godot 停止旧运行后重新 F5；出生向右，原地观察至少 16 秒；在转头和停顿阶段分别按 A/D 或方向键、空格，确认即时切换；松开方向键后保持最后朝向并重新等待。
+
+### v02.1 视觉尺寸调整（2026-09-09）
+
+按用户要求，在当前尺寸基础上放大 20%：Sprite.scale 从 (1.5,1.5) 调为 (1.8,1.8)。脚底锚点及 offset (1,-28) 保留，站姿高度约 101px；只调整视觉尺寸，碰撞体、镜头、移动和待机节奏保持不变。

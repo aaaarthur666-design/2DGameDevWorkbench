@@ -13,6 +13,7 @@ import {
   prepareGodotPackage,
   type GodotPackageManifest,
 } from '@/features/godot-export/package.mjs';
+import { gameHandoff } from '@/features/godot-export/handoff.mjs';
 import type { GodotExportOffer } from '@/lib/workbench/godot-export';
 import {
   publishEditorSession,
@@ -132,11 +133,12 @@ export function GodotExportDialog() {
                       },
                       body: JSON.stringify(
                         next.jobId
-                          ? { jobId: next.jobId }
+                          ? { jobId: next.jobId, candidateIndex: next.candidateIndex }
                           : { assetId: next.assetId, revision: next.revision },
                       ),
                     }),
                 cache: 'no-store',
+                signal: AbortSignal.timeout(40000),
               },
             );
             if (!r.ok) {
@@ -240,12 +242,7 @@ export function GodotExportDialog() {
     setTimeout(() => URL.revokeObjectURL(url), 15000);
     setNote('已发起 ZIP 下载；可解压到现有游戏项目根目录。');
   };
-  const humanRequest = delivery
-    ? `请把「${delivery.title}」接入「${delivery.project.name}」，完成场景与脚本连接，并验收。保留现有玩法和其他资产。`
-    : '';
-  const followup = delivery
-    ? `请接入刚导出的 ${delivery.title}，目标项目是 ${delivery.project.path}。先用 workbench_get_game_export 读取 ${delivery.deliveryId}，按 forge-game-engineering Skill 完成资源安装、场景挂载、动画和交互脚本连接，并验收。保留现有玩法和其他资产。`
-    : '';
+  const { summary: humanRequest, prompt: followup } = gameHandoff(delivery, pack?.manifest);
   return (
     <Dialog
       open={!!offer}

@@ -1,6 +1,6 @@
 # Agent 执行过程与页面跟随
 
-2026-09-09：MCP 0.9.0 增加工作步骤展示与前端确认。首次打开仍使用 WorkBuddy 宿主的 present_files；后续由当前工作台页面接收展示请求，经过保存保护后在同一标签页切换。
+2026-09-09：MCP 0.11.0 增加 WorkBuddy 新会话预览检查与会话隔离，保留原有工作步骤展示与前端确认。首次打开仍使用 WorkBuddy 宿主的 present_files；后续由当前工作台页面接收展示请求，经过保存保护后在同一标签页切换。
 
 ## 用户操作
 
@@ -14,7 +14,7 @@
 
 - 首次就绪和宿主开页沿用现有流程；后续不要为每步再调 present_files 新开标签。
 - 先 list/describe 确定能力或读取已选作品，再调用 workbench_present。恰好传 taskId、jobId、assetId、capabilityId 中一个；candidateIndex 只能配 taskId/jobId。仅进入工具时用 discovery 的 capabilityId；已有作品用精确身份。
-- 首次 present 成功启用本 MCP 连接的自动跟随。随后 run_task 与 get_task 将真实 presentation 发布给前端，返回 frontendPresentation；失败任务有可读记录时也展示原失败步骤。未启用的诊断客户端不会因查询而改变页面。
+- WorkBuddy 的授权 run_task 在本会话页面就绪后自动启用跟随；其他客户端仍由首次 present 启用本 MCP 连接的自动跟随。随后 run_task 与 get_task 将真实 presentation 发布给前端，返回 frontendPresentation；失败任务有可读记录时也展示原失败步骤。未启用的诊断客户端不会因查询而改变页面。
 - get_result/get_asset/list_assets 仍只读，没有导航副作用。用户选择旧作品或另一候选时，Agent 明确调用 present；不得把作品库首页当作指定作品详情。
 - 用 workbench_get_frontend_context 的 requestId 查询确认。等待通常 1–2 秒，最多等待 10 秒再说明状态；不要阻塞长时间任务，不要通过再次 run 来催促展示。视觉审核仍须读取真实画面，不以展示确认代替。
 - 页面暂停或阻塞时继续必要的后台工作并报告原因；不得改用宿主强行刷新页面绕过保护。用户要求暂停时不自动恢复。请求约两分钟过期；恢复很久以前的步骤需新的明确 present。
@@ -70,3 +70,19 @@ WorkBuddy 人工验收：
 通过：test:preview-follow、test:presentation、test:workbench-shell（15 项）、doctor、test:adapters、test:http、test:mcp、test:assets、test:prop-art、test:agent-acceptance（fixture）、test:engineering（引擎跳过）、lint、typecheck、隔离生产构建、两项 Skill validator 和文档链接检查。
 
 独立 Edge 浏览器通过：同一标签进入真实保存的交互物（核对项目名称与实际内容）、三次状态查询不刷新、暂停/继续、保存失败保持原页、手动导航暂停、430px 窄屏不溢出。使用隔离任务及模拟提供方，真实付费调用为 0。宿主浏览器测试连接不可用；真实 WorkBuddy 选择工具及开页行为尚需按上述流程人工验收。
+
+## 新会话未自动开页的处理
+
+WorkBuddy 配置中为本 server 设置 `env: {"FORGE_MCP_HOST":"workbuddy"}`，保存后需由用户在宿主连接器界面重新信任这份更新配置，再重连 MCP；同时支持初始化 clientInfo.name 包含 WorkBuddy / CodeBuddy 的客户端。list/get_environment/present 的返回包含 `preview`，直接给出当前会话的宿主开页动作。Agent 必须使用 `preview.hostAction.arguments.files` 中的完整 URL，保留 previewSession 参数，再查询 frontend context。页面通过心跳携带会话身份，导航后仍保留；其他窗口或旧会话不会满足本次开页确认，也不会抢走该会话的步骤请求。
+
+首次 run_task 无本会话可见页面时返回 `status=preview_required`、`createsTask=false`、`providerCalled=false`，不创建任务、不调用适配器。开页成功后可使用相同参数继续；已提交的生产任务依然只用 get_task 查询。返回的 hostAction 不是实际开页，宿主工具缺失时要明确报告。
+
+用户明确拒绝/关闭预览，或已检查确认宿主工具不可用时，Agent 可使用 previewPolicy=user-declined/user-dismissed/host-unavailable 继续原授权工作。不能为了省略开页步骤而设置例外。用户明确要求重新打开时用 auto 重置例外；普通重连或轮询不能擅自重开。已连接页面上的暂停/忙碌/保存保护保持生效。
+
+验收：新 WorkBuddy 对话先只说“查看工作台已有角色，不要生成”，预期调用宿主工具打开本会话前端。然后制作本地交互物逻辑，检查页面跟随；新会话未开页前的 run 不产生任务。关闭/暂停预览后不强制打开；两个会话分别只接收自己的步骤。自动测试只证明协议与页面行为，真实 WorkBuddy 是否执行宿主工具需要在该宿主验收。
+
+### 本次新会话修复验证（2026-09-10）
+
+通过：test:preview-follow（含首次提交前零任务检查、WorkBuddy STDIO、会话隔离及并发心跳）、test:mcp、test:http、test:adapters、test:assets、test:presentation、test:frontend、test:workbench-shell、test:agent-acceptance（fixture）、doctor、lint、typecheck、隔离 build、两项 Skill validator、文档链接和 diff 检查。
+
+独立 Edge 浏览器运行真实 AgentFollow 组件，验证旧页面隔离、带会话参数的首次连接、跨页面跳转后保留会话、步骤切换、暂停/继续与 displayed 回执；修复 Windows 并发读取造成的短暂 EPERM 后连续三次通过。状态文件使用有限重试的原子替换，不直接覆盖正在读取的 JSON。测试未调用付费 API，未改动游戏文件或正式资产。上述证据不包含真实 WorkBuddy 的宿主 present_files 调用，仍须重连 MCP 后人工验收。

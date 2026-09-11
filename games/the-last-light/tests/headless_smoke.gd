@@ -246,7 +246,7 @@ func _animation_contract(player: CharacterBody2D) -> void:
 	check(absf(frames.get_animation_speed(&"idle") - 10.0) < 0.01 and absf(frames.get_animation_speed(&"walk") - 10.0) < 0.01 and absf(frames.get_animation_speed(&"jump") - 10.0) < 0.01, "FPS 保留本次替换前实际游戏值 10/10/10")
 	check(frames.get_animation_loop(&"idle") and frames.get_animation_loop(&"walk") and not frames.get_animation_loop(&"jump"), "loop：idle/walk 循环、jump 非循环（§7.2）")
 	check(sprite.offset == Vector2(1, -28), "64px 导出锚点 (31,60) 对应偏移 (1,-28)")
-	check(sprite.scale.is_equal_approx(Vector2(1.5, 1.5)), "原生 64px 视觉放大 1.5，角色高度约 84px")
+	check(sprite.scale.is_equal_approx(Vector2(1.8, 1.8)), "原生 64px 视觉放大 1.8，角色高度约 101px")
 	check(frames.get_frame_texture(&"idle", 0).get_size() == Vector2(64, 64), "实际帧资源为原生 64px")
 	# 状态→clip 真实播放（T02 动画映射）
 	check(sprite.is_playing() and sprite.animation == &"idle", "静止 → idle 播放中（T02 动画映射）")

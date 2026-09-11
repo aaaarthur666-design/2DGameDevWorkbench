@@ -6,6 +6,7 @@ import * as z from 'zod/v4';
 import { assetInputs, assetTools } from '../lib/workbench/asset-contract.mjs';
 import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { previewInputs, previewTools } from '../lib/workbench/preview-follow-contract.mjs';
+import { WorkBuddyPreview } from '../lib/workbench/workbuddy-preview.mjs';
 import { queuePresentation } from '../lib/workbench/preview-follow.mjs';
 import { KINDS } from '../features/interactable-editor/contract.mjs';
 
@@ -27,11 +28,11 @@ import {gameExportInputs,gameExportTools} from '../lib/workbench/game-export-con
 const server = new McpServer(
   {
     name: '2d-game-workbench',
-    version: '0.10.0',
+    version: '0.11.0',
   },
   {
     instructions:
-      'Game integration: check workbench_list_game_exports for pending deliveries when continuing an authorized game task. Use get_game_export to inspect the exact package and selected target, read agentAssets.engineering.skill, install_game_export for verified file placement, then use host file tools to complete mounts, clip merges and gameplay signal wiring according to the actual project. Record real file and engine evidence with complete_game_export. A waiting delivery never means the host Agent was automatically started. Preserve user-modified files, other animation clips, existing controllers and project.godot. Map/scene production remains manual; consuming an existing export is permitted. WorkBuddy session startup: on the first user message after connecting this server, unless the user opts out of opening the UI, call workbench_get_environment. If frontend.ready is false, call workbench_start_frontend once when services are offline, then poll get_environment at bounded intervals (up to 60 seconds); stop on blocked/conflict/unreachable and report the reason. When ready, prefer a known selected artwork presentation.viewUrl over the homepage. Discover the host-native present_files tool (possibly connector-proxy namespaced), inspect its schema, and use frontend.hostAction.arguments, replacing files with the verified presentation.viewUrl when continuing known work, to open the exact frontend page in the WorkBuddy internal preview. Reuse an existing workbench preview and do not reopen it on each message, reconnect, or if the user closes it in this conversation. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. Map stitching and map generation are manual frontend workflows and cannot be prepared or run through MCP. For interactables, get a template without creating a task, edit its project, save-project for frontend continuation, then export-godot when requested. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task only for explicitly requested input validation. Resolve authorization before external execution; planning or clarification creates no task. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and keep exact task IDs and paths in structured details; normal replies lead with the outcome and exact artwork link, without dumping JSON or IDs. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. Asset inventory: use list_assets for actual artwork, not list_tasks; filter candidateCount and candidateIndex and sortBy createdAt for the latest multi-candidate generation. Follow pagination to avoid missing old work. get_asset verifies the selected files; get_asset_manifest produces a handoff without modifying sources. Browser-only drafts are outside the server inventory; incomplete coverage is not proof an asset is gone. Presentation: before the first execution step call workbench_present with the discovered capabilityId or exact selected task/job/asset identity to arm page following for this MCP connection. Subsequent run_task/get_task responses automatically publish their current step; call workbench_present again when intentionally selecting another artwork or candidate through read-only result/asset tools. Check workbench_get_frontend_context with requestId to confirm displayed, never infer display from queued/pending or a returned URL. Follow the original task across generation, review, save and export with a short stage update; do not wait until the final answer to show the result. Repeated same-step polling must not reload the page. Respect paused/blocked states and never force host navigation around them. This channel navigates the existing frontend, it does not open a browser; the host-native present_files is only for the first preview. Context includes page identity and editing state, not map pixels or draft contents. Presentation: prefer presentation.summary and viewUrl. Reply with a short outcome, preview/link and one next step; show technical details only when asked or necessary for troubleshooting. Navigate an existing host preview only when supported and editing is safely saved; otherwise offer the exact link. A returned URL or browserOpened:false never proves the browser opened. Do not reopen a dismissed preview. AskUserQuestion is host-owned: discover it and read its schema, ask one material choice at a time, and never treat cancellation as consent. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
+      'WorkBuddy preview first: list/get_environment/present return preview with a session-specific hostAction. Discover the host-native present_files schema and open preview.hostAction.arguments before production. workbench_run_task returns preview_required with createsTask=false and providerCalled=false until THIS session has a visible page; then run automatically enables following. This is not a failed generation: retry the same run only after opening the page. Use previewPolicy=user-declined or user-dismissed only when the user has declined/closed the preview in this conversation; host-unavailable only after verifying the native host tool is absent or failed and reporting that limitation. Never silently opt out to bypass preview. Never reopen a dismissed preview on reconnection. Other clients stay headless unless they explicitly present. Game integration: check workbench_list_game_exports for pending deliveries when continuing an authorized game task. Use get_game_export to inspect the exact package and selected target, read agentAssets.engineering.skill, install_game_export for verified file placement, then use host file tools to complete mounts, clip merges and gameplay signal wiring according to the actual project. Record real file and engine evidence with complete_game_export. A waiting delivery never means the host Agent was automatically started. Preserve user-modified files, other animation clips, existing controllers and project.godot. Map/scene production remains manual; consuming an existing export is permitted. WorkBuddy session startup: on the first user message, read workbench_get_environment and its preview. Start offline frontend services once and poll readiness for at most 60 seconds; stop on conflicts. Use workbench_present for a known artwork to get its exact preview.hostAction. Discover the host-native present_files schema and pass preview.hostAction.arguments unchanged, including previewSession. Confirm a visible matching page with workbench_get_frontend_context. Do not replace the session URL with the plain homepage or a result URL. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. Map stitching and map generation are manual frontend workflows and cannot be prepared or run through MCP. For interactables, get a template without creating a task, edit its project, save-project for frontend continuation, then export-godot when requested. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task only for explicitly requested input validation. Resolve authorization before external execution; planning or clarification creates no task. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and keep exact task IDs and paths in structured details; normal replies lead with the outcome and exact artwork link, without dumping JSON or IDs. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. Asset inventory: use list_assets for actual artwork, not list_tasks; filter candidateCount and candidateIndex and sortBy createdAt for the latest multi-candidate generation. Follow pagination to avoid missing old work. get_asset verifies the selected files; get_asset_manifest produces a handoff without modifying sources. Browser-only drafts are outside the server inventory; incomplete coverage is not proof an asset is gone. Presentation: before the first execution step call workbench_present with the discovered capabilityId or exact selected task/job/asset identity to arm page following for this MCP connection. Subsequent run_task/get_task responses automatically publish their current step; call workbench_present again when intentionally selecting another artwork or candidate through read-only result/asset tools. Check workbench_get_frontend_context with requestId to confirm displayed, never infer display from queued/pending or a returned URL. Follow the original task across generation, review, save and export with a short stage update; do not wait until the final answer to show the result. Repeated same-step polling must not reload the page. Respect paused/blocked states and never force host navigation around them. This channel navigates the existing frontend, it does not open a browser; the host-native present_files is only for the first preview. Context includes page identity and editing state, not map pixels or draft contents. Presentation: prefer presentation.summary and viewUrl. Reply with a short outcome, preview/link and one next step; show technical details only when asked or necessary for troubleshooting. Navigate an existing host preview only when supported and editing is safely saved; otherwise offer the exact link. A returned URL or browserOpened:false never proves the browser opened. Do not reopen a dismissed preview. AskUserQuestion is host-owned: discover it and read its schema, ask one material choice at a time, and never treat cancellation as consent. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
   },
 );
 
@@ -74,11 +75,12 @@ function failure(error) {
   };
 }
 
+const workbuddyPreview = new WorkBuddyPreview(repositoryRoot, () => server.server.getClientVersion()?.name);
 let following = false;
 async function followResult(value) {
   if (!following || !value.presentation?.viewPath) return value;
   try {
-    return { ...value, frontendPresentation: await queuePresentation(repositoryRoot, await loadManifest(), { ...value.presentation, viewPath: value.presentation.actions?.[0]?.viewPath || value.presentation.viewPath }) };
+    return { ...value, frontendPresentation: await queuePresentation(repositoryRoot, await loadManifest(), { ...value.presentation, viewPath: value.presentation.actions?.[0]?.viewPath || value.presentation.viewPath }, { sessionId: workbuddyPreview.enabled ? workbuddyPreview.sessionId : undefined }) };
   } catch {
     // Presentation failures never turn an already-submitted production operation into a retry.
     return { ...value, frontendPresentation: { state: 'unavailable', displayed: false, browserOpened: false } };
@@ -87,8 +89,19 @@ async function followResult(value) {
 function registerTool(name, options, handler) {
   server.registerTool(name, options, async (input) => {
     try {
+      if (name === 'workbench_run_task' && workbuddyPreview.enabled) {
+        workbuddyPreview.configure(input.previewPolicy);
+        const manifest = await loadManifest();
+        const capability = findAgentCapability(manifest, input.capabilityId);
+        const blocked = await workbuddyPreview.beforeRun(manifest, capability.ui.route);
+        if (blocked) return success(blocked, name);
+        following = !workbuddyPreview.disabledReason;
+      }
       let value = await handler(input);
       if (['workbench_run_task', 'workbench_get_task'].includes(name)) value = await followResult(value);
+      if (['workbench_list_capabilities','workbench_describe_capability','workbench_present','workbench_run_task','workbench_get_task','workbench_get_frontend_context'].includes(name)) {
+        value = await workbuddyPreview.decorate(await loadManifest(), value, value.frontendPresentation?.viewPath || value.presentation?.actions?.[0]?.viewPath || value.presentation?.viewPath || value.viewPath || value.capability?.ui?.route || '/');
+      }
       return success(value, name);
     } catch (error) {
       const response = failure(error);
@@ -189,8 +202,8 @@ registerTool(
   {
     title: 'Run a 2D workbench task',
     description:
-      'Validate a request and run its manifest-selected local adapter. Operations that need an unconfigured external service remain awaiting_configuration instead of fabricating output.',
-    inputSchema: taskInputSchema,
+      'Run an authorized operation. In WorkBuddy, first open preview.hostAction with the host-native present_files tool and confirm this session is visible. preview_required means NO task or provider call was created. Once connected, progress follows automatically. previewPolicy may disable presentation only for an explicit user choice or verified host-tool failure. Unconfigured providers return awaiting_configuration.',
+    inputSchema: { ...taskInputSchema, previewPolicy: z.enum(['auto','user-declined','user-dismissed','host-unavailable']).optional().describe('WorkBuddy preview exception only: preserve a user opt-out/dismissal, or report a verified host-tool failure. Omit normally. This is not a way to skip tool discovery.') },
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -254,7 +267,7 @@ const discoveryTools = [
   [
     'workbench_start_frontend',
     'frontend',
-    'Start or reuse the local frontend and runtime bridge without generation, installing dependencies, or opening a browser. Query get_environment until frontend.ready, then let WorkBuddy call the host-native present_files using frontend.hostAction.arguments. Stop if blocked.',
+    'Start or reuse the local frontend and runtime bridge without generation, installing dependencies, or opening a browser. Query get_environment until frontend.ready, then let WorkBuddy call the host-native present_files using the returned session-specific preview.hostAction.arguments. Stop if blocked.',
     {},
   ],
   [
@@ -319,7 +332,7 @@ for (const [name, operation, description] of previewTools) {
     description, inputSchema: previewInputs[operation].shape,
     annotations: { readOnlyHint: operation !== 'present', destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => {
-    const result = await agentRequest(await loadManifest(), operation, input);
+    const result = await agentRequest(await loadManifest(), operation, input, { previewSessionId: workbuddyPreview.enabled ? workbuddyPreview.sessionId : undefined });
     if (operation === 'present') following = true;
     return result;
   });
@@ -356,11 +369,12 @@ for (const [name, operation, description, inputSchema] of discoveryTools) {
     },
     async (input) => {
       try {
-        const value = await agentRequest(
+        let value = await agentRequest(
           await loadManifest(),
           operation,
           input,
         );
+        if (['workbench_get_environment','workbench_start_frontend','workbench_get_result'].includes(name)) value = await workbuddyPreview.decorate(await loadManifest(), value, value.presentation?.actions?.[0]?.viewPath || value.presentation?.viewPath || '/');
         if (value.imageBase64) {
           const { imageBase64, ...metadata } = value;
           const result = success(metadata, name);
