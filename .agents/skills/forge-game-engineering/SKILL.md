@@ -5,6 +5,10 @@ description: Design and implement Godot 4.7 game projects from ready Forge asset
 
 # Forge game engineering
 
+For open-motion v4, target pose PNGs and local repair previews are production evidence, not engine-ready clips. Use only the final selected export with its accepted frame/repair mapping. Do not concatenate context images, reapply rejected repairs, remove low-change frames or replace endpoints during game integration; preserve timing and other clips.
+
+Open-motion checkpoint snapshots are intermediate production evidence, not delivered animation clips. Consume the final approved/exported candidate and its exact playback mapping; do not concatenate raw segments or substitute an accepted pose PNG for a completed SpriteFrames asset. Segment acceptance and model reports do not prove final animation or engine acceptance.
+
 The external Agent writes the game code. Forge remains the production, editing and preview workbench. Follow the requested planning or implementation scope; discussing architecture does not authorize editing a game or generating more art.
 
 ## Establish the project contract
@@ -14,6 +18,10 @@ Identify the target game directory and the reference CopyWorms checkout separate
 Use the project's working architecture as the starting point: formal bases and config resources, scene/UI Builders, explicit global contracts and level lifecycle. Do not replace it with a generic game framework. Inspect dependencies before choosing what to retain, adapt or omit. Read [CopyWorms contracts and reuse](references/copyworms.md) for architecture and code work.
 
 ## Bring in ready assets
+
+Open-motion exports bind a task-specific plan revision and exact candidate. Preserve the actual returned frame count/order, animation alias, FPS and loop from the verified package; planned frame counts and stage labels are not actual clip lengths or gameplay triggers. Do not inject a return-to-idle, reverse playback or pauses unless the target game requires them and the user authorized that behavior. Technical QA and a generated plan do not imply visual acceptance. Read [the current sprite workflow](../../../docs/sprite-generator.md) when interpreting these records; integrate only the selected approved export and preserve other clips.
+
+New quality plans can set playback FPS and omit verified extra provider input frames from the delivery timeline while retaining all raw frames and an explicit mapping. Integrate the approved delivery timeline, not a concatenation of raw provider folders. A visual report is tied to exact frame hashes; failed, uncertain, interrupted or stale reports are not evidence of an accepted clip. Model review does not authorize modifying gameplay timing.
 
 When presenting selected Forge assets in WorkBuddy, use workbench_present with the exact asset/task/candidate and check workbench_get_frontend_context. Follow [the preview protocol](../../../docs/agent-preview-follow.md); reuse the existing page and respect paused/unsaved editors. Page identity is not access to map draft contents. Code work in an external Godot project has no Forge task/page automatically; show its actual files or engine result without inventing a workbench production record.
 

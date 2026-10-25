@@ -12,6 +12,8 @@
 
 ## Agent 操作顺序
 
+开放动作任务的展示路径使用 `work` 标识与 `version`，选定候选再带 `candidate`。这些字段由前端心跳和跟随通道保留；不要把旧任务的精确版本链接改成最新作品或资产库首页。规划、生成和检查在同一作品页面按真实状态推进，专家记录按需展开。
+
 - 首次就绪和宿主开页沿用现有流程；后续不要为每步再调 present_files 新开标签。
 - 先 list/describe 确定能力或读取已选作品，再调用 workbench_present。恰好传 taskId、jobId、assetId、capabilityId 中一个；candidateIndex 只能配 taskId/jobId。仅进入工具时用 discovery 的 capabilityId；已有作品用精确身份。
 - WorkBuddy 的授权 run_task 在本会话页面就绪后自动启用跟随；其他客户端仍由首次 present 启用本 MCP 连接的自动跟随。随后 run_task 与 get_task 将真实 presentation 发布给前端，返回 frontendPresentation；失败任务有可读记录时也展示原失败步骤。未启用的诊断客户端不会因查询而改变页面。

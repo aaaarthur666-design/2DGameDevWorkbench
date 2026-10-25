@@ -27,6 +27,8 @@ import {
   mergeWorkItems,
   taskWorkItems,
   spriteWorkItem,
+  openMotionWorkItem,
+  type OpenMotionSummary,
   type WorkItem,
   type StoredTask,
   type SpriteJob,
@@ -88,6 +90,7 @@ function useWorkbenchState() {
       return response.json() as Promise<{
         tasks?: StoredTask[];
         jobs?: SpriteJob[];
+        works?: OpenMotionSummary[];
         nextOffset?: number | null;
         snapshot?: string;
       }>;
@@ -113,9 +116,9 @@ function useWorkbenchState() {
           if (mounted.current) {
             setSprites(
               capabilityModule
-                ? data.jobs.map((job: SpriteJob) =>
+                ? [...data.jobs.filter((job: SpriteJob) => !data.works?.some(work => work.id === job.open_work_id)).map((job: SpriteJob) =>
                     spriteWorkItem(job, capabilityModule.href),
-                  )
+                  ), ...(data.works || []).map(work => openMotionWorkItem(work, capabilityModule.href))]
                 : [],
             );
             setSpriteOnline(true);

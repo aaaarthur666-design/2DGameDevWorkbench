@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from .collaboration.contracts import PlanBinding, PlanControl, PlanExecution
 
 
 def utc_now() -> datetime:
@@ -187,6 +188,7 @@ class GenerationRequest(StrictModel):
     schema_version: Literal[1] = 1
     character_id: str
     action_id: str
+    open_plan: PlanBinding | None = None
     attack_segment: AttackSegmentBinding | None = None
     motion_repair: MotionRepairBinding | None = None
     provider: Literal["pixellab", "fixture", "import"] = "pixellab"
@@ -201,6 +203,18 @@ class GenerationRequest(StrictModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
+
+    @model_validator(mode="after")
+    def validate_open_plan(self):
+        if self.open_plan is not None:
+            spec = self.open_plan.spec
+            if (self.action_id != "motion_" + self.open_plan.work_id[:12]
+                    or self.character_id != spec.character_id or self.provider != spec.provider
+                    or self.candidate_count != spec.candidate_count or self.seed != spec.seed
+                    or self.frame_count is not None or self.action_description is not None
+                    or self.loop is not None or self.attack_segment or self.motion_repair):
+                raise ValueError("Open-plan requests must match the frozen task without preset overrides")
+        return self
 
 class IssueSeverity(str, Enum):
     hard_failure = "hard_failure"
@@ -304,7 +318,7 @@ class CandidateRecord(StrictModel):
     last_polled_at: datetime | None = None
     provider_completed_at: datetime | None = None
     result_saved_at: datetime | None = None
-    submission_attempts: int = Field(default=0, ge=0, le=3)
+    submission_attempts: int = Field(default=0, ge=0, le=32)
     raw_request_path: str | None = None
     raw_response_path: str | None = None
     result_manifest_path: str | None = None
@@ -317,6 +331,7 @@ class CandidateRecord(StrictModel):
     qa_algorithm_version: str | None = None
     motion_review: dict[str, Any] | None = None
     attack_sequence: dict[str, Any] | None = None
+    plan_execution: PlanExecution | None = None
     # Defaults keep job.json files written by earlier harness versions readable.
     qa_issue_baseline: QAIssueBaseline | None = None
     qa_change_summary: QAChangeSummary | None = None
@@ -370,6 +385,7 @@ class JobRecord(StrictModel):
     full_prompt: str
     candidates: list[CandidateRecord]
     motion_control: dict[str, Any] | None = None
+    plan_control: PlanControl | None = None
     export: ExportRecord | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
 

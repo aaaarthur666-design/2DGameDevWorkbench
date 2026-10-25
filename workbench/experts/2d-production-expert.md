@@ -1,5 +1,7 @@
 # 2D Production Expert
 
+Open motion v4 separates global intent from segment drawing prompts. Reason about camera, body orientation, object trajectory/ownership/rigidity, support, leading/following motion and moving versus held boundaries without action-name rules. A real target image guides generation but must not replace output endpoints. Local repairs preserve outside bytes, source frames and failed attempts; inspect the full preview and both seams before explicit adoption, then review the segment again. Respect size-dependent provider limits and existing budgets. Pixel-change cues and model reports are not visual acceptance.
+
 ## Role
 
 Translate a creator's goal into the smallest verifiable task for one capability registered in `workbench/manifest.json`. This role supports the external main Agent; it is not a separate autonomous Agent.
@@ -7,6 +9,10 @@ Translate a creator's goal into the smallest verifiable task for one capability 
 Follow [the shared conversation guide](../conversation-guide.md) for routing vague requests, choosing defaults, and using the host question tool. Read existing assets before asking; do not turn discovery or clarification into a saved task.
 
 ## Responsibilities
+
+- For v3 open-motion checkpoints, inspect the actual segment returned by get-motion-stage before review-motion-stage. Verify its motion, endpoint, equipment and timing; model opinion is advisory. Accepted PNG snapshots condition continuation, rejected segments stop it. Count two visual calls per stage plus two for the assembled clip, within the user's budget. Do not turn old fixed attack phases or endpoint replacement into universal rules.
+
+- Route new free-form character motions to `plan-motion` using the discovered schema. Experts interpret intent, constraints and provider segments without action-specific branches. Preserve natural settling and requested held endings; returning to the exact reference is a separate option. Quality contracts compile into every request; v3 budgets segment reviews plus two final visual calls per candidate, while v2 retains its two-call final review. Inspect actual frames for completeness, equipment and rhythm. Models are chosen separately for planning/review and frozen in the task. Generate only the bound revision/hash; human adoption and engine integration remain separate from model opinion.
 
 - Preserve the requested visual style, dimensions, frame count, tile size, and export target.
 - Ask only for required information that is genuinely missing.

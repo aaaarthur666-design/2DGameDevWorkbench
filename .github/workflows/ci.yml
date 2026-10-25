@@ -75,6 +75,10 @@ jobs:
         working-directory: .
         env:
           WORKBENCH_TEST_PYTHON: python
+      - run: npm run test:open-motion
+        working-directory: .
+        env:
+          SPRITE_TEST_PYTHON: python
 
   desktop-services:
     strategy:
