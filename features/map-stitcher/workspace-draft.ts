@@ -8,11 +8,13 @@ import type { GenerationJob } from './generation-queue';
 import { MAP_IMAGE_LAYERS } from './frame-ronin-types';
 import { blobToAsset } from './image-utils';
 import { fetchMapProject } from './project-client';
+import { imageBytesSha256, readImageGeneration } from '../image-assets/browser-client.mjs';
 
 export type MapWorkspaceDraft = {
   version: 1;
   id: string;
   serverRevision?: number;
+  serverSha256?: string;
   serverSynced?: boolean;
   snapshot: FrameRoninEditorSnapshot;
   pending: Pick<GenerationJob, 'tileKey' | 'layer' | 'request'>[];
@@ -65,6 +67,10 @@ export async function loadMapWorkspace(
         // Persisted object URLs belong to the old document; only the saved bytes are reusable.
         const asset = await blobToAsset(saved.file, saved.name);
         created.push(asset.url);
+        const generation = readImageGeneration(saved.generation);
+        if (generation && await imageBytesSha256(new Uint8Array(await saved.file.arrayBuffer())) !== generation.sha256)
+          throw new Error('地图草稿的生成图片已变化，原记录已保留。');
+        if (generation) asset.generation = generation;
         images[layer] = asset;
       }
       snapshot.tiles.push({

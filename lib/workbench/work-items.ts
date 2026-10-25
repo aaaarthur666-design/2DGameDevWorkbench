@@ -105,9 +105,12 @@ export function taskWorkItems(
   for (const task of [...tasks].sort((a, b) =>
     (a.updatedAt || '').localeCompare(b.updatedAt || ''),
   )) {
-    const capabilityModule = modules.find((m) => m.id === task.capabilityId);
-    if (!capabilityModule) continue;
     const input = task.input || {};
+    const moduleId = task.capabilityId === 'image-assets'
+      ? input.operation === 'generate-prop' || input.kind === 'prop' ? 'interactable-editor' : 'map-stitcher'
+      : task.capabilityId;
+    const capabilityModule = modules.find((m) => m.id === moduleId);
+    if (!capabilityModule) continue;
     const jobId =
       task.capabilityId === 'sprite-generator'
         ? task.adapter?.remoteJobId ||
@@ -124,7 +127,9 @@ export function taskWorkItems(
       ? project.objects.filter((o) => o && typeof o.definitionId === 'string')
       : [];
     const targets =
-      task.capabilityId === 'reference-art'
+      task.capabilityId === 'image-assets'
+        ? [{ id: `task:${task.id}`, title: typeof input.name === 'string' ? input.name : moduleId === 'interactable-editor' ? '透明物品候选' : '背景候选', href: `${capabilityModule.href}?imageTask=${encodeURIComponent(task.id)}` }]
+        : task.capabilityId === 'reference-art'
         ? [
             {
               id: `task:${task.id}`,

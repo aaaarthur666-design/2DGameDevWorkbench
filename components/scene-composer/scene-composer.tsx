@@ -1,6 +1,6 @@
 /* oxlint-disable react/react-compiler -- The preview clock and document history are explicitly imperative. */
 'use client';
-import { useEffect, useEffectEvent, useMemo, useRef, useState, useId } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useId } from 'react';
 import {
   Layers,
   Plus,
@@ -60,6 +60,7 @@ import {
   reorder,
   replaceInstances,
   replaceMap,
+  removeInstances,
   validateScene,
   sceneBounds,
   sceneWarnings,
@@ -81,12 +82,23 @@ import {
   readObjects,
 } from '@/features/scene-composer/browser';
 import { useSceneDocument } from './use-scene-document';
+import { DocumentSyncStatus } from '@/components/workbench/document-sync-status';
 import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
 import { mapImportFile, clearImportQuery, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
 import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
 import { useWorkbench } from '@/components/workbench/workbench-provider';
 import { SceneCanvas } from './scene-canvas';
+import { SceneLinksPanel } from './scene-links-panel';
+import { ScenePreviewFeedback } from './scene-preview-feedback';
 import { ObjectArt } from './scene-art';
+import { SceneImagePreview } from './scene-image-preview';
+import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
+import { imageSlotChoices, imageTargetEquals, readImageEdit, validateSceneImageReceipt, verifiedSceneImageSource } from '@/features/image-edit/client';
+import type { ImageTargetInfo, ImageTargetRef } from '@/features/image-edit/client';
+import { clearImageEditNavigation, readImageEditNavigation, writeImageEditNavigation, type ImageEditNavigation } from '@/features/image-edit/navigation';
+import { readDocument } from '@/features/editor-documents/client';
+import { documentFingerprint, type DocumentSavedSnapshot } from '@/features/editor-documents/sync-controller.mjs';
+import { downloadBlob } from '@/features/map-stitcher/image-utils';
 import './scene-composer.css';
 
 function NumberField({
@@ -210,8 +222,13 @@ export function SceneComposer() {
   const [library, setLibrary] = useState<{ purpose: ImportPurpose; assetId?: string; replace?: boolean } | null>(null);
   const importStarted = useRef(false);
   const [handoffUrl, setHandoffUrl] = useState('');
-  const doc = useSceneDocument(),
-    { scene, ready, busy } = doc;
+  const [imageEdit, setImageEdit] = useState<{ target: ImageTargetRef; guard: DocumentSavedSnapshot<Scene> | null; navigation?: ImageEditNavigation } | null>(null);
+  const [imageOpening, setImageOpening] = useState(false), [imageSlot, setImageSlot] = useState('visual');
+  const imageEditRef = useRef(imageEdit), imageEditing = useRef(false), imageNavigationConsumed = useRef(false);
+  useLayoutEffect(() => { imageEditRef.current = imageEdit; }, [imageEdit]);
+  const doc = useSceneDocument(Boolean(imageEdit), imageOpening),
+    { scene, ready, busy: documentBusy } = doc;
+  const busy = documentBusy || imageOpening || Boolean(imageEdit);
   const [selected, setSelected] = useState<string[]>([]),
     [tab, setTab] = useState<'materials' | 'nodes'>('materials');
   const [search, setSearch] = useState(''),
@@ -245,13 +262,15 @@ export function SceneComposer() {
       return valid.length === previous.length ? previous : valid;
     });
   }, [scene.order]);
-  const simKey = JSON.stringify([
+  const simKey = useMemo(() => JSON.stringify([
     preview,
     reset,
     scene.id,
     scene.instances,
     scene.order,
-  ]);
+    scene.materials,
+    scene.links,
+  ]), [preview, reset, scene.id, scene.instances, scene.order, scene.materials, scene.links]);
   // Camera changes and save status must not reset the temporary interaction state.
   const sim = useMemo(() => createSceneSimulation(scene), [simKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -322,6 +341,9 @@ export function SceneComposer() {
   );
   const active =
     selectedInstances.length === 1 ? selectedInstances[0] : undefined;
+  const activeMaterial = active && materialFor(scene, active);
+  const slotChoices = activeMaterial ? imageSlotChoices(activeMaterial.project.objects[0], true) : [];
+  const selectedSlot = slotChoices.find(choice => choice.value === imageSlot) || slotChoices[0];
   const layer =
     selected.length === 1
       ? scene.map?.layers.find((l) => l.id === selected[0])
@@ -400,16 +422,19 @@ export function SceneComposer() {
   };
   const remove = () => {
     if (preview) return;
-    doc.edit((s) => {
+    let removedLinks = 0;
+    const applied = doc.edit((s) => {
       const ids = new Set(
         s.instances
           .filter((i) => selected.includes(i.id) && !i.locked)
           .map((i) => i.id),
       );
-      s.instances = s.instances.filter((i) => !ids.has(i.id));
-      s.order = s.order.filter((id) => !ids.has(id));
+      removedLinks = removeInstances(s, [...ids]).length;
     });
-    setSelected([]);
+    if (applied) {
+      setSelected([]);
+      if (removedLinks) setNotice(`已删除物件及 ${removedLinks} 条关联联动，可用撤销恢复。`);
+    }
   };
   const add = (materialId: string, p: Point) => {
     if (!materialId || !scene.map || preview) return;
@@ -545,6 +570,40 @@ export function SceneComposer() {
     const href = await storeEditorHandoff('map-stitcher', 'map', {source: scene.map.source, name: scene.map.name + '.zip'});
     setHandoffUrl(href);
   });
+  const openImageEdit = async (target: ImageTargetRef, navigation?: ImageEditNavigation) => {
+    if (busy || preview || imageEditing.current) return;
+    imageEditing.current = true; setImageOpening(true);
+    try {
+      const original = await documentFingerprint({ ...validateScene(doc.current.current), revision: 0 });
+      await doc.save();
+      const guard = await doc.shared.flushSaved();
+      if (!['scene-layer', 'scene-instance'].includes(target.kind) || !('documentId' in target) || target.documentId !== guard.document.id || original !== guard.fingerprint) throw new Error('保存期间场景或图片目标已变化，请重新选择。');
+      if (target.kind === 'scene-layer' && !guard.document.content.map?.layers.some(item => item.id === target.layerId)) throw new Error('选中的场景图层已不存在。');
+      if (target.kind === 'scene-instance' && !guard.document.content.instances.some(item => item.id === target.instanceId)) throw new Error('选中的场景实例已不存在。');
+      const next = { target, guard, navigation }; imageEditRef.current = next; setImageEdit(next);
+    } catch (error) {
+      if (navigation && ['scene-layer', 'scene-instance'].includes(target.kind)) { const next = { target, guard: null, navigation }; imageEditRef.current = next; setImageEdit(next); }
+      else imageEditing.current = false;
+      setNotice(error instanceof Error ? error.message : '图片调整尚未打开。');
+    } finally { setImageOpening(false); }
+  };
+  const resumeImageEdit = useEffectEvent(() => {
+    const navigation = readImageEditNavigation(); if (!navigation) return;
+    void readImageEdit(navigation.editId).then(({ edit }) => {
+      if (!['scene-layer', 'scene-instance'].includes(edit.target.targetRef.kind)) throw new Error('此图片会话不属于场景图层或实例。');
+      return openImageEdit(edit.target.targetRef, navigation);
+    }).catch(error => setNotice(error instanceof Error ? error.message : '历史会话读取失败。'));
+  });
+  useEffect(() => { if (!ready || imageNavigationConsumed.current) return; imageNavigationConsumed.current = true; resumeImageEdit(); }, [ready]);
+  const closeImageEdit = () => { imageEditing.current = false; imageEditRef.current = null; setImageEdit(null); clearImageEditNavigation(); };
+  const imageEditMapSource = async (target: ImageTargetInfo) => {
+    const current = imageEditRef.current;
+    if (!current?.guard || !imageTargetEquals(target.targetRef, current.target) || doc.current.current.id !== current.guard.document.id || await documentFingerprint({ ...validateScene(doc.current.current), revision: 0 }) !== current.guard.fingerprint) throw new Error('宿主场景已变化；请关闭调整窗口并刷新场景后再打开源包。');
+    const source = await verifiedSceneImageSource(target, current.guard.document);
+    if (imageEditRef.current !== current || await documentFingerprint({ ...validateScene(doc.current.current), revision: 0 }) !== current.guard.fingerprint) throw new Error('核验期间宿主场景已变化，未交付源包；请刷新场景。');
+    return { ...source, name: current.guard.document.content.map!.name + '.zip' };
+  };
+  const renderImageContext = useCallback((source: string) => imageEdit ? <SceneImagePreview scene={scene} target={imageEdit.target} source={source} /> : null, [scene, imageEdit]);
   const applyObjects = () => {
     if (!project) return;
     if (dialog === 'replace') {
@@ -642,7 +701,8 @@ export function SceneComposer() {
   });
 
   return (
-    <main className="sc-workspace" data-scene-composer>
+    <>
+    <main className="sc-workspace" data-scene-composer inert={imageOpening || Boolean(imageEdit)}>
       <header className="sc-header">
         <div className="sc-title">
           <EditorWorkbenchMenu />
@@ -698,6 +758,7 @@ export function SceneComposer() {
           </Button>
         </div>
       </header>
+      {ready && !doc.untouched && <DocumentSyncStatus state={doc.shared} disabled={busy} />}
       <div className="sc-toolbar">
         <div className="sc-actions">
           <Button
@@ -1071,14 +1132,14 @@ export function SceneComposer() {
                   !sim.objects.some(
                     (i) =>
                       selected.includes(i.id) &&
-                      i.definition.activation.mode === 'external_request',
+                      i.definition.activation.mode === 'external_request' && i.enabled && !i.state.completed,
                   )
                 }
                 onClick={() => {
                   const i = sim.objects.find(
                     (o) =>
                       selected.includes(o.id) &&
-                      o.definition.activation.mode === 'external_request',
+                      o.definition.activation.mode === 'external_request' && o.enabled && !o.state.completed,
                   );
                   if (i) sim.request(i);
                 }}
@@ -1120,48 +1181,7 @@ export function SceneComposer() {
                 : '场景设置'}
           </h2>
           {preview ? (
-            <>
-              <p className="sc-note">
-                白色来源使用碰撞层 1。此处模拟交互，不模拟平台跳跃物理。
-              </p>
-              <p className="sc-note">绿色：感知 · 蓝色：点击 · 橙色：碰撞</p>
-              {sim.objects.map((i) => (
-                <button
-                  className="sc-preview-row"
-                  key={i.id}
-                  onClick={() => setSelected([i.id])}
-                >
-                  <strong>{nodeName(i.id)}</strong>
-                  <span>
-                    {i.state.completed
-                      ? '已完成'
-                      : i.state.toggleState
-                        ? '状态 B'
-                        : i.inRange
-                          ? '范围内'
-                          : '等待交互'}
-                  </span>
-                </button>
-              ))}
-              <h3>最近事件</h3>
-              {sim.events.slice(0, 6).map((event, index) => (
-                <p className="sc-note" key={index}>
-                  {nodeName(event.instanceId)} ·{' '}
-                  {(
-                    {
-                      picked_up: '已拾取',
-                      toggled: '已切换',
-                      sequence_advanced: '序列推进',
-                      interaction_finished: '交互结束',
-                      interaction_started: '开始交互',
-                      interaction_completed: '已完成',
-                      focus_entered: '进入焦点',
-                      focus_exited: '离开焦点',
-                    } as Record<string, string>
-                  )[event.name] || event.name}
-                </p>
-              ))}
-            </>
+            <ScenePreviewFeedback scene={scene} sim={sim} selected={selected} select={setSelected} />
           ) : (
             <fieldset disabled={busy || !ready}>
               {!selected.length && (
@@ -1213,6 +1233,9 @@ export function SceneComposer() {
               {active && (
                 <>
                   <Button size="sm" variant="outline" onClick={editMaterial} disabled={busy}>编辑此交互物</Button>
+                  <label className="sc-field">要调整的图片<select aria-label="要调整的图片" value={selectedSlot?.value || 'visual'} onChange={event => setImageSlot(event.target.value)}>{slotChoices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}{choice.available ? '' : ` · ${choice.reason}`}</option>)}</select></label>
+                  <Button size="sm" variant="outline" disabled={busy || active.locked || !selectedSlot?.available} onClick={() => { if (selectedSlot) void openImageEdit({ kind: 'scene-instance', documentId: scene.id, instanceId: active.id, slot: selectedSlot.slot, ...(selectedSlot.index !== undefined ? { index: selectedSlot.index } : {}) }); }}>局部调整选中实例图片</Button>
+                  <p className="sc-note">只改此实例；采用时派生独立素材。共享原素材的 {scene.instances.filter(item => item.materialId === active.materialId).length - 1} 个其他实例保留。{!selectedSlot?.available && ` ${selectedSlot?.reason || '没有静态图片'}`}</p>
                   <label className="sc-field" htmlFor="sc-instance-name">
                     实例名称
                     <Input
@@ -1317,6 +1340,8 @@ export function SceneComposer() {
               {layer && scene.map && (
                 <>
                   <h3>{layer.name}</h3>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => void openImageEdit({ kind: 'scene-layer', documentId: scene.id, layerId: layer.id })}>局部调整此地图层</Button>
+                  <p className="sc-note">只编辑可追溯的源图；烘焙、派生或映射不明确的图层只读。快照采用会同步嵌入源包。</p>
                   <p className="sc-note">
                     地图图层共享地图位置；解除锁定后可移动整张地图。
                   </p>
@@ -1462,6 +1487,7 @@ export function SceneComposer() {
               )}
             </fieldset>
           )}
+          <div hidden={preview}><SceneLinksPanel scene={scene} selected={selected} disabled={busy || !ready || preview} edit={doc.edit} select={setSelected} /></div>
           {!!warnings.length && (
             <details className="sc-warnings">
               <summary>{warnings.length} 条场景提示</summary>
@@ -1941,5 +1967,38 @@ export function SceneComposer() {
         </DialogContent>
       </Dialog>
     </main>
+    {imageEdit && <ImageEditWorkspace
+      onNavigationChange={writeImageEditNavigation}
+      target={imageEdit.target}
+      initialEditId={imageEdit.navigation?.editId}
+      initialCandidateVersion={imageEdit.navigation?.candidateVersion}
+      readOnly={!imageEdit.guard}
+      renderContext={imageEdit.guard ? renderImageContext : undefined}
+      onOpenSource={imageEdit.target.kind === 'scene-layer' && imageEdit.guard && scene.map ? async target => {
+        const source = await imageEditMapSource(target);
+        const href = await storeEditorHandoff('map-stitcher', 'map', { source: source.source, name: source.name });
+        closeImageEdit(); setHandoffUrl(href);
+      } : undefined}
+      onDownloadSource={imageEdit.target.kind === 'scene-layer' && imageEdit.guard && scene.map ? async target => {
+        const source = await imageEditMapSource(target);
+        downloadBlob(source.blob, 'map-source.zip');
+      } : undefined}
+      beforeApply={async () => {
+        const current = imageEditRef.current;
+        if (!current?.guard || doc.current.current.id !== current.guard.document.id || await documentFingerprint({ ...validateScene(doc.current.current), revision: 0 }) !== current.guard.fingerprint) throw new Error('本机场景在图片调整期间已变化，请保留候选并重新打开。');
+      }}
+      onAdopt={async receipt => {
+        const current = imageEditRef.current;
+        if (!current?.guard) throw new Error('历史场景入口只读。');
+        validateSceneImageReceipt(current.target, receipt);
+        if (!imageTargetEquals(receipt.target.targetRef, current.target) || !('documentId' in current.target)) throw new Error('场景图片目标不匹配。');
+        const { document } = await readDocument<Scene>(current.target.documentId, receipt.revision as number);
+        const guard = await doc.shared.acceptAdopted(document, current.guard);
+        const next = { ...current, guard }; imageEditRef.current = next; setImageEdit(next);
+        setNotice(current.target.kind === 'scene-instance' ? '仅选中实例图片已采用；其他共享实例、位置与联动保留。' : '选中图层与嵌入源包已同步采用。');
+      }}
+      onClose={closeImageEdit}
+    />}
+    </>
   );
 }

@@ -70,7 +70,10 @@ export function useMapAgentTools(controller: MapEditorController) {
       description,
       inputSchema,
       annotations: { readOnlyHint: readOnly, untrustedContentHint: false },
-      execute: (input) => execute(current.current, record(input)),
+      execute: (input) => {
+        if (!readOnly && current.current.imageEditLocked) throw new Error('请先完成或关闭当前图片调整。');
+        return execute(current.current, record(input));
+      },
     });
     const tools: BrowserTool[] = [
       tool(

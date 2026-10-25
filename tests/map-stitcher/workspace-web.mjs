@@ -24,7 +24,8 @@ let writes = 0;
 let deniedGeneration = 0;
 const json = (res, value, status = 200) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)); };
 const server = await createTestViteServer({
-  root: repositoryRoot, configFile: false, resolve: { alias: { '@': repositoryRoot } },
+  root: repositoryRoot, configFile: false, resolve: { alias: { '@': repositoryRoot, 'next/image': path.join(repositoryRoot, 'node_modules/vinext/dist/shims/image.js') } },
+  define: { 'process.env': {} },
   plugins: [react(), { name: 'map-workspace-integration', configureServer(vite) {
     vite.middlewares.use(async (req, res, next) => {
       const url = new URL(req.url, 'http://localhost');

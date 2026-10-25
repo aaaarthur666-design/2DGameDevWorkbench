@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { makeId, normalizeProject } from '../interactable-editor/contract.mjs';
+import { sceneLinkSchema, MAX_SCENE_LINKS, validateSceneLinks, sceneLinkDiagnostics } from './links.mjs';
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const coordinate = z.number().finite().min(-1e7).max(1e7);
@@ -54,6 +55,7 @@ export const sceneSchema = z.object({
     )
     .max(2000),
   order: z.array(id).max(2010),
+  links: z.array(sceneLinkSchema).max(MAX_SCENE_LINKS).default([]),
   view: z.object({
     x: coordinate,
     y: coordinate,
@@ -78,6 +80,7 @@ export function createScene(name = '未命名场景') {
     materials: [],
     instances: [],
     order: ['actor'],
+    links: [],
     view: {
       x: 0,
       y: 0,
@@ -119,7 +122,7 @@ export function validateScene(input) {
     scene.order.some((key) => !nodes.includes(key))
   )
     throw new Error('场景节点顺序不完整或身份重复。');
-  return scene;
+  return validateSceneLinks(scene);
 }
 export function materialFor(scene, instance) {
   return scene.materials.find((m) => m.id === instance.materialId);
@@ -156,6 +159,14 @@ export function addInstance(scene, materialId, x, y) {
   scene.instances.push(instance);
   scene.order.splice(scene.order.indexOf('actor') + 1, 0, instance.id);
   return instance;
+}
+export function removeInstances(scene, ids) {
+  const selected = new Set(ids);
+  const removedLinks = (scene.links || []).filter(link => selected.has(link.sourceInstanceId) || selected.has(link.targetInstanceId));
+  scene.instances = scene.instances.filter(instance => !selected.has(instance.id));
+  scene.order = scene.order.filter(id => !selected.has(id));
+  scene.links = (scene.links || []).filter(link => !removedLinks.includes(link));
+  return removedLinks.map(link => link.id);
 }
 export function reorder(scene, ids, action, target) {
   const chosen = new Set(ids);
@@ -241,7 +252,10 @@ export function sceneBounds(scene) {
   };
 }
 export function sceneWarnings(scene) {
-  const result = [...(scene.map?.warnings || [])];
+  const result = (scene.map?.warnings || []).filter(message =>
+    !scene.map.collisions.length || message !== '此背景尚未配置地图碰撞。请设置并检查碰撞后再验证游戏行为。',
+  );
+  result.push(...sceneLinkDiagnostics(scene).map(diagnostic => diagnostic.message));
   const b = sceneBounds(scene);
   const outside = scene.instances.filter(
     (i) =>

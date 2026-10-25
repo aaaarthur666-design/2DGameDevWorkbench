@@ -4,7 +4,7 @@
 
 ## 分工
 
-地图工具制作图片、分层和地图碰撞；交互物工具制作图片、动画、声音、范围及行为；场景组装负责导入、摆放、遮挡、替换、预览和整套导出。场景内不修改素材内部行为，不自动同步素材，也不编排剧情。
+地图工具制作图片、分层和地图碰撞；交互物工具制作图片、动画、声音、范围及行为；场景组装负责导入、摆放、遮挡、替换、预览和整套导出。共享场景也支持 Agent 通过已声明的命令修改实例和地图碰撞。来源素材不会自动同步，场景不编排剧情。
 
 ## 创建与摆放
 
@@ -40,15 +40,51 @@
 
 辅助显示默认全开，包含地图碰撞、物件感知、点击范围、实体碰撞、网格和名称。旧场景首次升级会全开；之后手动关闭的选项会保存。测试来源使用碰撞层 1，必须与物件感知 mask 相交。预览不模拟人物行走、跳跃或物理碰撞；临时状态在重置、退出预览时丢弃，不写回初始状态。
 
+## 跨物件联动
+
+右侧“物件联动”选择来源实例、事件、目标实例与动作。当前支持 `toggled`、`picked_up`、`sequence_advanced`、`interaction_finished`、`interaction_completed`、`state_changed`；动作是 `set_toggle`、`set_enabled`、`set_visible`。值可以是布尔值，或使用 toggle 来源的 `source_toggle` 跟随其开关状态。典型用法是“拉杆 toggled → 石门 set_toggle / source_toggle”，再把石门 A/B 外观分别配置为显示且有碰撞、隐藏且无碰撞。仅隐藏外观不会自动关闭碰撞；启停交互也不改变显示或碰撞。
+
+联动使用稳定实例 ID，存于 `scene.links` 并随源包往返。删除实例会清除关联联动，撤销一起恢复；复制实例不自动复制接线；替换素材保留接线，但行为类型不兼容会拒绝提交。禁用联动保留配置。启用的两端必须参与导出；失效端点、重复 ID、事件/动作类型不匹配及有向循环会阻止保存。最多 256 条联动，每轮分发最多 256 次动作，超限会产生诊断而非无限执行。
+
+预览显示每个实例的 A/B 状态、成功次数、可见性、交互启用与实体碰撞状态，并按时间显示联动事件。设置状态是幂等的：相同值不再次发出状态变化，目标不会凭空增加成功次数。来源反馈结束后按 FIFO 执行联动；重置预览会清空临时状态。
+
 ## 保存与恢复
 
-- 自动保存 / Ctrl/Cmd + S：写入当前浏览器的工作台 IndexedDB，原子保存场景内容和制作记录。
+- 自动保存 / Ctrl/Cmd + S：保留当前浏览器的 IndexedDB 草稿与制作记录；开始编辑后，另通过 Runtime Bridge 同步共享工程，界面分别显示本机与共享状态。
 - 下载源文件：生成自包含 `.scene.zip`，用于备份和换机器编辑。
 - 导出 Godot：通过本地 Runtime Bridge 生成并下载资源包。
 
 状态栏区分本机保存与文件备份；本机保存不代表已写入下载文件。保存失败时保留当前内存内容并显示源文件备份入口。不同场景独立保存；打开同身份源包时选择替换本机版本或另存为新场景。
 
+共享工程使用场景原有 `id`，每次成功提交增加 `revision`。网页与 MCP / CLI 共用同一个 Bridge 写入端。提交必须携带读取时的 `expectedRevision` 和唯一 `commandId`；版本过旧返回 HTTP 409 / `REVISION_CONFLICT`，不会覆盖其他页面的提交。重复的相同命令返回原提交结果，复用命令 ID 提交不同内容会被拒绝。网页轮询轻量版本摘要；本地正在编辑、预览或出现冲突时保留草稿，不用远端内容覆盖。加载远端前可保留本机恢复副本。
+
+服务端工程保存在 manifest 的 `workspace.documentDirectory`（默认 `work/editor-documents/`），每次提交先写不可变快照，再原子更新版本指针。素材内嵌到快照，来源文件后续变化不影响历史。`workbench_restore_document` 把指定旧版本恢复为新版本，原历史保留。浏览器独有的旧草稿仍需先在原浏览器打开并成功同步，Agent 才能读取。
+
 源包保存地图源数据、全部场景素材（包括未摆放的素材）、实例与稳定 ID、遮挡顺序和显示设置。二进制数据去重，包内引用不依赖原文件路径。上限为 256 MB 解压数据、2000 个实例、1000 个场景素材。撤销最多保留 60 步，不写入源包。
+
+## Agent 编辑与视觉检查
+
+`workbench_list_documents` 发现共享场景，`workbench_get_document` 读取当前内容或指定 `revision`；`viewPath` 使用 `?document=<id>` 打开同一工程。`metadataOnly=true` 只返回版本、名称和内容哈希，适合轮询。HTTP 对应 `/api/workbench/documents` 与 `/api/workbench/documents/<id>`；CLI 使用 `agent documents`、`agent document-get` 等同名操作。
+
+修改使用 `workbench_apply_document_commands`，输入为 `{documentId, expectedRevision, commandId, commands}`。一个事务最多 100 条命令，只影响一个文档，任何一条失败都不提交：
+
+| 范围 | 已支持的 `type` |
+| --- | --- |
+| 名称与视图 | `rename`、`set-view` |
+| 素材与实例 | `import-material`、`replace-material`、`add-instance`、`replace-instances`、`remove-instances` |
+| 位置与遮挡 | `move-instances`、`scale-instances`、`flip-instances`、`set-anchor`、`reorder`、`set-node-flags` |
+| 地图 | `replace-map`、`move-map`、`set-map-collisions` |
+| 联动 | `set-links`、`add-link`、`update-link`、`remove-links` |
+
+命令依据稳定 ID 选择节点，参数以 `lib/workbench/document-contract.mjs` 和 MCP 实际 schema 为准。移动只能选择 `dx/dy` 或 `x/y` 一种方式。变换、删除、替换实例及移动其排序前需显式解锁；完整 AI 快照保存也不能移动、移除或替换当前锁定实例。前端人工保存仍支持其既有完整快照流程。场景素材替换不会修改来源项目；`replace-material` 保留实例锚点，`replace-instances` 按新素材重设锚点。
+
+`workbench_adopt_document_image` 采用已完成的 `image-assets` 背景任务，必须提供原 `sourceTaskId`、PNG `sha256` 和版本检查字段。服务重新校验任务、文件与尺寸后，替换为一个背景层并保留可回导的地图源 ZIP；原任务不会变化。采用不会从画面猜测碰撞。`set-map-collisions` 可明确提交地图源世界坐标多边形，统一地图偏移在显示与导出时叠加；它不触发地图生成、拼接或扩图。
+
+`workbench_observe_document` 渲染确切保存版本，可指定世界坐标 `region`、`time`、`mode` 和输出尺寸。默认 `mode=export` 按参与导出标记绘制；`mode=editor` 按编辑隐藏标记绘制。返回场景 PNG、可选标注 PNG、世界到图片的坐标变换、物件范围和资源哈希。MCP 直接附带图片块，结构化结果只保留图片元数据与实际产物路径。缺少本次渲染所需的图片时失败，不返回完整成功的观察证据。观察不读取浏览器未保存内容，也不证明 Godot 已运行。
+
+`workbench_validate_document` 检查结构、媒体和场景诊断。`workbench_simulate_document` 复用交互模拟器，最多接收 200 个 `move-actor`、`tick`、`press`、`click`、`request`、`advance-text`、`finish-audio` 或 `cancel` 事件，返回按时间排列的事件、最终状态、联动诊断及 `expectEvents` / `expectStates` 检查。`expectStates` 按 instanceId 断言 toggleState、completed、enabled、visible、solidEnabled、sequenceIndex 或 successCount；回放截断或联动诊断会令 passed=false。未提供任何期望时的 passed=true 只表示该请求完成。检查不改变文档，不验证人物物理、可达性或实际游戏存档。
+
+`workbench_observe_document` 可接收同一套 `events`，返回回放后的真实 PNG、状态与事件证据。`events` 与静态 `time` 不能同时提供；要推进回放时间，加入 `tick`。所有回放从指定保存版本的初始状态重新开始，`events: []` 明确观察初态。图片和辅助碰撞层使用同一模拟结果；回放不完整时拒绝生成完整观察证据。
 
 ## Godot 交付
 
@@ -56,22 +92,32 @@
 
 所有场景共用 `addons/workbench_interaction/runtime/v1/`，避免重复注册 GDScript 类；每个场景有一个交互运行时。地图和物件资源按场景隔离，不因导入另一场景而替换已有定义。保持运行时版本一致。
 
+有联动的场景附带 `scene_link_router.gd` 与稳定 ID 配置，连接现有交互运行时，不新增第二套交互系统。运行时提供幂等状态设置、state_changed 信号、按序分发与卸载断开连接；场景重入不会重复注册。自定义游戏逻辑仍在生成目录之外。
+
 将人物放到 `ActorSlot` 下并保持其相对 Z 为 0，或者使用接入说明中的排序值；靠近交互的物理节点加入 `interaction_actor` group，碰撞层与物件 detection mask 对应。默认按 E，物件可以使用自身配置的按键。剧情、背包和复杂逻辑通过原有物件信号接入。
 
 不输出 `project.godot`、正式人物、EditorPlugin 或 `.godot` 缓存。重新导出更新该场景生成目录，自定义脚本应放在外层场景或独立文件中。Godot 包可在工作台重新打开其嵌入源包，不反向解析手改的脚本和节点。
 
-本机产物在 `outputs/scene-export-<id>/`，包含 `scene-godot.zip` 和 `scene-source.zip`；导出记录在 `work/scene-exports/`。它们是本地网页导出记录，不冒充 MCP/CLI 生产任务。
+本机产物在 `outputs/scene-export-<id>/`，包含 `scene-godot.zip` 和 `scene-source.zip`；导出记录在 `work/scene-exports/`。它们是独立导出记录，不创建图片生产任务。`workbench_export_document` 需要明确的 `{documentId, revision}`，使用该保存版本的同一个导出器，并记录文档版本与 `documentContentHash`。每次调用建立新的导出记录，不修改共享场景。
 
-成功导出后会被资产库的“完整场景”分类收录。每次导出保留独立版本，可查看名称、版本和实例数量，下载原始源包及 Godot 包；旧导出记录也能读取。归档制作历史不会移除这些资产。仅在浏览器保存或下载源文件不会自动加入资产库，浏览器草稿仍需自行备份。目录路径由 manifest 的 `workspace.sceneExportDirectory` 和 `workspace.outputDirectory` 定义，测试使用隔离路径。
+成功导出后会被资产库的“完整场景”分类收录。每次导出保留独立版本，可查看名称、版本和实例数量，下载原始源包及 Godot 包；旧导出记录也能读取。归档制作历史不会移除这些资产。共享工程另有继续编辑入口，与已导出的独立版本区分；下载源文件本身不创建导出记录。目录路径由 manifest 定义，测试使用隔离路径。
 
 ## 实现边界与验证
 
-入口注册于 Manifest 的 `editorModules`，不会进入 Agent 可执行能力列表。网页私有导出路由为 `/api/workbench/scene-composer/export`，代理至 loopback Runtime Bridge；未新增 MCP 或 WebMCP 操作。部署网页不能替代本机运行时。
+入口仍注册于 Manifest 的 `editorModules`，不作为图片生产任务能力。共享文档工具独立登记在 MCP；网页共享文档请求、MCP 与 CLI 均由 Bridge 统一写入。原有 `/api/workbench/scene-composer/export` 与源包流程继续可用，新增 `/documents/<id>/export` 导出指定保存版本。部署网页不能替代本机运行时。地图生成与拼接仍使用地图前端。
 
 场景模型、包格式、坐标变换、排序与 Godot 装配位于 `features/scene-composer/`。交互行为复用既有 InteractionSimulation 和 Workbench Interaction Kit。
 
-运行 `npm run test:scene-composer` 检查替换隔离、排序、坐标、源包、安全路径、预览状态及资源引用；相关回归为 `test:workbench-shell`、`test:map-stitcher`、`test:interactable`、`test:http`、`lint`、`typecheck`、`build`。使用 `npm run test:scene-composer -- --write-engine-fixture` 可在 outputs 下生成隔离 Godot 检查项目。
+运行 `npm run test:scene-composer` 检查替换隔离、排序、坐标、源包、安全路径、预览状态及资源引用；`npm run test:editor-documents` 检查共享版本、事务、幂等、路径边界、模拟与 MCP 视觉产物。相关回归为 `test:workbench-shell`、`test:map-stitcher`、`test:interactable`、`test:http`、`lint`、`typecheck`、`build`。使用 `npm run test:scene-composer -- --write-engine-fixture` 可在 outputs 下生成隔离 Godot 检查项目。
+
+`npm run test:scene-links` 检查接线、循环、幂等、事件顺序与前端配置；`test:scene-observation` 校验回放后的实际像素和碰撞辅助状态。设置 `GODOT_47_BIN` 后运行 `npm run test:scene-links-engine -- --input <scene-godot.zip> --source switch --target gate --rendered`，在工作区新建隔离项目验证真实 Godot 4.7 的导入、物理点查询、开关门、重入与渲染截图；省略 input 使用明确标记的 fixture。未配置引擎会报错，不算通过。此脚本针对恰好两个 toggle 实例的开关门验收场景，不是任意完整游戏的验收器。
 
 ## 导出到已建立的游戏
 
 点击“导出 Godot”后选择游戏项目，包保存到其 forge_imports 收件目录；让 WorkBuddy 按 [Godot 交付流程](godot-delivery.md)继续检查、安装、挂载玩家并接好信号。用户无需再手动复制目录或调整 res 路径。“仅下载 ZIP”仍提供原有手动导入方式。编辑辅助开关不改变已导出的真实碰撞。
+
+### 指定引用的局部调整（7D）
+
+选择单个场景物件后可指定默认、切换状态或序列静态槽，采用只改变该实例；共享原素材的其他实例保留原图。选择地图图层时，须对场景中全部地图层验证嵌入源包的单源像素映射，包括隐藏或不参与导出的层；选中层和源图片类型锁均须解除。通过后采用同步 PNG 和源 ZIP。多图块、派生层、缺失或不一致来源保持只读，可从“编辑地图源文件”入口继续处理；缺失或损坏的源包不保证能够恢复。槽位或来源变化导致当前 guard 失效时，旧会话只供检查，不能强制覆盖；本会话已知采用绑定的单图恢复仍需当前版本校验。完整范围和恢复规则见[图片局部编辑](image-editing.md)。
+
+AI 局部调整默认开启“保留原图透明度”，以当前选择的编辑基准保持 Alpha；要改变轮廓时关闭。恢复后上下文直接切换为已核验原图，继续精修建立的新会话及候选选择会同步到地址栏。链接保留场景身份，不把新会话留在旧候选地址。

@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import { readFile } from 'node:fs/promises';
 import { buildGodotPackage } from '../interactable-editor/godot-builder.mjs';
 import { instanceOrigin, validateScene } from './model.mjs';
 import { createScenePackage } from './package.mjs';
@@ -77,6 +78,13 @@ export async function buildSceneGodotPackage(input, { repositoryRoot } = {}) {
     ext.push(
       `[ext_resource type="PackedScene" path=${quote(resource)} id=${quote(materialId)}]`,
     );
+  const links = (scene.links || []).filter((link) => link.enabled);
+  let linkScriptId = 'forge_scene_link_router';
+  while (paths.has(linkScriptId) || scene.map.layers.some((layer) => layer.id === linkScriptId)) linkScriptId += '_';
+  if (links.length) {
+    zip.file(`${root}/scene_link_router.gd`, await readFile(new URL('./godot-templates/scene_link_router.gd', import.meta.url)));
+    ext.push(`[ext_resource type="Script" path="res://${root}/scene_link_router.gd" id=${quote(linkScriptId)}]`);
+  }
   for (const layer of scene.map.layers.filter((l) => l.included)) {
     if (!layer.source.startsWith('data:image/png;base64,'))
       throw new Error('地图层必须是内嵌 PNG。');
@@ -141,6 +149,13 @@ export async function buildSceneGodotPackage(input, { repositoryRoot } = {}) {
       `polygon = PackedVector2Array(${points.flatMap((p) => [p.x, p.y]).join(', ')})`,
     ),
   );
+  if (links.length) {
+    let nodeName = 'SceneLinkRouter';
+    while (scene.order.includes(nodeName) || ['InteractionRuntime', 'MapCollisions', 'ActorSlot'].includes(nodeName)) nodeName += '_';
+    nodes.push(`[node name=${quote(nodeName)} type="Node" parent="."]`,
+      `script = ExtResource(${quote(linkScriptId)})`,
+      `links = ${JSON.stringify(links)}`);
+  }
   zip.file(
     `${root}/scene.tscn`,
     `[gd_scene load_steps=${ext.length + 1} format=3]\n\n${ext.join('\n')}\n\n${nodes.join('\n')}\n`,
@@ -156,6 +171,8 @@ export async function buildSceneGodotPackage(input, { repositoryRoot } = {}) {
         name: scene.name,
         scene: `res://${root}/scene.tscn`,
         actorZIndex: actorRank,
+        links: scene.links || [],
+        linkRuntime: links.length ? `res://${root}/scene_link_router.gd` : null,
         instances: instances.map((i) => ({
           instanceId: i.id,
           name: i.name,

@@ -13,8 +13,8 @@
 ## Agent 操作顺序
 
 - 首次就绪和宿主开页沿用现有流程；后续不要为每步再调 present_files 新开标签。
-- 先 list/describe 确定能力或读取已选作品，再调用 workbench_present。恰好传 taskId、jobId、assetId、capabilityId 中一个；candidateIndex 只能配 taskId/jobId。仅进入工具时用 discovery 的 capabilityId；已有作品用精确身份。
-- WorkBuddy 的授权 run_task 在本会话页面就绪后自动启用跟随；其他客户端仍由首次 present 启用本 MCP 连接的自动跟随。随后 run_task 与 get_task 将真实 presentation 发布给前端，返回 frontendPresentation；失败任务有可读记录时也展示原失败步骤。未启用的诊断客户端不会因查询而改变页面。
+- 先 list/describe 确定能力或读取已选作品，再调用 workbench_present。恰好传 taskId、jobId、assetId、capabilityId、editId 中一个；candidateIndex 只能配 taskId/jobId，candidateVersion 只能配 editId（也可为 source）。仅进入工具时用 discovery 的 capabilityId；已有作品用精确身份。
+- WorkBuddy 的授权 run_task 或高层 ai-edit 在本会话页面就绪后自动启用跟随；其他客户端仍由首次 present 启用本 MCP 连接的自动跟随。随后 run_task、get_task、edit_image_region 与 get_image_edit 将真实 presentation 发布给前端，返回 frontendPresentation；失败任务有可读记录时也展示原失败步骤。未启用的诊断客户端不会因查询而改变页面。
 - get_result/get_asset/list_assets 仍只读，没有导航副作用。用户选择旧作品或另一候选时，Agent 明确调用 present；不得把作品库首页当作指定作品详情。
 - 用 workbench_get_frontend_context 的 requestId 查询确认。等待通常 1–2 秒，最多等待 10 秒再说明状态；不要阻塞长时间任务，不要通过再次 run 来催促展示。视觉审核仍须读取真实画面，不以展示确认代替。
 - 页面暂停或阻塞时继续必要的后台工作并报告原因；不得改用宿主强行刷新页面绕过保护。用户要求暂停时不自动恢复。请求约两分钟过期；恢复很久以前的步骤需新的明确 present。
@@ -25,7 +25,7 @@
 
 | 工具 | 输入 | 行为 |
 | --- | --- | --- |
-| workbench_present | 一个 taskId / jobId / assetId / capabilityId；可选 candidateIndex | 校验真实目标，保存短期展示请求，不生成、不导出、不创建任务 |
+| workbench_present | 一个 taskId / jobId / assetId / capabilityId / editId；可选 candidateIndex 或 candidateVersion | 校验真实目标，保存短期展示请求，不生成、不导出、不创建任务 |
 | workbench_get_frontend_context | 可选 requestId | 只读查看活跃页面身份、编辑状态和展示确认 |
 
 CLI 对应 agent present / agent frontend-context；HTTP 对应 POST /v1/agent/present 和 /v1/agent/frontend-context。前端用 /api/workbench/frontend 转发到 /v1/frontend/heartbeat。自动跟随启用状态属于 MCP 连接；CLI/HTTP 的 present 只提交指定的一次展示。
@@ -41,6 +41,8 @@ CLI 对应 agent present / agent frontend-context；HTTP 对应 POST /v1/agent/p
 | unavailable | 展示通道失败；不改变原生产任务的成功/失败状态，不应重提交生成 |
 
 browserOpened 始终为 false，因为此通道不打开浏览器窗口。displayed 是已有页面的地址确认，两者并不矛盾。多个打开的工作台中选择最近活跃的可见页面，一次请求固定到该页，不会让全部标签一起跳转。连续相同步骤去重，当前地址相同时只更新步骤卡，不刷新编辑器。
+
+局部图片编辑链接保留原目标、`imageEdit` 会话和 `imageCandidate` 版本，在地图、交互物或资产详情内打开共用工作区。运行中的明确候选只显示其已完成基准，并跟随该候选完成；不会偷偷改选更新的其他分支。有未保存笔划时保留草稿，完成结果留待明确选择。图片任务持久保存相同身份，按 taskId 查询也不会退回独立整图采用入口。关闭工作区不取消模型请求，重开读取原任务，不重新生成。
 
 ## 当前地图为什么以前看不到
 

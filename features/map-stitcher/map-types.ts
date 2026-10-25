@@ -13,6 +13,7 @@ export interface ImageAsset {
   name: string;
   type: string;
   size: number;
+  generation?: { sourceTaskId: string; sha256: string };
 }
 
 export interface Feather {
@@ -56,6 +57,7 @@ export interface SavedImageReference {
   height: number;
   path?: string;
   dataUrl?: string;
+  generation?: ImageAsset['generation'];
 }
 
 export interface SavedTile {

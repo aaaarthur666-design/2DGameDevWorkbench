@@ -1,4 +1,5 @@
 import type { InteractableProject } from '../interactable-editor/contract.mjs';
+import type { SceneLink } from './links.mjs';
 export type Point = { x: number; y: number };
 export type Flags = { locked: boolean; hidden: boolean; included: boolean };
 export type SceneLayer = Flags & {
@@ -42,6 +43,7 @@ export type Scene = {
   materials: Material[];
   instances: Instance[];
   order: string[];
+  links: SceneLink[];
   view: {
     x: number;
     y: number;
@@ -77,6 +79,7 @@ export function reorder(
   action: string,
   target?: string | number,
 ): void;
+export function removeInstances(scene: Scene, ids: string[]): string[];
 export function replaceInstances(
   scene: Scene,
   ids: string[],

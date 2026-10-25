@@ -1,12 +1,24 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWorkbench } from '@/components/workbench/workbench-provider';
 import type { MapEditorController } from '@/components/map-stitcher/use-map-editor-controller';
 export function MapSceneButton({ c }: { c: MapEditorController }) {
   const [starting, setStarting] = useState(false);
-  const wb = useWorkbench();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const { navigate } = useWorkbench();
+  useEffect(() => {
+    if (!pendingHref || c.busy) return;
+    // Let the map workspace publish its completed operation before the navigation save guard runs.
+    const timer = setTimeout(() => {
+      void navigate(pendingHref).finally(() => {
+        setPendingHref(null);
+        setStarting(false);
+      });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pendingHref, c.busy, navigate]);
   return (
     <Button
       size="sm"
@@ -17,14 +29,13 @@ export function MapSceneButton({ c }: { c: MapEditorController }) {
         setStarting(true);
         void c
           .composeScene()
-          .then(async (href) => {
-            await new Promise<void>((resolve) =>
-              requestAnimationFrame(() => resolve()),
-            );
-            await wb.navigate(href);
+          .then((href) => {
+            setPendingHref(href);
           })
-          .catch(c.report)
-          .finally(() => setStarting(false));
+          .catch((error) => {
+            c.report(error);
+            setStarting(false);
+          });
       }}
     >
       <Layers />

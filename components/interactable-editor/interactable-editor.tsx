@@ -46,11 +46,22 @@ import { listWorkItems, readWorkspaceDraft } from '@/lib/workbench/browser-store
 import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
 import { clearImportQuery, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
 import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
+import { projectSchema } from '@/features/interactable-editor/contract.mjs';
+import { portableProject } from '@/features/scene-composer/browser';
+import { readDocument } from '@/features/editor-documents/client';
+import { useSharedDocument } from '@/features/editor-documents/use-shared-document';
+import { documentFingerprint, type DocumentSavedSnapshot } from '@/features/editor-documents/sync-controller.mjs';
+import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
+import type { ImageTargetRef } from '@/features/image-edit/client';
+import { imageTargetEquals, readImageEdit } from '@/features/image-edit/client';
+import { clearImageEditNavigation, readImageEditNavigation, writeImageEditNavigation, type ImageEditNavigation } from '@/features/image-edit/navigation';
+import { DocumentSyncStatus } from '@/components/workbench/document-sync-status';
 import { useWorkbench } from '@/components/workbench/workbench-provider';
 import { isUntouchedStarterProject } from '@/features/interactable-editor/draft-activity';
 import { Field, Numeric, Check, BehaviorPanel } from './property-panels';
 import { VisualPanel } from './visual-panel';
 import { PropArtPanel } from './prop-art-panel';
+import { ImagePropPanel } from './image-prop-panel';
 import { applyPropArt } from '@/features/interactable-editor/prop-art.mjs';
 import { Preview, assetUrl } from './preview';
 import './interactable-editor.css';
@@ -77,8 +88,15 @@ export function InteractableEditor() {
     [exportIds, setExportIds] = useState<string[]>([]),
     [tab, setTab] = useState('visual');
   const [started, setStarted] = useState(false);
+  const imageEditing = useRef(false);
+  const [imageOpening, setImageOpening] = useState(false);
+  const [imageEdit, setImageEdit] = useState<{ target: ImageTargetRef; guard: DocumentSavedSnapshot<InteractableProject> | null; navigation?: ImageEditNavigation } | null>(null);
+  const editNavigationConsumed = useRef(false);
+  const imageEditRef = useRef(imageEdit);
+  useLayoutEffect(() => { imageEditRef.current = imageEdit; }, [imageEdit]);
   const setProject = useCallback(
     (value: SetStateAction<InteractableProject>) => {
+      if (imageEditing.current) return;
       setStarted(true);
       setProjectState(value);
     },
@@ -145,11 +163,53 @@ export function InteractableEditor() {
       }
     });
   }, []);
+  const shared = useSharedDocument({
+    id: project.projectId,
+    kind: 'interactable',
+    value: project,
+    enabled: ready && started && draftWritable,
+    busy: busy || Boolean(imageEdit),
+    prepare: portableProject,
+    saveLocal: async () => { await persist(); },
+    applyRemote: async (incoming) => {
+      const next = normalizeProject(incoming);
+      const previous = latest.current.project;
+      await writeChain.current.catch(() => undefined);
+      if (latest.current.busy) throw new Error('交互物正在处理内容，共享修改暂未替换本机草稿。');
+      if (latest.current.project !== previous) throw new Error('读取期间本机工程已变化，修改已保留。');
+      // Apply synchronously after the controller's identity guard; later local edits remain a new draft.
+      latest.current = { ...latest.current, project: next, started: true };
+      setProjectState(next);
+      setStarted(true);
+      completedIds.current = [];
+      setExportIds([]);
+      const writing = writeChain.current.catch(() => undefined).then(() => saveDraft(next));
+      writeChain.current = writing;
+      await writing;
+      savedProject.current = next;
+      savedAt.current = new Date().toISOString();
+      setDraftStatus('共享修改已保存到本机');
+    },
+    backupLocal: async (snapshot) => {
+      const backup = { ...structuredClone(snapshot), projectId: makeId('project'), name: `${snapshot.name.slice(0, 180)}（本机备份）` };
+      await saveDraft(backup);
+      return backup.name;
+    },
+  });
   useEffect(() => {
     let alive = true;
     const params = new URLSearchParams(location.search);
     const taskId = params.get('task');
-    (taskId ? loadTaskProject(taskId) : loadDraft(params.get('project') || undefined))
+    const documentId = params.get('document');
+    const loadShared = async () => {
+      const local = await readWorkspaceDraft<InteractableProject>(`interactable-project:${documentId}`);
+      if (local) return projectSchema.parse(local);
+      const { document } = await readDocument<InteractableProject>(documentId!);
+      if (document.kind !== 'interactable' || document.id !== documentId)
+        throw new Error('共享工程身份或类型不匹配。');
+      return projectSchema.parse(document.content);
+    };
+    (taskId ? loadTaskProject(taskId) : documentId ? loadShared() : loadDraft(params.get('project') || undefined))
       .then(async (p) => {
         if (!p) {
           if (alive) setDraftStatus('开始编辑后自动保存');
@@ -171,7 +231,7 @@ export function InteractableEditor() {
             )
             .map((object) => object.definitionId);
           savedAt.current = existing?.savedAt || '';
-          setStarted(Boolean(existing) || !isUntouchedStarterProject(p));
+          setStarted(Boolean(documentId) || Boolean(existing) || !isUntouchedStarterProject(p));
           setDraftStatus(
             existing || !isUntouchedStarterProject(p)
               ? '草稿已恢复'
@@ -249,10 +309,10 @@ export function InteractableEditor() {
       capabilityId: 'interactable-editor',
       items,
       dirty,
-      busy,
+      busy: busy || imageOpening || Boolean(imageEdit),
       save: persist,
       beforeLeave: () => {
-        if (latest.current.busy)
+        if (latest.current.busy || imageEditing.current)
           throw new Error('交互物正在提交、采用或导出，请完成后再切换页面。');
       },
     });
@@ -265,6 +325,8 @@ export function InteractableEditor() {
     busy,
     started,
     persist,
+    imageOpening,
+    imageEdit,
   ]);
   useEffect(() => () => removeEditorSession('interactable-editor'), []);
   const edit = (fn: (o: Interactable) => void) =>
@@ -414,8 +476,46 @@ export function InteractableEditor() {
   });
   useEffect(()=>{if(!ready||importStarted.current)return;importStarted.current=true;queueMicrotask(()=>consumeImport());},[ready]);
   const used = new Set(referencedAssets(project).map((a) => a.id));
+  const openImageEdit = async (selection?: Extract<ImageTargetRef, { kind: 'interactable' }>, navigation?: ImageEditNavigation) => {
+    if (latest.current.busy || imageEditing.current) return;
+    imageEditing.current = true;
+    setImageOpening(true);
+    try {
+      const original = await documentFingerprint(await portableProject(latest.current.project));
+      await persist(true);
+      const guard = await shared.flushSaved();
+      if (original !== guard.fingerprint) throw new Error('保存期间项目或状态条目发生变化，请重新选择图片位置。');
+      if (selection && selection.documentId !== guard.document.id) throw new Error('图片会话不属于当前项目。');
+      const object = guard.document.content.objects.find(object => object.definitionId === (selection?.definitionId || current.definitionId));
+      if (!object) throw new Error('当前物件已不存在。');
+      const slot = selection?.slot || 'visual', index = selection?.index;
+      const entry = slot === 'toggle-state' && object.behavior.kind === 'toggle' ? object.behavior.states[index ?? -1] : slot === 'sequence-entry' && object.behavior.kind === 'sequence' ? object.behavior.entries[index ?? -1] : undefined;
+      if (slot !== 'visual' && !entry) throw new Error('指定状态或序列条目已变化，请重新选择。');
+      if (!(entry?.appearance.assetId || object.visual.assetId)) throw new Error('当前图片位置没有静态源图片。');
+      const next = { target: { kind: 'interactable', documentId: guard.document.id, definitionId: object.definitionId, slot, ...(slot !== 'visual' ? { index } : {}) } as ImageTargetRef, guard, navigation };
+      imageEditRef.current = next;
+      setImageEdit(next);
+      setError(false);
+    } catch (error) {
+      if (selection && navigation) {
+        const next = { target: selection, guard: null, navigation };
+        imageEditRef.current = next; setImageEdit(next);
+      } else imageEditing.current = false;
+      setMessage(describeError(error));
+      setError(true);
+    } finally { setImageOpening(false); }
+  };
+  const resumeImageEdit = useEffectEvent(() => {
+    const navigation = readImageEditNavigation(); if (!navigation) return;
+    void readImageEdit(navigation.editId).then(({ edit }) => {
+      if (edit.target.targetRef.kind !== 'interactable') throw new Error('图片会话不是交互物外观。');
+      return openImageEdit(edit.target.targetRef, navigation);
+    }).catch(error => { setMessage(describeError(error)); setError(true); });
+  });
+  useEffect(() => { if (!ready || editNavigationConsumed.current) return; editNavigationConsumed.current = true; resumeImageEdit(); }, [ready]);
   return (
-    <main className="ie-workspace">
+    <>
+    <main className="ie-workspace" inert={imageOpening || Boolean(imageEdit)}>
       {!ready && (
         <output className="wb-loading-veil">正在恢复交互物草稿…</output>
       )}
@@ -469,6 +569,7 @@ export function InteractableEditor() {
           导出 copyWorms 兼容版
         </button>
       </header>
+      {ready && started && <DocumentSyncStatus state={shared} disabled={busy} />}
       {message && (
         <div
           role={error ? 'alert' : 'status'}
@@ -625,6 +726,26 @@ export function InteractableEditor() {
         </aside>
         <Preview object={current} assets={project.assets} edit={edit} />
         <aside className="ie-inspector">
+          <button disabled={!ready || busy || !draftWritable || !current.visual.assetId || imageOpening} onClick={() => void openImageEdit()}>
+            {imageOpening ? '正在保存源工程…' : '局部调整默认图片'}
+          </button>
+          <ImagePropPanel
+            projectId={project.projectId}
+            definitionId={current.definitionId}
+            objectName={current.displayName}
+            imageId={current.visual.assetId}
+            disabled={!ready || busy || !draftWritable}
+            onBusy={setBusy}
+            beforeGenerate={async () => {
+              await persist(true);
+              const url = new URL(location.href);
+              url.searchParams.delete('task');
+              url.searchParams.set('project', latest.current.project.projectId);
+              url.searchParams.set('object', current.definitionId);
+              history.replaceState(null, '', url.pathname + url.search);
+            }}
+            onAdopt={(target, asset) => setProject(applyPropArt(latest.current.project, target, asset))}
+          />
           <PropArtPanel
             projectId={project.projectId}
             definitionId={current.definitionId}
@@ -827,6 +948,8 @@ export function InteractableEditor() {
                 object={current}
                 assets={project.assets}
                 edit={edit}
+                imageBusy={busy || imageOpening || !draftWritable}
+                onEditImage={(slot, index) => void openImageEdit({ kind: 'interactable', documentId: project.projectId, definitionId: current.definitionId, slot, index })}
               />
             </div>
           )}
@@ -893,5 +1016,32 @@ export function InteractableEditor() {
         </aside>
       </div>
     </main>
+    {imageEdit && <ImageEditWorkspace
+      onNavigationChange={writeImageEditNavigation}
+      target={imageEdit.target}
+      initialEditId={imageEdit.navigation?.editId}
+      initialCandidateVersion={imageEdit.navigation?.candidateVersion}
+      readOnly={!imageEdit.guard}
+      beforeApply={async () => {
+        const current = imageEditRef.current;
+        if (!current?.guard || latest.current.project.projectId !== current.guard.document.id || await documentFingerprint(await portableProject(latest.current.project)) !== current.guard.fingerprint)
+          throw new Error('本机交互物在图片调整期间已变化，请保留候选并重新打开。');
+      }}
+      onAdopt={async receipt => {
+        const current = imageEditRef.current;
+        const ref = receipt.target.targetRef;
+        if (!current?.guard || ref.kind !== 'interactable' || current.target.kind !== 'interactable' || !imageTargetEquals(ref, current.target) || typeof receipt.revision !== 'number' || receipt.currentRevision !== receipt.revision)
+          throw new Error('已采用结果与当前物件或共享版本不匹配。');
+        const { document } = await readDocument<InteractableProject>(ref.documentId, receipt.revision);
+        const guard = await shared.acceptAdopted(document, current.guard);
+        const next = { ...current, guard };
+        imageEditRef.current = next;
+        setImageEdit(next);
+        setMessage(ref.slot === 'visual' ? '默认图片已采用，共享工程与本机草稿已同步。' : '指定状态图片已采用；默认图片、其他状态与行为保留。');
+        setError(false);
+      }}
+      onClose={() => { imageEditing.current = false; imageEditRef.current = null; setImageEdit(null); clearImageEditNavigation(); }}
+    />}
+    </>
   );
 }

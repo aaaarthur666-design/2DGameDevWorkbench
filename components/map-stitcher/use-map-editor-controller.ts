@@ -165,6 +165,8 @@ export function useMapEditorController() {
     '导入地图后选择图片视图，或打开已有状态继续编辑。',
   );
   const [busy, setBusy] = useState(false);
+  const pendingOperations = useRef(0);
+  const [imageEditLocked, setImageEditLocked, imageEditLockedRef] = useLiveState(false);
   const [fineSession, setFineSession] = useState<{
     ticket: ImageWriteTicket;
     original: ImageAsset;
@@ -238,8 +240,12 @@ export function useMapEditorController() {
   };
   const perform = (action: () => unknown) => {
     try {
+      if (imageEditLockedRef.current) throw new Error('请先完成或关闭当前图片调整。');
       const result = action();
-      if (result instanceof Promise) void result.catch(report);
+      if (result instanceof Promise) {
+        pendingOperations.current++;
+        void result.catch(report).finally(() => { pendingOperations.current--; });
+      }
     } catch (error) {
       report(error);
     }
@@ -265,6 +271,7 @@ export function useMapEditorController() {
       setSelection({ kind: 'tile', tileKey: current.tileKey });
   };
   const commit = (next: MapDocument, label: string) => {
+    if (imageEditLockedRef.current) throw new Error('图片调整期间不能修改地图内容。');
     historySelections.current.set(history.document, selectionRef.current);
     history.commit(next, label);
     publish();
@@ -420,6 +427,29 @@ export function useMapEditorController() {
       lockVersion: lockVersions.current[layer],
     };
   };
+  const assertImageEditTicket = (ticket: ImageWriteTicket) => assertImageWrite(
+    ticket, history.document, epoch.current, imageLocksRef.current[ticket.layer], lockVersions.current[ticket.layer],
+  );
+  const beginImageEdit = (selection?: { tileKey: string; layer: ImageWriteTicket['layer'] }) => {
+    if (busy || pendingOperations.current > 0 || imageEditLockedRef.current || fineSession) throw new Error('请先完成当前地图操作。');
+    if (queue.snapshot().active > 0 || queue.snapshot().jobs.some(job => ['pending', 'running'].includes(job.status)))
+      throw new Error('请先完成或取消地图队列，再调整单张图片。');
+    const tileKey = selection?.tileKey || selectedKey, layer = selection?.layer || mapLayerRef.current;
+    if (!tileKey || !isEditableMapLayer(layer)) throw new Error('请选择真实源图片，Mask 为只读。');
+    const ticket = imageTicket(tileKey, layer);
+    if (!ticket.before) throw new Error('该图片层没有源图片。');
+    resetSession();
+    setImageEditLocked(true);
+    return ticket;
+  };
+  const restoreAdoptedImage = (loaded: FrameRoninEditorSnapshot, ticket: ImageWriteTicket) => {
+    assertImageEditTicket(ticket);
+    epoch.current++;
+    resetSession();
+    resetDocument({ tiles: loaded.tiles, shapes: loaded.shapes });
+    setHint('局部调整已采用；共享源包和本机地图已同步。');
+    return history.getSnapshot().revision;
+  };
   const applyAssets = (
     updates: Array<{
       ticket: ImageWriteTicket;
@@ -506,7 +536,7 @@ export function useMapEditorController() {
     setFitRequest((value) => value + 1);
     setHint('已新建空白项目。生成原图或导入中心地图图片即可开始。');
   };
-  const importImages = async (files: File[], origin: ImageOrigin = 'uploaded') => {
+  const importImages = async (files: File[], origin: ImageOrigin = 'uploaded', generation?: ImageAsset['generation']) => {
     if (!files.length) return;
     await saveBeforeReplacement('map-stitcher');
     invalidate();
@@ -515,6 +545,7 @@ export function useMapEditorController() {
     const assets: ImageAsset[] = [];
     try {
       for (const file of files) assets.push(await fileToAsset(file));
+      if (generation) assets[0].generation = generation;
       if (token !== epoch.current) throw new Error('导入已被新操作取消。');
       const center = { ...createFrameRoninCenterTile(assets[0]), imageOrigins: { overall: origin } };
       const next = [
@@ -1093,6 +1124,7 @@ export function useMapEditorController() {
       run: (job, signal) =>
         generateLayer(job.tileKey, job.layer, signal, job.request),
       canStart: (job, active) => {
+        if (imageEditLockedRef.current) return '单张图片调整期间暂停地图队列。';
         if (job.layer === 'overall') {
           if (!job.request)
             return '旧任务没有提示词快照，请取消后重新加入生成队列。';
@@ -1348,7 +1380,14 @@ export function useMapEditorController() {
     api,
     hint,
     setHint,
-    busy,
+    busy: busy || imageEditLocked,
+    imageEditLocked,
+    beginImageEdit,
+    beginImageHistory: () => setImageEditLocked(true),
+    assertImageEditTicket,
+    captureImageTicket: imageTicket,
+    restoreAdoptedImage,
+    endImageEdit: () => setImageEditLocked(false),
     fineSession,
     startFineEdit,
     closeFineEdit,

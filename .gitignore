@@ -117,6 +117,7 @@ logs/
 !/docs/godot-delivery.md
 !/docs/interactable-editor.md
 !/docs/internal-imports.md
+!/docs/image-editing.md
 !/docs/map-stitcher.md
 !/docs/operations-manual.md
 !/docs/prop-art.md

@@ -39,7 +39,8 @@ import {
 } from './model.mjs';
 import { createScenePackage, readScenePackage } from './package.mjs';
 
-export type SavedScene = { scene: Scene; backupRevision: number | null };
+export type SceneSync = { remoteRevision: number | null; serverSynced: boolean };
+export type SavedScene = { scene: Scene; backupRevision: number | null; sync?: SceneSync };
 export const sceneHref = (id: string) =>
   `${workbenchModules.find((module) => module.id === 'scene-composer')!.href}?scene=${encodeURIComponent(id)}`;
 export function sceneItem(scene: Scene): WorkItem {
@@ -57,10 +58,10 @@ export function sceneItem(scene: Scene): WorkItem {
     userInitiated: true,
   };
 }
-export async function saveScene(scene: Scene, backupRevision: number | null) {
+export async function saveScene(scene: Scene, backupRevision: number | null, sync?: SceneSync) {
   await saveWorkspaceDraft(
     `scene:${scene.id}`,
-    { scene: validateScene(scene), backupRevision },
+    { scene: validateScene(scene), backupRevision, sync },
     [sceneItem(scene)],
     'scene-current',
   );
@@ -78,6 +79,7 @@ export async function loadScene(id?: string) {
   return {
     scene: validateScene(saved.scene),
     backupRevision: saved.backupRevision ?? null,
+    sync: saved.sync,
   };
 }
 export async function readLocalMaps() {

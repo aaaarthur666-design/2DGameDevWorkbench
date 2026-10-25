@@ -24,6 +24,10 @@ assert.equal(before.presentation, null);
 for (const input of [{}, { taskId: 'x', capabilityId: 'reference-art' }, { capabilityId: 'unknown' },
   { capabilityId: 'reference-art', candidateIndex: 2 }, { capabilityId: 'reference-art', url: 'https://evil.invalid' }]) await assert.rejects(present(input));
 for (const url of ['//evil.invalid', '/api/secret', '/tools/map-stitcher?apiKey=secret', '/tools/map-stitcher#secret', '/\\evil.invalid']) assert.throws(() => previewPath(manifest, url));
+assert.equal(previewPath(manifest, '/tools/map-stitcher?imageTask=image-a'), '/tools/map-stitcher?imageTask=image-a');
+assert.equal(previewPath(manifest, '/tools/map-stitcher?map=map-a&imageEdit=edit-a&imageCandidate=2'), '/tools/map-stitcher?imageCandidate=2&imageEdit=edit-a&map=map-a');
+assert.equal(previewPath(manifest, '/tools/interactable-editor?document=shared-object'), '/tools/interactable-editor?document=shared-object');
+assert.equal(previewPath(manifest, '/tools/scene-composer?document=shared-scene'), '/tools/scene-composer?document=shared-scene');
 await assert.rejects(beat({ ...page, pixels: 'unapproved draft upload' }));
 const queued = await present({ capabilityId: 'reference-art' });
 assert.equal(queued.state, 'waiting_for_frontend');

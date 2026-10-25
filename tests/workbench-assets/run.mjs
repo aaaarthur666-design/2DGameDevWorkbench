@@ -667,6 +667,23 @@ try {
   await assert.rejects(agentRequest(manifest, 'assets', {}), /回收站记录无法读取/);
   await assert.rejects(manageAssets(manifest, { operation: 'trash', assetIds: [sceneId] }), /回收站记录无法读取/);
   await writeFile(trashIndex, validTrash);
+  for (const kind of ['background', 'prop']) {
+    const imageId = `image-assets-${kind}`;
+    await task(imageId, 'image-assets', { operation: kind === 'prop' ? 'generate-prop' : 'generate-background', name: `Image 2.5 ${kind}` }, {
+      'image.png': png,
+      'provider-response.png': png,
+      'result.json': JSON.stringify({ kind, image: 'image.png', width: 128, height: 128, sha256: createHash('sha256').update(png).digest('hex'), model: 'gpt-image-2.5-sunburst' }),
+    });
+    const imageAsset = (await agentRequest(manifest, 'asset', { assetId: `image:${imageId}` })).asset;
+    assert.equal(imageAsset.kind, kind === 'prop' ? 'prop' : 'map');
+    assert.match(imageAsset.editorPath, new RegExp(`\\?imageTask=${imageId}$`));
+    assert.equal(imageAsset.readiness.filesAvailable, true);
+    const imported = await buildAssetImport(manifest, { assetId: imageAsset.id, revision: imageAsset.revision, purpose: kind === 'prop' ? 'image' : 'map' });
+    const imageZip = await JSZip.loadAsync(imported.bytes);
+    const imageImport = JSON.parse(await imageZip.file('import.json').async('string'));
+    assert.equal(imageImport.files.length, 1, 'Only the adopted PNG is an image source, not the original provider copy.');
+    assert.deepEqual(await imageZip.file(imageImport.files[0].path).async('nodebuffer'), png);
+  }
   console.log('Recoverable asset trash: five kinds, aliases, candidate isolation, atomic batch, durable MCP/HTTP views, pagination, offline restore and corrupt index passed; sources unchanged.');
   console.log(
     'Assets: complete record scan, pagination, exact candidates, provenance deduplication, project revisions, file hashes, missing/escaped files, offline coverage, MCP/HTTP parity and actual ZIP bytes/candidate isolation/download errors passed; zero generation.',

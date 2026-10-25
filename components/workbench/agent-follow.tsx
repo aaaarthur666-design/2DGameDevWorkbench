@@ -45,7 +45,7 @@ export function AgentFollow() {
     const snapshot = () => {
       const sessions = getEditorSessions();
       const url = new URL(location.href);
-      const allowed = ['task', 'job', 'candidate', 'character', 'asset', 'project', 'object', 'artTask', 'scene', 'tab', 'importAsset', 'importPurpose', 'handoff', 'origin', 'fit', 'map', 'saved'];
+      const allowed = ['task', 'job', 'candidate', 'character', 'asset', 'project', 'object', 'artTask', 'imageTask', 'document', 'scene', 'tab', 'importAsset', 'importPurpose', 'handoff', 'origin', 'fit', 'map', 'saved'];
       for (const key of new Set(url.searchParams.keys())) if (!allowed.includes(key)) url.searchParams.delete(key);
       return { pageId, ...(sessionId ? { sessionId } : {}), viewPath: url.pathname + url.search, visible: document.visibilityState === 'visible',
         focused: document.hasFocus(), following: following.current,

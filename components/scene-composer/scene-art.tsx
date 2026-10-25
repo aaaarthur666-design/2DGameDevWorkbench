@@ -2,15 +2,14 @@
 import { useEffect, useState } from 'react';
 import type { Shape } from '@/features/interactable-editor/contract.mjs';
 import {
-  initialState,
-  stateAppearance,
   type SimInstance,
 } from '@/features/interactable-editor/simulator.mjs';
 import {
-  instanceOrigin,
   type Instance,
   type Material,
 } from '@/features/scene-composer/model.mjs';
+import { objectRenderState } from '@/features/scene-composer/render-model.mjs';
+export { instanceRect } from '@/features/scene-composer/render-model.mjs';
 
 export function ShapeOutline({
   shape,
@@ -50,19 +49,6 @@ export function ShapeOutline({
     />
   );
 }
-export function instanceRect(instance: Instance, material: Material) {
-  const v = material.project.objects[0].visual,
-    p = instanceOrigin(instance),
-    sx = instance.scale * (instance.flipH ? -1 : 1);
-  const w = v.width * v.scale * instance.scale,
-    h = v.height * v.scale * instance.scale;
-  return {
-    x: p.x + v.offset.x * sx - w / 2,
-    y: p.y + v.offset.y * instance.scale - h / 2,
-    width: w,
-    height: h,
-  };
-}
 export function ObjectArt({
   instance: i,
   material,
@@ -80,28 +66,8 @@ export function ObjectArt({
   preview?: boolean;
   art?: boolean;
 }) {
-  const o = material.project.objects[0],
-    v = o.visual;
-  const appearance = stateAppearance(o, simulated?.state || initialState(o));
-  const completedHidden =
-    simulated?.state.completed && o.completion !== 'remain';
-  const visible = (appearance.visible ?? v.visible) && !completedHidden;
-  const clipName =
-    simulated?.animation?.name || appearance.animation || v.idleAnimation;
-  const clip = v.clips.find((c) => c.name === clipName);
-  let frame = clip?.frames[0];
-  if (clip) {
-    const total = clip.frames.reduce((sum, f) => sum + f.duration, 0);
-    let t = Math.max(0, time - (simulated?.animation?.started || 0)) * clip.fps;
-    t = clip.loop ? t % total : Math.min(t, total - 0.00001);
-    for (const f of clip.frames) {
-      frame = f;
-      if (t < f.duration) break;
-      t -= f.duration;
-    }
-  }
-  const assetId = frame?.assetId || appearance.assetId || v.assetId;
-  const asset = material.project.assets.find((a) => a.id === assetId);
+  const render = objectRenderState(i, material, { time, simulated, preview });
+  const { object: o, visual: v, appearance, completedHidden, frame, asset, rgb } = render;
   const imageSource = asset?.source;
   const [dimensions, setDimensions] = useState({
     width: v.width,
@@ -124,15 +90,10 @@ export function ObjectArt({
       alive = false;
     };
   }, [imageSource]);
-  const p = instanceOrigin(i),
-    region = frame?.region;
-  const rgb = [1, 3, 5].map(
-    (index) =>
-      parseInt((appearance.tint || v.tint).slice(index, index + 2), 16) / 255,
-  );
+  const region = frame?.region;
   return (
     <g
-      transform={`translate(${p.x} ${p.y}) scale(${i.scale * (i.flipH ? -1 : 1)} ${i.scale})`}
+      transform={render.outerTransform}
     >
       {shapes && !(preview && completedHidden) && (
         <g pointerEvents="none">
@@ -145,8 +106,8 @@ export function ObjectArt({
       )}
       {art && (
         <g
-          opacity={visible ? 1 : preview ? 0 : 0.2}
-          transform={`translate(${v.offset.x} ${v.offset.y + (v.float ? Math.sin(time * 2) * 5 : 0)}) scale(${v.scale * (v.flipH ? -1 : 1)} ${v.scale * (v.flipV ? -1 : 1)})`}
+          opacity={render.opacity}
+          transform={render.innerTransform}
         >
           <defs>
             <filter id={`scene-tint-${i.id}`} colorInterpolationFilters="sRGB">
@@ -184,8 +145,7 @@ export function ObjectArt({
               width={v.dot ? 10 : v.width}
               height={v.dot ? 10 : v.height}
               rx={v.dot ? 5 : 3}
-              fill="var(--theme-cyan)"
-              filter={`url(#scene-tint-${i.id})`}
+              fill={render.placeholderFill}
             />
           )}
         </g>

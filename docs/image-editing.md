@@ -1,0 +1,116 @@
+# 共享图片局部调整
+
+第七阶段按批交付。7A 已交付本地编辑服务及 MCP/CLI/HTTP 入口；7B 已接共用工作区、宿主保存协调及采用后单图恢复；7C 已实现高层 AI 局部修改、冻结请求、候选证据与精确会话深链。7C 初始实现使用本地模拟验证；真实模型品质和引擎验收按具体素材分别记录。7D 已接指定状态槽及场景引用：选中实例使用独立派生素材，其他共享实例保留；地图快照仅在验证单源像素映射后开放，图层 PNG 与嵌入源 ZIP 同一事务保存。不能确认映射的派生或合成层只读，使用源地图入口继续。
+
+## 共用本地工作区（7B）
+
+| 从哪里进入 | 修改范围 |
+| --- | --- |
+| 地图编辑器选中有真实源图的卡片和图片视图，点“局部调整本层” | 当前图块的 overall / surface / object / black / white；Mask 只读 |
+| 交互物编辑器点“局部调整默认图片” | 当前定义的默认静态图片；状态和序列条目也有独立静态图片入口 |
+| 场景组装选中单个物件或地图层，点局部调整 | 指定实例的静态默认 / 状态槽，或经源包映射验证的单张地图快照；范围在入口显示 |
+| 独立图片任务预览或资产库 `image:` 素材详情，点“局部调整图片” | 保存新图片变体，原任务和原素材不覆盖；之后仍需明确采用到工程 |
+
+地图和交互物入口先等待当前工程持久保存到 Bridge；保存期间又有修改时继续保存，直到取得确切源版本。失败或冲突会保留本机草稿，不打开旧版本图片。工作区打开后，宿主暂停交叉编辑和离页；地图还保留原图片写入 ticket，并检查工程 revision / 源包哈希，类型锁仍覆盖全部图块。地图的同卡片其他图片可作只读上下文，不进入选中图片的输出。
+
+可用画笔、橡皮、取色、矩形 / 连通选区、可见像素 / 包围框、命名区域，以及本地清理、换色、填充、擦除、移动和区域恢复。滚轮缩放、中键或平移工具拖动只改变视图。笔划历史与选区历史分开；按“保存笔划为候选”才把手工修改提交为服务端候选。候选和本地操作使用本地 `process-image` 任务，不调用模型、不需要 Key 或 Python。
+
+“原始图片”固定显示会话开始时的源图；“当前候选”显示所选候选与尚未保存的笔划；“差异高亮”相对会话原图比较四个 RGBA 通道，包含不可见 RGB 变化。原图、差异和地图上下文只读，不将叠加显示当作源像素。采用前须先保存或舍弃笔划，明确选择完成候选。采用成功后宿主读取回执中的准确服务端版本，并更新本机工程和自动保存基线；遇到本机变化、较新远端版本或读取失败时不以旧草稿覆盖已采用结果。应答不明时重试原命令，不能据此另建提交。
+
+采用后旧会话保留候选与恢复入口；继续精修须点“基于当前图片继续精修”，使用最新图片建立新会话。历史会话需显式选择，不把同名旧源自动当成当前源。历史来源不满足当前写入 guard 时只能查看；锁定、来源变化或宿主保存冲突不授权重绑图片。
+
+未保存笔划另有当前浏览器 origin 的 IndexedDB 恢复副本，约 600 ms 后保存；只保存补丁和基准身份，不是服务端候选，也不跨浏览器同步。单份草稿上限 2 MiB、最多 12 份，笔划提交仍受 512 KiB 补丁限制；存储不可用、超过限制或来不及落盘时不能承诺恢复。恢复前核对基准像素哈希。“舍弃笔划并关闭”删除当前笔划副本，已保存候选和采用记录仍保留。重要修改应先保存为候选，不能用本机草稿代替持久保存。
+
+## AI 局部修改（7C）
+
+在同一工作区切换到“AI 局部修改”。“添加选区 / 减去选区”只修改可编辑蒙版，不改变 RGBA；像素画笔与橡皮属于“本地精修”。笔刷、矩形、连通选择和命名区域共用选区历史。先核对范围：工作区初始选区可能是整图，若要从空白开始画局部范围，先清空选区再添加。空范围不能提交；整图范围会明确显示。增减笔刷通过 `mask-runs` 的有序、不重叠 `{startPixel,length}` spans 保存硬边界，最多 65,536 段，不是软边蒙版或自动语义分割。
+
+填写最多 12,000 字修改描述，可选最多 8 张 PNG/JPEG/WebP 参考图；网页单张上限 30 MiB、参考合计上限 32 MiB，服务端仍检查源图、蒙版与参考总计 80 MiB。只上传明确选择的参考，地图上下文不会自动发送。先保存或舍弃未保存像素笔划，再点“生成 AI 候选（调用模型）”。本地模式不需要 Key；AI 使用既有 GPT Image 2.5 设置并可能消耗外部额度，不会因本地操作失败自动启动。
+
+请求固定所选 `baseCandidateVersion`、描述、参考真实字节、源版本与区域；参考与配方写入不可变快照，原文件之后修改不改变在途请求。任务身份在 adapter 发出请求前持久保存。返回 running 后只查询原 task / editId；断连、Bridge 重启、超时或未知提交都不会自动重发模型。重试同一动作须保留 commandId 和原载荷；配置补齐也不会续发旧任务。关闭窗口不保证撤销已送出的请求。尚未提交的 AI 描述、参考选择与未保存选区仅属当前页面，关闭前提示不等于已经持久保存。
+
+AI 不改变源尺寸：当前要求宽高均为 16 的倍数、655,360–8,294,400 像素、最长边不超过 3840、宽高比在 1:3–3:1 内。不符合尺寸的小像素图仍可本地精修，不会自动放大。`inspect` 的 `aiEdit` 与 `operationConstraints` 返回实际可用性和原因。AI 可选择保留原图透明度：网页默认开启；API 使用 `constraints.preserveAlpha=true`，未提供时保持原有默认 false。这里的“原图”指本次 `baseCandidateVersion` 的基准图片，连续编辑不会强行恢复会话最初的 Alpha。结果返回后从基准逐像素复制全部 Alpha，跳过低 Alpha 清理，并对最终 PNG 校验 Alpha 哈希；不会改变尺寸或额外调用模型。关闭选项才允许模型改变选区内透明度。该选项不保证颜色、纹理、内部结构或接缝。
+
+候选先经过本地合成：选区外从本步基准逐字节复制解码 sRGB/RGBA8，包含隐藏 RGB，再核对编码后结果；选区内轮廓、接缝、颜色和碰撞适配仍需查看。证据分别报告本步相对基准的变化、保护区变化和累计相对会话原图的变化；累计区域外变化可能来自此前已完成的编辑，不能混为本步越界。原始服务响应、可采用图片、哈希、模型与处理证据分别保留。完成候选不会自动采用或通过真实画质验收。
+
+任务与 `presentation` 保留精确 editId / candidateVersion；`workbench_present({editId,candidateVersion})` 及 `?imageEdit=...&imageCandidate=...` 打开原会话与所选候选，不以最新候选替代指定版本。在途候选完成时可继续读取它，已有未保存笔划不会被轮询覆盖。来源或宿主 guard 不可写时只读历史，不隐式建立新会话、改绑默认图或采用。状态槽及场景引用也使用同一精确会话 / 候选入口；外部绑定变化导致当前 guard 失效时只读历史。本会话已知采用绑定的恢复仍按下文规则校验。
+
+## 精确选择与主流程
+
+默认使用四个高层工具，另有一个会话读取工具。完整字段由 [共享契约](../lib/workbench/image-edit-contract.mjs) 定义；[manifest](../workbench/manifest.json) 登记工具、目录和阶段范围。
+
+| 工具 | 用途 |
+| --- | --- |
+| `workbench_inspect_image_target` | 按范围发现已保存目标，或读取精确源图、版本、PNG/源编码哈希、RGBA 哈希和可用操作 |
+| `workbench_resolve_image_region` | 对精确源版本解析几何、Alpha、连通颜色或已有命名区域；`saveAs` 配合 `commandId` 显式保存名称 |
+| `workbench_edit_image_region` | 以解析后的区域创建候选；本地操作使用 `image-assets/process-image`，显式 `ai-edit` 使用 `image-assets/edit-image`，保留冻结配方与来源 |
+| `workbench_apply_image_candidate` | 将指定完成候选采用到原目标，重新检查版本、源哈希、锁和槽位身份 |
+| `workbench_get_image_edit` | 读取候选历史、任务状态和采用记录；不重新提交生成 |
+
+目标是 `map-layer`（工程、图块和 overall/surface/object/black/white）、`interactable`（文档、物件及静态外观槽）、`image-task`（已完成图片任务）、`scene-layer`（通过源包映射检查的地图快照层）或 `scene-instance`（场景中指定实例的静态图片槽）。浏览器中尚未保存的草稿不在发现范围内。多个匹配项需要选择具体目标，不自动采用第一项。
+
+修改调用必须提供 `expectedRevision`、`expectedSha256` 和稳定的 `commandId`。同 ID、同载荷返回原任务或采用回执；同 ID、不同载荷返回冲突。已有编辑会话还要求 `expectedEditRevision` 与 `baseCandidateVersion`；原图基准使用 `source`。产生候选和采用候选是两个独立步骤。
+
+CLI 使用同一服务，例如：
+
+```text
+npm run workbench -- agent image-inspect --input work/inspect-image.json --json
+npm run workbench -- agent image-resolve --input work/resolve-image.json --json
+npm run workbench -- agent image-edit --input work/edit-image.json --json
+npm run workbench -- agent image-apply --input work/apply-image.json --json
+npm run workbench -- agent image-session-get --input work/read-edit.json --json
+```
+
+Bridge 接口为 `POST /v1/agent/image-inspect|image-resolve|image-edit|image-apply|image-session-create|image-session-get`；网页代理使用 `/api/workbench/image-edit/<后缀>`。MCP、CLI、网页连到同一个 canonical Bridge。会刷新候选的读取也在 Bridge 中执行；不可用时不退回客户端文件直写。和共享文档一样，不支持多个独立 Bridge 同时写同一数据目录。
+
+## 像素、区域与操作
+
+保留实际 PNG/JPEG/WebP 源文件。`sha256` 表示源编码字节，`rgbaSha256` 表示解码后的 straight-alpha、sRGB、RGBA8；两者不能互换。`includePixels` 显式返回 `rgbaBase64`、字节长度和尺寸。前端显示可经过 Canvas，权威像素由服务返回的 RGBA 缓冲提供，避免浏览器重编码丢掉 Alpha=0 像素中的 RGB。历史列表不附带每张图的像素。
+
+区域支持整图、整数矩形、像素中心判定的多边形、`mask-runs` 硬边蒙版、Alpha 包围矩形、真实 Alpha 选择和四邻接连通颜色。Alpha 包围矩形不是语义分割或主体精确轮廓。连通颜色以种子 RGBA 为基准逐通道比较，包括透明像素中的 RGB。空区域、越界或不支持的参数会拒绝。命名区域绑定目标、源版本及哈希；源改变后需要重新检查并解析。
+
+本地操作包括 Alpha 噪点清理、精确 RGB 替色、连通填充、擦除、矩形移动、从同会话原图/旧候选取样恢复，以及手工像素补丁。首版移动只支持完整矩形且不能越界；有效区域是移动前后矩形的并集。输出尺寸保持不变，保护区的四个通道逐字节一致。`preserveAlpha` 为真时，任何 Alpha 变化均拒绝。
+
+像素补丁使用排序、无重叠的 `spans`：`startPixel`、`beforeRgbaBase64`、`afterRgbaBase64`，并携带基准 `baseRgbaSha256`。先检查全部 before、边界和区域，再原子应用。before+after 解码总量最多 512 KiB；大面积操作用填充、移动等声明式操作。大配方存不可变文件，候选历史只保留摘要和引用，命令账本只保留任务/候选身份。
+
+核心通过[薄适配器](../features/image-edit/core.mjs)直接复用角色画布的 `pixel_editor_core.js`，不依赖 DOM、Python 或 Key。大图填充使用有界 typed-array 队列，不构建每像素 JavaScript 历史对象。最长边 3840、最多 8,294,400 像素；局部编辑不会为了模型尺寸自动放大素材。
+
+本地 `process-image` 允许现有不透明物件以及明确擦除后得到的空图。AI 编辑沿用现有源的透明 / 不透明策略，不强迫已有不透明外观变成透明物品；新透明物品生成仍检查真实透明通道与可见内容。本地候选默认关闭额外 Alpha 清理；AI 开启透明度保持时跳过清理，包括原有 Alpha=1 像素；关闭时沿用原透明处理策略。保护区始终保持全部 RGBA。
+
+## 定点采用与恢复边界
+
+地图采用只替换选定图块和图片类型的源字节；其余源图片、坐标、区域、碰撞、拼接参数和 `surfaceIsDraft` 保留。共享同一图片文件的多个引用会为所选项拆出新文件。锁定仍覆盖该图片类型的所有图块。旧预览失效并在编辑器重建；修改 black/white 不会自动重新提取并覆盖 object。工程记录与采用回执一起发布，响应丢失后读取同一采用版本。
+
+交互物采用保留工程和物件身份、旧素材、行为及其他槽位。默认图采用清空默认 idle/focus 动画选择；状态图采用只修改该槽位。状态槽绑定源文档版本及 fingerprint，序列重排不能把旧结果写到新条目。默认图另外用定义、assetId 和图片哈希识别绑定；采用 / 恢复时仍校验当前文档版本，位置、尺寸等无关变更不会被旧外观快照覆盖。配置了状态动画或默认 idle 动画的状态槽只读，不以预览此刻是否播放为依据。
+
+`restore-region` 从同源版本会话的原图或完成候选取样，只恢复选区并生成待采用候选。“恢复会话原图”则把会话原始像素经本地处理保存为新 PNG 候选，再采用到同一目标；不是回滚整份工程，也不保证恢复原 JPEG/WebP 的编码字节。API 使用 `image-apply` / `workbench_apply_image_candidate` 的 `candidateVersion="source"`，或指定历史完成候选；均须当前目标 revision、源哈希和新 commandId。服务端只接受会话原绑定或本会话曾采用的已知图片绑定；外部替换图片、锁定或槽位变化时拒绝，保留历史供检查。
+
+地图恢复保留当前其他图片、几何、区域与锁；交互物恢复保留行为、范围、碰撞、其他槽位及当前无关外观参数，默认静态图采用仍会停用默认 idle/focus 动画选择。独立任务源始终不可变，采用或恢复只得到新素材变体。场景局部采用仅更新指定快照或实例，原上游工程及已交付游戏资源保持原版本。
+
+地图宿主仍沿用打开工程后保存的既有行为：缺失的预览可在打开后补齐，重新挂载也可能新增一份内容相同的版本。因此 revision 增加不一定代表源图片或几何变化；应核对源包内容与图片哈希，不能只凭计数判断发生回退。此行为不等于采用后闲置时持续写回旧图片。
+
+## 状态与证据
+
+会话、命名区域、配方、命令账本和不可变快照在 `workspace.imageEditDirectory`（默认 `work/image-edits`）；候选仍使用标准任务和输出目录。`running`、`awaiting_configuration`、`attention_required` 都不是可采用的完成结果。任务身份在 adapter 执行前写入持久账本；中断且身份未知时报告需要检查，不另建任务重试。临时租约失效的派生诊断仍允许刷新迟到的完成结果。
+
+运行 `npm run test:image-edit` 检查核心、目标、服务和协议；`node tests/image-edit/ai.mjs` 检查 AI 本地模拟集成，`node tests/image-edit/ai-recovery.mjs` 检查冻结引用、断连、Bridge 重启、持久去重与迟到完成；`node tests/image-edit/frontend.mjs` 和 `node tests/editor-documents/frontend-sync.mjs` 检查前端与保存 / 采用同步；`node Tools/SpritePipeline/tests/test_pixel_editor_core.mjs` 检查原角色核心。7A/7B/7C 历史证据保持原日期与范围；不能把后续素材实测写成当前代码测试的新模型调用。本地像素检查、模拟供应商、真实图像质量和 Godot 运行证据不能互相替代。遗留地图生成、拼接与扩展仍遵循手工生产边界。
+
+## 状态与场景引用（7D）
+
+交互物状态和序列入口传入完整 `documentId + definitionId + slot + index`。状态继承默认图时，采用只创建该状态自己的图片绑定；默认图和其他条目保留。序列重排、槽位变动、锁变化或版本冲突会拒绝旧写入，候选和未保存笔划留在原会话。
+
+`scene-instance` 目标使用 `{documentId,instanceId,slot,index?}`，默认 `slot=visual` 不带 index，状态 / 序列必须明确 index。返回 `scope=single-instance`、`affectedInstanceIds` 和 `sharedInstanceCount`。采用创建独立素材并仅重绑所选实例，原素材、同素材的其他实例、位置、锚点、缩放、排序、联动、碰撞与行为保持。场景动画外观只读；不能以当前播放帧代替静态源。
+
+`scene-layer` 验证嵌入的 Forge map-project 或实际 Pixelwork v2 源包：仅有中心图块 `0,0`，其 `x/y=0`、`w/h=1`，场景地图原点为零，无羽化 / 遮挡扣除 / 调整 / 顶层派生。场景 `map.layers` 中的每一层（包括编辑时隐藏或不参与导出的层）都须能映射到明确的 overall / surface / object 源槽，真实尺寸及解码 RGBA 与源包一致；早期 `overall` 层 ID 也可识别。碰撞须一致，选中场景层及其源图片类型均未锁定；场景统一偏移可保留。只有通过全部验证才可编辑。多图块、旧像素值 `w/h`、未知格式、缺失或损坏源包、冲突来源和派生层保持只读；隐藏不一致图层不能绕过验证。已有层图片仍可检查，并提供编辑地图源文件入口；损坏或缺失源包本身不保证可以打开。此路径不修改上游地图。
+
+采用在同一文档版本事务中修改选中 PNG 和其嵌入源文件引用，保留其他源图片字节；过时预览和 Pixelwork mask 缓存失效后由原编辑器重建。原图恢复仍是新版本，只有原绑定或本会话已采用的绑定可以恢复；相同像素不意味着来源绑定相同。
+
+场景源包重新导入、Godot 包图片和共享文档必须对应同一采用版本。导出文件检查与实际 Godot 运行分别报告；编辑图片不会自动同步独立游戏目录。
+
+## 透明度保持与界面回归（2026-10-24 修订）
+
+透明度保持在本地处理阶段执行，保留源 PNG、模型原始输出和派生 PNG 的独立身份。`processing-report.json` 中的 `alphaPreservation` 给出 `expectedAlphaSha256`、`actualAlphaSha256` 和 `changedAlphaPixels`；最后一项必须为 0。`alphaCleanup.threshold=0` 与 `skippedReason=preserve-alpha` 表明本次没有清理原有低 Alpha 边缘。透明度开关也属于冻结请求，同 commandId 改变开关会被拒绝，不会重发模型。
+
+已保存候选与恢复原图的上下文预览直接使用经过哈希校验的编码图片，避免等待 Canvas.toBlob；未保存笔划的预览按控制器、版本和显示模式失效，迟到回调不能覆盖当前画面。建立新会话后地址栏写入新 editId 与 source；切换候选或跟随在途候选时写入确切版本。更新保留宿主 document/map/asset 参数、页面锚点和路由状态，不新增浏览历史；关闭工作区清除图片参数。
+
+回归命令：`npm run test:image-assets`、`npm run test:image-edit`、`npm run test:editor-documents`。浏览器回归先运行 `node tests/image-edit/ui-server.mjs`，再在它打印的独立 origin 打开 `/tests/image-edit/workspace-regression.html`。页面使用真实 React 工作区和本地 API 桩，故意不完成 Canvas 编码，验证恢复画面、新会话链接、重开同会话、透明度默认值及关闭后的请求。结果页区分 fixture 请求和真实请求；全部请求均在本机拦截。该维护验证不需要新增付费调用，也不替代模型品质或 Godot 验收。
