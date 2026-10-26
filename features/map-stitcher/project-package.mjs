@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { z } from 'zod';
+import { imageBytesSha256 } from '../image-assets/browser-client.mjs';
 
 export const MAX_MAP_PROJECT_BYTES = 256 * 1024 * 1024;
 export const MAX_MAP_PREVIEW_BYTES = 2 * 1024 * 1024;
@@ -16,6 +17,10 @@ const image = z.object({
   size: z.number().int().positive().max(MAX_MAP_PROJECT_BYTES),
   width: finite.positive().max(32768),
   height: finite.positive().max(32768),
+  generation: z.object({
+    sourceTaskId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,199}$/i),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).optional(),
 });
 const schema = z.object({
   format: z.literal('forge-map-project'),
@@ -101,7 +106,10 @@ export async function createMapProjectPackage(draft, preview) {
       if (total > MAX_MAP_PROJECT_BYTES)
         throw new Error('地图工程超过 256 MB。');
       const path = `images/${serial++}.bin`;
-      zip.file(path, await asset.file.arrayBuffer());
+      const bytes = new Uint8Array(await asset.file.arrayBuffer());
+      if (asset.generation && await imageBytesSha256(bytes) !== asset.generation.sha256)
+        throw new Error('地图生成图片已变化，请将修改后的图片作为新素材导入。');
+      zip.file(path, bytes);
       images[key] = {
         path,
         name: asset.name,
@@ -109,6 +117,7 @@ export async function createMapProjectPackage(draft, preview) {
         size: asset.file.size,
         width: asset.width,
         height: asset.height,
+        ...(asset.generation ? { generation: asset.generation } : {}),
       };
     }
     tiles.push({ ...tile, images });
@@ -178,6 +187,8 @@ export async function readMapProjectPackage(bytes) {
         throw new Error('地图工程缺少完整图片。');
       if (!images.has(asset.path))
         images.set(asset.path, await entry.async('uint8array'));
+      if (asset.generation && await imageBytesSha256(images.get(asset.path)) !== asset.generation.sha256)
+        throw new Error('地图生成图片与来源哈希不符。');
     }
   let preview;
   const previewEntry = zip.file('preview.png');

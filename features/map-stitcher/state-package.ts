@@ -1,4 +1,5 @@
 import { readAdditionalPrompt } from './generation-request';
+import { imageBytesSha256, readImageGeneration } from '../image-assets/browser-client.mjs';
 import JSZip from 'jszip';
 import {
   blobToAsset,
@@ -67,6 +68,10 @@ export async function createPixelworkStatePackage(
   const source = sourceTile?.images.overall;
   if (!sourceTile || !source)
     throw new Error('中心卡片缺少整体层，无法保存状态');
+  for (const tile of snapshot.tiles)
+    for (const asset of Object.values(tile.images))
+      if (asset?.generation && await imageBytesSha256(new Uint8Array(await asset.file.arrayBuffer())) !== asset.generation.sha256)
+        throw new Error('地图生成图片已变化，请将修改后的图片作为新素材导入。');
 
   const zip = new JSZip();
   const imageFolder = zip.folder('images');
@@ -78,6 +83,7 @@ export async function createPixelworkStatePackage(
     preferredName: string,
     width: number,
     height: number,
+    generation?: ImageAsset['generation'],
   ): SavedImageReference => {
     const fileName = uniqueImageName(usedPaths, preferredName, blob.type);
     const path = `images/${fileName}`;
@@ -89,6 +95,7 @@ export async function createPixelworkStatePackage(
       width,
       height,
       path,
+      ...(generation ? { generation: readImageGeneration(generation) } : {}),
     };
   };
 
@@ -97,6 +104,7 @@ export async function createPixelworkStatePackage(
     `source_${source.name}`,
     source.width,
     source.height,
+    source.generation,
   );
   const tileUploads: Record<string, SavedImageReference> = {};
   const tileLayerUploads: PixelworkLayerUploads = {
@@ -115,6 +123,7 @@ export async function createPixelworkStatePackage(
         `tile_${keyName(tile.key)}_${asset.name}`,
         asset.width,
         asset.height,
+        asset.generation,
       );
     }
     for (const layer of ['surface', 'object', 'black', 'white'] as const) {
@@ -125,6 +134,7 @@ export async function createPixelworkStatePackage(
         `${layer}_${keyName(tile.key)}_${asset.name}`,
         asset.width,
         asset.height,
+        asset.generation,
       );
     }
     if (tile.images.overall && tile.images.object) {
@@ -642,7 +652,12 @@ async function loadReferenceAsset(
   fallbackName: string,
 ) {
   const blob = await referenceToBlob(reference, zip);
-  return blobToAsset(blob, reference.fileName || fallbackName);
+  const generation = readImageGeneration(reference.generation);
+  if (generation && await imageBytesSha256(new Uint8Array(await blob.arrayBuffer())) !== generation.sha256)
+    throw new Error('地图生成图片与来源哈希不符。');
+  const asset = await blobToAsset(blob, reference.fileName || fallbackName);
+  if (generation) asset.generation = generation;
+  return asset;
 }
 
 /** Failed imports release every image loaded so far, while the current document stays intact. */
@@ -725,6 +740,7 @@ function normalizeReference(
     height: finiteNumber(value.height, 0),
     dataUrl,
     path,
+    ...(value.generation !== undefined ? { generation: readImageGeneration(value.generation) } : {}),
   };
 }
 

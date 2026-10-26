@@ -2,6 +2,8 @@ extends Node
 ## Nearest eligible selection extracted from copyWorms Level_01.gd (bb1581d).
 ## No project singleton, player controller or gameplay state dependency.
 signal busy_changed(busy: bool)
+signal interactable_registered(object: Node)
+signal interactable_unregistered(object: Node)
 @export var actor: Node2D
 @export var shared_state_store: Node
 @export var scene_key: String = ""
@@ -29,6 +31,7 @@ func register_interactable(object: Node) -> void:
 		if key.physical_keycode != KEY_NONE:
 			InputMap.action_add_event(action, key)
 	object.restore_memory()
+	interactable_registered.emit(object)
 
 func unregister_interactable(object: Node) -> void:
 	objects.erase(object)
@@ -36,6 +39,7 @@ func unregister_interactable(object: Node) -> void:
 		focused = null
 	if active_object == object:
 		release_interaction(object)
+	interactable_unregistered.emit(object)
 
 func resolve_actor(group: String) -> Node2D:
 	if is_instance_valid(actor):

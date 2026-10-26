@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   FilePlus2,
@@ -44,7 +44,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Toaster } from '@/components/ui/toast';
-import { REGION_LAYER_META } from '@/features/map-stitcher/frame-ronin-types';
+import { REGION_LAYER_META, isEditableMapLayer } from '@/features/map-stitcher/frame-ronin-types';
 import {
   hasImageView,
   IMAGE_VIEW_LABELS,
@@ -54,7 +54,11 @@ import {
   type MapExportFormat,
 } from './use-map-editor-controller';
 import { useMapAgentTools } from './use-map-agent-tools';
-import { useMapWorkspace } from './use-map-workspace';
+import { useMapWorkspace, type MapSavedImageGuard } from './use-map-workspace';
+import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
+import type { ImageTargetRef, ImageEditContextLayer } from '@/features/image-edit/client';
+import { readImageEdit } from '@/features/image-edit/client';
+import { clearImageEditNavigation, readImageEditNavigation, writeImageEditNavigation, type ImageEditNavigation } from '@/features/image-edit/navigation';
 import { MapCanvas } from './canvas/map-canvas';
 import { MapInspector } from './panels/map-inspector';
 import { MapApiSettingsDialog } from './panels/map-api-settings';
@@ -67,6 +71,10 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
   const importStarted = useRef(false);
   const c = useMapEditorController();
   const workspace = useMapWorkspace(c);
+  const [imageEdit, setImageEdit] = useState<{ target: ImageTargetRef; guard: MapSavedImageGuard | null; navigation?: ImageEditNavigation } | null>(null);
+  const editNavigationConsumed = useRef(false);
+  const imageEditRef = useRef(imageEdit);
+  useLayoutEffect(() => { imageEditRef.current = imageEdit; }, [imageEdit]);
   useMapAgentTools(c);
   const sourceInput = useRef<HTMLInputElement>(null),
     layerInput = useRef<HTMLInputElement>(null),
@@ -79,6 +87,10 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
     if (url.searchParams.get('origin') !== 'generate') return;
     url.searchParams.delete('origin');
     window.history.replaceState(window.history.state, '', url);
+  }, [workspace.loading]);
+  useEffect(() => {
+    if (!workspace.loading && new URLSearchParams(location.search).has('imageTask'))
+      queueMicrotask(() => setOriginOpen(true));
   }, [workspace.loading]);
   const [settingsOpen, setSettingsOpen] = useState(false),
     [helpOpen, setHelpOpen] = useState(false),
@@ -122,11 +134,52 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
       setExportOpen(false);
       c.setHint('文件已导出。');
     });
+  const openImageEdit = (selection?: Extract<ImageTargetRef, { kind: 'map-layer' }>, navigation?: ImageEditNavigation) => c.perform(async () => {
+    try {
+      if (selection && selection.projectId !== c.workspaceId) throw new Error('图片会话属于另一个地图工程。');
+      const ticket = c.beginImageEdit(selection);
+      const guard = await workspace.flushSaved(ticket);
+      const target: ImageTargetRef = { kind: 'map-layer', projectId: guard.projectId, tileKey: ticket.tileKey, layer: ticket.layer };
+      const next = { target, guard, navigation };
+      imageEditRef.current = next;
+      setImageEdit(next);
+    } catch (error) {
+      c.endImageEdit();
+      if (!selection || !navigation) throw error;
+      c.beginImageHistory();
+      const next = { target: selection, guard: null, navigation };
+      imageEditRef.current = next; setImageEdit(next);
+    }
+  });
+  const resumeImageEdit = useEffectEvent(() => {
+    const navigation = readImageEditNavigation(); if (!navigation) return;
+    void readImageEdit(navigation.editId).then(({ edit }) => {
+      if (edit.target.targetRef.kind !== 'map-layer') throw new Error('图片会话不是地图源图。');
+      return openImageEdit(edit.target.targetRef, navigation);
+    }).catch(error => c.setHint(error instanceof Error ? error.message : '图片会话未打开。'));
+  });
+  useEffect(() => {
+    if (workspace.loading || editNavigationConsumed.current) return;
+    editNavigationConsumed.current = true; resumeImageEdit();
+  }, [workspace.loading]);
+  const contextLayers: ImageEditContextLayer[] = [];
+  if (imageEdit?.guard) {
+    const { ticket } = imageEdit.guard;
+    const tile = c.tiles.find(tile => tile.key === ticket.tileKey);
+    const layer = ticket.layer;
+    const layers = layer === 'object' ? [tile?.images.surface && !tile.surfaceIsDraft ? 'surface' : 'overall', 'object'] as const
+      : layer === 'surface' ? ['surface', 'object'] as const : [layer];
+    for (const name of layers) {
+      const asset = tile?.images[name];
+      if (asset) contextLayers.push({ id: name, url: asset.url, width: asset.width, height: asset.height, target: name === layer });
+    }
+  }
   return (
     <Toaster>
       <AssetImportPicker open={!!library} onClose={()=>setLibrary(null)} purposes={['map']} initialAsset={library?.assetId} onImport={importFromLibrary} />
       <main
         className="map-workspace"
+        inert={c.imageEditLocked}
         data-map-editor
         data-focus-mode={c.focusMode}
       >
@@ -292,6 +345,9 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
               </DropdownMenuContent>
             </DropdownMenu>
           </fieldset>
+          <Button size="sm" variant="outline" disabled={c.busy || workspace.loading || !c.selectedTile || !isEditableMapLayer(c.activeMapLayer) || !c.selectedTile.images[c.activeMapLayer] || c.imageLocks[c.activeMapLayer]} onClick={() => openImageEdit()}>
+            局部调整本层
+          </Button>
           <div className="map-view-options">
             <Button
               size="icon-sm"
@@ -413,7 +469,7 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
               originOpen ||
               helpOpen ||
               exportOpen ||
-              Boolean(c.fineSession)
+              Boolean(c.fineSession) || c.imageEditLocked
             }
             onGenerate={() => setOriginOpen(true)}
             onImport={() => sourceInput.current?.click()}
@@ -451,7 +507,7 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
           </DropdownMenu>
           <EditorTaskSummary />
         </footer>
-        <MapOriginGenerator open={originOpen && !workspace.loading} onOpenChange={setOriginOpen} onSettings={openSettings} c={c} />
+        <MapOriginGenerator open={originOpen && !workspace.loading} onOpenChange={setOriginOpen} c={c} />
         <input
           ref={sourceInput}
           className="sr-only"
@@ -653,6 +709,27 @@ export function FrameRoninMapEditor({ initialOriginOpen = false }: { initialOrig
           </Dialog>
         )}
       </main>
+      {imageEdit && <ImageEditWorkspace
+        onNavigationChange={writeImageEditNavigation}
+        target={imageEdit.target}
+        initialEditId={imageEdit.navigation?.editId}
+        initialCandidateVersion={imageEdit.navigation?.candidateVersion}
+        readOnly={!imageEdit.guard}
+        contextLayers={contextLayers}
+        beforeApply={() => {
+          if (!imageEditRef.current?.guard) throw new Error('当前目标不可写；历史候选只读。');
+          workspace.assertImageGuard(imageEditRef.current.guard);
+        }}
+        onAdopt={async receipt => {
+          const current = imageEditRef.current;
+          if (!current?.guard) throw new Error('当前目标不可写，已采用结果保留在服务端。');
+          const guard = await workspace.acceptAdopted(receipt, current.guard);
+          const next = { ...current, guard };
+          imageEditRef.current = next;
+          setImageEdit(next);
+        }}
+        onClose={() => { imageEditRef.current = null; setImageEdit(null); c.endImageEdit(); clearImageEditNavigation(); }}
+      />}
     </Toaster>
   );
 }

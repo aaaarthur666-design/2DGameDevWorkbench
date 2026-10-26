@@ -33,7 +33,7 @@ export type WorkbenchModule = {
 export const workbenchModules: readonly WorkbenchModule[] = [
   ...manifest.capabilities,
   ...manifest.editorModules,
-].map((capability) => ({
+].filter((capability) => !('embedded' in capability.ui && capability.ui.embedded)).map((capability) => ({
   id: capability.id,
   executable: 'connector' in capability,
   name: capability.name,

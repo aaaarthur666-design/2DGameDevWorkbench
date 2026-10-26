@@ -6,14 +6,14 @@
 
 Web 工作台负责展示任务和进度、恢复草稿、预览产物，以及地图画布、交互区域等更适合人工操作的编辑工作。它没有通用 Agent 对话框，也不替代外部客户端的规划能力。
 
-所有入口最终以 `workbench/manifest.json` 和 `lib/workbench/runtime.mjs` 为共同契约。
+生产入口以 `workbench/manifest.json` 和 `lib/workbench/runtime.mjs` 为共同契约；共享文档字段与类型化命令由 `lib/workbench/document-contract.mjs` 声明，网页、MCP 和 CLI 共用 Bridge 写入端。
 
 ## 2. 接入方式
 
 | 入口 | 用途 | 仓库配置 |
 | --- | --- | --- |
 | STDIO MCP | Agent 客户端首选；类型化发现、执行与状态查询 | `.mcp.json`；宿主配置在本机创建 |
-| Repository Skill | 角色美术、交互物与资产操作；地图保持手动 | `.agents/skills/2d-game-workbench/SKILL.md` |
+| Repository Skill | 角色与 Image 2.5 美术、交互物、共享场景与资产操作；legacy 地图拼接保持手动 | `.agents/skills/2d-game-workbench/SKILL.md` |
 | 工程 Skill | CopyWorms 方法下的 Godot 资产接入和脚本编写 | `.agents/skills/forge-game-engineering/SKILL.md` |
 | CLI | 不支持 MCP 的客户端或本地诊断 | `npm run workbench -- ...` |
 | Web 工作台 | 任务可视化、审查和人工编辑 | `npm run dev` |
@@ -58,7 +58,7 @@ default_tools_approval_mode = "writes"
 
 ## 4. MCP 能力面
 
-Server 暴露只读资源 `workbench://manifest`，当前 MCP 0.11.0 提供 23 个工具：
+Server 暴露只读资源 `workbench://manifest`，当前构建提供 39 个工具（MCP server version 为 0.11.0；以实际发现结果为准）：
 
 | 工具 | 行为 |
 | --- | --- |
@@ -85,8 +85,24 @@ Server 暴露只读资源 `workbench://manifest`，当前 MCP 0.11.0 提供 23 �
 | `workbench_get_asset_manifest` | 返回明确所选资产的交接清单，不复制文件 |
 | `workbench_get_result` | 读取 taskId 或 jobId 的结果与精确候选链接，不刷新生成 |
 | `workbench_read_artifact` | 读取任务登记图片；GIF 为首帧，不等于完整播放 |
+| `workbench_list_documents` | 分页发现共享场景与交互物工程 |
+| `workbench_get_document` | 读取当前或历史版本；metadataOnly 可省略素材正文 |
+| `workbench_create_document` | 从完整内容或模板创建共享工程 |
+| `workbench_save_document` | 按预期版本保存完整内容；AI 保存遵守锁定实例保护 |
+| `workbench_apply_document_commands` | 单文档类型化事务；需要 expectedRevision 与 commandId |
+| `workbench_restore_document` | 将历史快照恢复为新版本，保留原历史 |
+| `workbench_validate_document` | 检查保存版本的结构、媒体与诊断 |
+| `workbench_simulate_document` | 执行类型化输入事件并检查交互结果，不改文档 |
+| `workbench_adopt_document_image` | 使用确切图片任务与 SHA-256，明确采用到指定工程 |
+| `workbench_export_document` | 导出明确保存版本的场景源包和 Godot 包 |
+| `workbench_observe_document` | 返回保存场景版本的 PNG、几何标注与资源证据 |
+| `workbench_inspect_image_target` | 发现或读取既有图片目标、源版本和候选 |
+| `workbench_resolve_image_region` | 按确切源版本解析区域；可显式保存命名区域 |
+| `workbench_edit_image_region` | 执行本地配方并保存候选，不自动采用 |
+| `workbench_apply_image_candidate` | 按目标版本、源哈希和锁采用确切候选 |
+| `workbench_get_image_edit` | 读取持久会话、候选及原任务身份 |
 
-启动工具会改变进程状态；prepare/run 会持久化任务。其他查询不新建制作任务，get_task 可刷新原有异步记录。
+启动工具会改变进程状态；prepare/run 会持久化任务。文档修改保留独立版本，场景导出建立独立资产记录；这些操作不创建图片生产任务。其他查询不新建制作任务，get_task 可刷新原有异步记录。
 
 标准调用顺序：
 
@@ -113,6 +129,8 @@ list → describe → prepare 或 run → get → 报告 task/status/outputs
 
 序列帧生成可能异步返回。此时调用 `workbench_get_task` 刷新原来的上游 job；不要再次调用 `workbench_run_task`。查询是幂等刷新，短暂轮询错误不会改写已有任务为虚假成功，也不会提交第二次生成。
 
+Image 2.5 同样先返回已持久化的 running taskId，再由后台进程提交和保存图片。使用同一 get_task/status 查询；进程退出或租约失效时提示 attention_required，不自动重试可能已计费的提交。任务完成后先检查图片，再明确采用；requiresAdoption=true 不代表已经修改地图、交互物或场景。
+
 普通回复先说结果、准确作品链接与下一步；技术详情保留能力、操作、任务 ID、状态、错误或缺失配置及实际输出路径，需要排错时提供。不能把 `prepared`、`running` 或 `awaiting_configuration` 描述为完成。
 
 ## 6. CLI 后备
@@ -129,7 +147,27 @@ npm run workbench -- status <task-id> --json
 
 具体样例文件以 `examples/requests/` 当前内容为准。CLI 与 MCP 共享任务目录、状态机、适配器和输出验证，不是另一套实现。
 
+共享工程使用 `npm run workbench -- agent documents --json` 发现，再以 `agent document-get|document-apply|document-observe|document-simulate|document-adopt-image|document-export` 配合 `--input <json-file>` 操作。文档 CLI 与 MCP 都转发长驻 Runtime Bridge，Bridge 离线时明确失败，不回退为另一进程直接写文件。HTTP 等价为 `POST /v1/agent/<operation>`；网页使用 `/api/workbench/documents` 同源代理。
+
 ## 7. 生产能力的 Agent 选择
+
+Agent 发现列表提供 image-assets、reference-art、sprite-generator、interactable-editor 四项。legacy map-stitcher 为手动能力，场景编辑另使用共享文档工具。
+
+### 背景与透明物品
+
+选择 `image-assets`，先读取 schema，再按授权执行 generate-background、generate-prop 或 edit-image。该独立路线使用 GPT Image 2.5，支持参考图、显式尺寸与透明 PNG 编辑蒙版；不调用 legacy 地图拼接或扩图接口。使用 get_task/status 跟踪原任务，检查真实图片、尺寸和 sha256；不重复 run 查询进度。
+
+完成的背景或透明 prop 保留原图与来源，不自动替换编辑器。采用到共享工程时，调用 `workbench_adopt_document_image`，提供 sourceTaskId、sha256、documentId、expectedRevision、commandId；交互物 prop 还需已有 definitionId。背景建立单地图层和可回导源包，碰撞为空；prop 只改默认外观，保留行为与状态图片。配置状态通过 `/api/workbench/image-assets/settings` 读取或经专用配置入口保存，密钥不写入任务输入。
+
+### 已有图片的局部修改（7A–7D）
+
+使用五个已注册图片工具；inspect → resolve → edit → apply 是主流程，get-edit 用于恢复会话和查询原候选。先发现保存目标，不依据网页当前选中项或 blob URL 猜测身份。当前只执行本地操作，不需要模型 Key 或 Python；resolve 不创建生成任务，edit 保存独立候选，apply 才写入明确目标。它可以编辑已存在的地图源图片，但不开放地图原图生产、拼接或扩展。
+
+MCP 与 CLI 的全部 image-* 操作转发同一个 canonical Bridge，包含会刷新记录的读取；Bridge 不可用就失败，无本地直写 fallback。同一数据目录只支持一个权威 Bridge。保持 expectedRevision、expectedSha256、regionRef；继续同一会话时还需 expectedEditRevision 和明确 baseCandidateVersion。写入保留 commandId，同 ID 同载荷重试读取原记录，不同载荷冲突；崩溃或应答丢失后查原会话/任务，不用新命令盲目重交。
+
+源 PNG/JPEG/WebP 文件 sha256 与规范 sRGB/RGBA8 straight-alpha 的 rgbaSha256 是不同证据；预览、Canvas 和蒙版不能代替源像素。命名区域绑定源版本，变化后重新解析。7B 共用工作区支持单图恢复，宿主先完成持久保存，再读取准确采用版本协调基线，不回滚其他工程内容。
+
+7C 的显式 ai-edit 冻结基准候选、描述、参考字节和区域；AI 增减笔刷只改硬边 `mask-runs`，不改 RGBA。只在用户请求 AI 时提交，断连 / 重启继续读取原 commandId / taskId，不自动重发或采用。返回的 presentation、task imageEditContext 和 `workbench_present({editId,candidateVersion})` 指向准确 `imageEdit` / `imageCandidate`；在途候选可继续观察，未保存笔划不被轮询覆盖，不可写历史只读。本批真实模型请求为 0，实际 UI 验收另记；7D 已接指定状态槽及场景引用：选中实例使用独立派生素材，其他共享实例保留；地图快照仅在验证单源像素映射后开放，图层 PNG 与嵌入源 ZIP 同一事务保存。不能确认映射的派生或合成层只读，使用源地图入口继续。详见[图片局部编辑](image-editing.md)。隔离 mock 和像素回归不证明真实模型品质或 Godot 执行。
 
 ### 序列帧
 
@@ -137,11 +175,19 @@ npm run workbench -- status <task-id> --json
 
 ### 地图
 
-地图在 `/tools/map-stitcher` 前端由用户操作。MCP 发现列表不提供该能力，describe/prepare/run 均拒绝地图制作请求，且不创建任务。CLI/HTTP 仍保留前端所需底层接口，Agent 不应绕过手动边界。详见 [地图拼接](map-stitcher.md)。
+legacy `map-stitcher` 的拼接、扩图与原地图生成操作仍在 `/tools/map-stitcher` 前端由用户操作。MCP 发现列表不提供该能力，describe/prepare/run 均拒绝该能力，且不创建任务。CLI/HTTP 仍保留前端所需底层接口，Agent 不应绕过此边界。这不限制上面的独立 image-assets 背景生成或已声明的共享场景命令。详见 [地图拼接](map-stitcher.md)。
 
 ### 交互物
 
 先调用 `workbench_interactable_template` 获取查看、切换、拾取或序列模板；按需求修改完整 `project`，调用 `interactable-editor` 的 `save-project` 保存。`get_result.viewPath` 可直接打开前端编辑；需要资源包时再用 `export-godot` 和可选 `selectedDefinitionIds`。这是本地导出，不要求 API key、SpritePipeline 或 Godot。完成只证明资源包已生成，不证明目标游戏已通过回归测试。详见 [独立交互物编辑器](interactable-editor.md)。
+
+继续网页中的相同交互物时，优先用 list/get_document 读取共享 projectId 和 revision，再执行已声明的 add/bind/shape/behavior 等命令，保留 ID。原有 save-project / export-godot 仍可使用；共享保存与生产任务分别记录。
+
+### 共享场景
+
+通过 list/get_document 读取保存版本和稳定节点 ID，使用 apply_document_commands 完成素材导入、实例移动/缩放/翻转、排序、替换、显隐、地图替换与明确碰撞编辑。一次最多 100 条命令，单文档全部成功才提交。expectedRevision 过旧返回 409 / REVISION_CONFLICT；相同 commandId 重试不重复修改。前端有本机变更或忙碌时保留草稿，冲突需先读取当前内容再决定修改。
+
+修改后 observe_document 返回该确切版本的场景 PNG、可选标注、坐标变换和资源哈希；validate_document 检查模型与媒体，simulate_document 可用最多 200 个输入事件检查状态及期望事件。结果不代表 Godot 物理或游戏运行验收。需要交付时明确提供 documentId 与 revision 给 export_document。observe/export 目前仅支持场景；交互物独立导出仍使用 export-godot。详见 [场景组装](scene-composer.md)。
 
 跨能力请求应建立多个独立任务，再在对话中汇总它们的状态和产物；不要制造一个清单中不存在的复合 operation。
 
@@ -153,7 +199,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 - STDIO MCP 面向打开仓库的外部主 Agent，可访问持久化任务运行时。
 - Browser WebMCP 面向当前页面会话，只在宿主支持且页面打开时存在。
-- 页面工具不解除地图与场景的手动制作边界。
+- 页面工具不解除 legacy 地图拼接/扩图的手动边界；共享场景的 Agent 修改以已声明文档命令为准。
 - 页面工具不能作为后台任务完成的证据；需要以页面返回或 runtime task record 为准。
 
 ## 9. Web 与部署边界
@@ -186,7 +232,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 手动验收：
 
-1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend`（MCP 0.11.0 总计 23 个工具），然后新建本项目对话。
+1. 在 WorkBuddy 刷新或重连 `2d-game-workbench`，确认有 `workbench_start_frontend` 与新增文档工具（当前构建 34 个工具），然后新建本项目对话。
 2. 发送“看看工作台现在有哪些功能”，无需要求打开网页。预期内部浏览器打开工作台首页，Agent 继续回答原问题。
 3. 再发送“列出已有角色”。预期复用页面，不增加重复预览；手动关掉预览后再发消息，也不应强行重开。
 4. 可选冷启动：正常关闭工作台开发服务，重新开启 WorkBuddy 项目对话并重复第 2 步。预期自动启动前端和 Runtime Bridge；无需 PixelLab Key 或 Python。若首次编译超过 60 秒，Agent 报告仍在启动和日志位置，不应谎报成功。
@@ -196,9 +242,9 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 
 ## 自然语言制作引导
 
-`workbench_list_capabilities` 除能力列表外，还返回 `conversationGuidance`。它从清单的 `agentAssets.conversationGuide` 读取 [共用引导](../workbench/conversation-guide.md)，供只有 MCP、没有仓库 Skill 的 WorkBuddy 会话使用。CLI `npm run workbench -- agent guidance --json` 和 HTTP `POST /v1/agent/guidance`（请求体 `{}`）返回相同内容；读取引导不写任务、不调用生成服务。原有工具数量不变。
+`workbench_list_capabilities` 除能力列表外，还返回 `conversationGuidance`。它从清单的 `agentAssets.conversationGuide` 读取 [共用引导](../workbench/conversation-guide.md)，供只有 MCP、没有仓库 Skill 的 WorkBuddy 会话使用。CLI `npm run workbench -- agent guidance --json` 和 HTTP `POST /v1/agent/guidance`（请求体 `{}`）返回相同内容；读取引导不写任务、不调用生成服务。
 
-引导覆盖角色动作、地图拼接/扩图、交互物行为。Agent 先利用上下文和已有资产，仅询问改变结果的关键选择。宿主 `AskUserQuestion` 可用时先查看其参数契约再调用；当前模式不可用时用简短文字提问。没有答案、取消和超时均不能当作默认选项已获同意。当前 MCP 没有任意附件注册角色或地图生产操作；前端地图已有文字生成中心原图，用户可手动进入使用。
+引导覆盖角色动作、独立背景/透明物品、共享场景与交互物行为，以及 legacy 地图拼接/扩图的手动边界。Agent 先利用上下文和已有资产，仅询问改变结果的关键选择。宿主 AskUserQuestion 可用时先查看其参数契约再调用；当前模式不可用时用简短文字提问。没有答案、取消和超时均不能当作默认选项已获同意。图片生成只能使用发现的 capability / operation，不能把共享编辑扩大为未注册的地图生产操作。
 
 以下是 WorkBuddy 人工行为验收；在重新连接 MCP 的新对话中逐项进行。除明确的本地逻辑包例子外，先指定“只讨论方案，不生成”，避免验收时产生生图费用。
 
@@ -206,7 +252,7 @@ Browser WebMCP 与仓库 STDIO MCP 是两个边界：
 | --- | --- |
 | “只讨论方案：做个角色动画。” | 只问角色来源、动作等真正缺失选择，用提问工具（若可用）；不创建空任务。 |
 | “只讨论方案：用已有赛博战士做行走，你决定其他设置。” | 查真实角色/动作 ID，说明沿用 preset 和一个候选；不重复问角色、动作、帧数。 |
-| “只讨论方案：做一张森林地图，目前没有任何素材。” | 给出前端“生成原图”入口及提示词建议，说明预览采用后可继续扩图；不自动调用地图制作接口。 |
+| “只讨论方案：做一张森林地图，目前没有任何素材。” | 说明 image-assets 独立背景路线、检查与采用步骤；需要扩图时给出 legacy 地图前端入口。只讨论时不生成。 |
 | “只讨论方案：把这四张图按两行两列、附件顺序拼起来。” | 已有布局就不重复追问；提供地图前端入口，不运行 MCP 地图任务。 |
 | “只讨论方案：做个宝箱。” | 根据上下文区分外观图与可交互物，必要时询问；不默认宝箱等于拾取物。 |
 | “制作一个靠近按键可打开、可关上的门，只要可替换美术的逻辑包，通用 Godot。” | 选择 toggle 与 generic；执行本地导出，不要求 PixelLab Key，不新增角色生图。 |

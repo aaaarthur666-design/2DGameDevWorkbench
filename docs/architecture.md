@@ -32,11 +32,16 @@ flowchart LR
     C --> R
     P --> B[Loopback HTTP bridge]
     B --> R
+    M -.共享文档与图片会话.-> B
+    C -.共享文档与图片会话.-> B
+    B --> SD[版本化场景与交互物文档]
     R --> F[workbench/manifest.json]
     R --> X[Adapter registry]
     X --> S[SpritePipeline]
     X --> T[Map Stitcher]
     X --> O[Interactable Editor]
+    X --> G[Image 2.5 assets]
+    G --> E
     T -.可选外部生成.-> E[Gemini / OpenAI Images / Hunyuan]
     R --> Q[work/tasks]
     R --> U[outputs/task-id]
@@ -72,7 +77,25 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 交互物项目 schema 体量较大，采用生成式同步：`features/interactable-editor/contract.mjs` 是其字段定义编辑源，`npm run schema:interactable` 将其同步到清单。同步后必须检查 manifest diff，并运行工作台 doctor 与交互物测试。
 
-## 5. 四项生产能力
+## 5. 生产能力
+
+### Image 2.5 独立素材
+
+`image-assets` 负责路线 A 的背景、透明物品与已有图片编辑。它嵌入地图/交互物页面，不创建重复的导航模块。统一适配器使用 `gpt-image-2.5-sunburst`，保存原始响应、规范化 PNG、尺寸、实际 Alpha 和 SHA-256。任务先持久化为 running，再异步调用；轮询不重复提交，结果不确定时需要检查。生成与采用分开：采用重读文件并核对哈希，背景成为独立地图层，透明物品绑定现有交互物。旧 PixelLab 链路继续可用；不接入 Qwen 分层。
+
+新图片请求另保存白名单用量证据 `provider-usage.json`，包括可取得的 token 计数、HTTP/请求身份、耗时和返回质量。在图片校验前持久化，输出验证失败仍能保留已返回的 usage；缺失计数与实际账单金额保持 null。记录失败不会重新请求。费率估算属于独立评测，不能由任务 completed 推断质量通过或实际收费。
+
+`image-assets-processing.mjs` 是新生成/编辑和本地process-image共用的确定性处理器；不联网、不缩放、不覆盖输入。蒙版Alpha=0采用候选，其余区域复制源图的解码sRGB/RGBA8，编码后再验证保护区。低Alpha清理默认仅归零prop的Alpha=1像素，且不越过蒙版保护。原始候选、派生PNG、两者哈希和processing-report分别保存；process-image在解析供应商/凭据前进入本地分支，未调用外部模型。文档和前端采用继续验证新任务身份与派生图哈希。
+
+### 已有图片局部编辑（7A–7D）
+
+`lib/workbench/image-edits.mjs` 将目标发现、区域解析、候选执行和定点采用连接为持久会话；五个已注册工具为 inspect、resolve、edit、apply 和 get-edit，完整名称与操作见 [图片局部编辑](image-editing.md)。本地路径对已有源图执行确定性操作，通过薄适配层复用 SpritePipeline 的纯像素核心，再使用 `process-image` 保存并验证候选；不需要 Python 服务、模型 Key 或外部图片请求。地图生产、拼接和扩展仍保持手动前端边界。
+
+所有 `image-*` 操作从 MCP/CLI 转发 canonical Runtime Bridge，包括会刷新候选状态的读取；Bridge 不可用时失败，不回退到客户端进程写文件。同一数据目录只支持一个写入权威 Bridge。会话、命名区域、配方及 commandId 记录位于 `workspace.imageEditDirectory`；源版本、源图哈希、会话版本与目标锁共同控制写入。任务身份在适配器执行前持久化，重复命令读取原记录；崩溃后的未知提交不会自动再执行。
+
+源 PNG/JPEG/WebP 保留原始文件字节，文件 `sha256` 与规范解码后 sRGB/RGBA8 straight-alpha 的 `rgbaSha256` 分开记录。Canvas、预览图及蒙版都不是权威像素源。7A 的 `restore-region` 在同源会话内取样恢复区域；7B 的 `candidateVersion="source"` 恢复单图为新版本，不回滚工程。宿主先完成持久保存，采用后读准确版本并更新保存基线。
+
+7C 已接显式 `ai-edit`：增减笔刷只改硬边蒙版，`mask-runs`、基准候选、描述与参考字节在任务执行前冻结，taskId 先于模型提交持久保存。断连 / 重启只恢复原身份，不自动重发。任务保留精确会话 / 候选深链，写入 guard 不满足的历史只读。服务端把保护区基准 RGBA 本地合成并核对编码后结果；选区内画质与 Alpha 不由此保证。本批真实模型请求为 0，实际 UI 验收另记；7D 已接指定状态槽及场景引用：选中实例使用独立派生素材，其他共享实例保留；地图快照仅在验证单源像素映射后开放，图层 PNG 与嵌入源 ZIP 同一事务保存。不能确认映射的派生或合成层只读，使用源地图入口继续。像素回归和 mock 通过不代表真实模型品质或 Godot 引擎验收。
 
 ### 5.0 角色原图
 
@@ -92,7 +115,7 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 ## 6. Agent 调用面
 
-仓库级 STDIO MCP 暴露只读资源 `workbench://manifest` 和 18 个工具。基础任务工具为：
+仓库级 STDIO MCP 暴露只读资源 `workbench://manifest`；工具名单以 manifest 的 `agentAssets.mcpServer.tools` 和实际 discovery 为准。基础任务工具为：
 
 1. `workbench_list_capabilities`：读取当前能力目录。
 2. `workbench_describe_capability`：读取目标能力 schema、连接器和输出契约。
@@ -100,7 +123,7 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 4. `workbench_run_task`：校验后运行清单选定的本地适配器。
 5. `workbench_get_task`：读取任务；对于运行中的异步任务，安全刷新同一个上游作业一次。
 
-另有环境、Sprite 服务启动、前端启动、预设、交互物模板、历史、结果、图片读取及三个资产目录工具。共用 `lib/workbench/agent-api.mjs`，完整名单见 [Agent 客户端接入](agent-clients.md)。工程 Skill 是外部 Agent 文件工作流，不额外增加 MCP 工具。
+另有环境、服务启动、预设、模板、历史、结果、图片读取、资产、游戏交付和共享文档工具。共用 `lib/workbench/agent-api.mjs`，完整名单见 [Agent 客户端接入](agent-clients.md)。工程 Skill 是外部 Agent 文件工作流。
 
 CLI 的 `list`、`describe`、`prepare`、`run`、`status` 与上述语义对齐。浏览器页面还可以在宿主支持 `document.modelContext` 时注册页面级工具；它们只代表当前页面的交互能力，不替代仓库 STDIO MCP。
 
@@ -151,9 +174,15 @@ Web 工作台提供生产台、场景台、专业工具和高级配置。它负�
 
 新增能力时，应先实现独立适配器和清单条目，再让 MCP、CLI 与 Web 自动消费。若需要外部 API，应把认证、重试、错误归一化和输出验证留在服务端适配器；浏览器只获得完成任务所需的非敏感状态。完整步骤见 [使用与操作手册](operations-manual.md)。
 
-## 场景组装的网页边界
+## 场景与交互物共享文档
 
-场景组装在 Manifest 的 `editorModules` 注册网页入口，复用模块导航而不加入 `capabilities` 可执行契约。网页编辑和源包保存在浏览器，私有导出路由通过 loopback Runtime Bridge 复用交互物生成器并装配地图、物件及碰撞。导出结果写入 `outputs/scene-export-<id>/`，记录写入 `work/scene-exports/`；这些记录与 Agent 任务区分。素材没有自动同步或场景内行为编辑。详见[场景组装](scene-composer.md)。
+场景组装在 Manifest 的 `editorModules` 注册网页入口；共享文档操作不伪装为生成任务。场景与交互物保存在 `workspace.documentDirectory`，Bridge 是写入权威，MCP/CLI 转发至同一写入入口。提交要求 `expectedRevision` 和 `commandId`，保存不可变历史与原子当前版本；恢复产生新版本。媒体嵌入并核对来源，后续修改原文件不会改变已保存快照。IndexedDB 是本地缓存与冲突恢复备份，未提交草稿不冒充服务端版本。
+
+前端支持 `?document=<id>` 打开共享工程，干净状态跟随远端更新；忙碌、有本地修改、离线或版本冲突时保留草稿，显式加载远端前备份本地内容。AI 使用类型化命令编辑实例、排序、地图碰撞与交互物行为，不执行任意脚本。`document-observe` 对保存版本做确定性渲染，返回 PNG、内容哈希、世界坐标变换和辅助层；这不是未保存页面截图。`document-simulate` 运行既有交互模拟器的有限事件，不证明 Godot 物理或关卡可达。详见[场景组装](scene-composer.md)。
+
+`document-export` 导出精确场景版本，复用已有导出器，将源包/Godot 包与文档哈希一同保存。输出仍进入场景导出目录并收录资产库。地图拼接与扩展保持原有手动前端边界；开放的路线 A 是独立背景生成、显式采用和共享场景命令，不包含自动地图扩展或 Qwen 分层。
+
+`features/scene-composer/links.mjs` 定义稳定实例联动、类型与有向无环检查；场景模拟器按 FIFO 分发至幂等状态设置器。`simulation-replay.mjs` 为 document-simulate 和 document-observe 共用有界输入事件与最终状态计算，后者同时渲染回放后图片和有效碰撞。导出场景附带 `scene_link_router.gd`，连接已有交互运行时的信号；不创建第二套运行时。前端联动表单、状态反馈与服务器验证共用模型。实际 Godot 4.7 引擎验证另保存包哈希、物理查询与原生渲染证据。
 
 ## 资产与工程交接
 
@@ -178,3 +207,9 @@ MCP 0.9.0 的 workbench_present 通过共享 runtime 写入 workspace.presentati
 ### 资产回收站
 
 `asset-trash.mjs` 在 manifest 指定的独立索引保存稳定资产 ID、别名和移入时摘要，使用跨进程目录锁与原子替换。`asset-catalog.mjs` 在扫描后合并回收站状态，默认只列 active，来源离线时仍提供可恢复的摘要。Web manage 代理和 Bridge 共享同一管理函数，不改源文件、不新建任务；MCP 查询继续只读。
+
+### AI 局部编辑的透明度与预览
+
+`image-edits.mjs` 将冻结的 `constraints.preserveAlpha` 传入图片适配器；开启时，`image-assets-processing.mjs` 从本次编辑基准复制 Alpha，跳过清理，并独立验证最终 PNG 的 Alpha 与蒙版外 RGBA。模型原始响应保留，不受该处理覆盖。
+
+工作区对服务端图片编码字节及 RGBA 分别核验哈希。已保存候选和恢复图直接用于上下文预览；未保存笔划才异步编码，并以 controller、显示模式和版本限定回调有效性，不能显示旧版本结果。支持深链的宿主接收当前会话/候选通知，通过 replaceState 更新图片参数，保留宿主参数、hash 和 history.state。

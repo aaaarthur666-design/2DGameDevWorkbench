@@ -6,6 +6,8 @@ import manifest from '@/workbench/manifest.json';
 import {offerGodotExport} from '@/lib/workbench/godot-export';
 import { importLink } from '@/lib/workbench/asset-import';
 import { operationLabel } from '@/lib/workbench/work-items';
+import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
+import { clearImageEditNavigation, readImageEditNavigation, writeImageEditNavigation, type ImageEditNavigation } from '@/features/image-edit/navigation';
 
 type Asset = {
   trashedAt?: string;
@@ -72,9 +74,13 @@ export function AssetLibrary() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState('');
   const [failedPreviews, setFailedPreviews] = useState<string[]>([]);
+  const [localEditTask, setLocalEditTask] = useState<string | null>(null);
+  const [editNavigation, setEditNavigation] = useState<ImageEditNavigation | null>(null);
   useEffect(() => {
     // oxlint-disable-next-line react/react-compiler -- Hydrate the browser-only selection.
     setAssetId(new URLSearchParams(location.search).get('asset') || '');
+    const navigation = readImageEditNavigation(), selectedAsset = new URLSearchParams(location.search).get('asset');
+    if (navigation && selectedAsset?.startsWith('image:')) { setEditNavigation(navigation); setLocalEditTask(selectedAsset.slice(6)); }
   }, []);
   useEffect(() => {
     const controller = new AbortController();
@@ -285,6 +291,7 @@ export function AssetLibrary() {
             <div className="wb-tool-links">
               <button className="wb-button" disabled={managing || exporting} onClick={() => { setNotice(''); setPending({ operation: asset.trashedAt ? 'restore' : 'trash', assets: [asset] }); }}>{asset.trashedAt ? '恢复到资产库' : '移入回收站'}</button>
               {asset.origin === 'map-project' && asset.editorPath && <a className="wb-button" href={asset.editorPath}>继续编辑地图</a>}
+              {!asset.trashedAt && asset.availability === 'available' && asset.id.startsWith('image:') && <button className="wb-button" onClick={() => setLocalEditTask(asset.id.slice('image:'.length))}>局部调整图片</button>}
               {asset.kind === 'map' && <><a className="wb-button" href={importLink('map-stitcher','map',asset.id)}>导入地图编辑器</a><a className="wb-button" href={importLink('scene-composer','map',asset.id)}>用于制作场景</a></>}
               {asset.kind === 'interactable' && <><a className="wb-button" href={importLink('interactable-editor','interactable',asset.id)}>编辑交互物项目</a><a className="wb-button" href={importLink('scene-composer','interactable',asset.id)}>加入场景</a></>}
               {asset.kind === 'scene' && <a className="wb-button" href={importLink('scene-composer','scene',asset.id)}>继续组装此场景</a>}
@@ -502,6 +509,13 @@ export function AssetLibrary() {
           {!catalog && !error && <p>正在读取已保存资产…</p>}
         </>
       )}
+      {localEditTask && <ImageEditWorkspace target={{ kind: 'image-task', taskId: localEditTask }} initialEditId={editNavigation?.editId} initialCandidateVersion={editNavigation?.candidateVersion} onNavigationChange={writeImageEditNavigation} onClose={() => { setLocalEditTask(null); setEditNavigation(null); clearImageEditNavigation(); }} onAdopt={async receipt => {
+        if (!receipt.adoption.assetId) throw new Error('图片变体未返回素材身份。');
+        const nextId = receipt.adoption.assetId;
+        setLocalEditTask(null); setEditNavigation(null); clearImageEditNavigation(); setAsset(null); setAssetId(nextId); setReload(value => value + 1);
+        const url = new URL(location.href); url.searchParams.set('asset', nextId); history.replaceState(null, '', url.pathname + url.search);
+        setNotice('局部调整版本已保存为新素材，原图保留。');
+      }} />}
     </main>
   );
 }

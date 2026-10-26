@@ -25,6 +25,8 @@
     "presentationDirectory": "work/presentation",
 
     "mapProjectDirectory": "work/map-projects",
+    "documentDirectory": "work/editor-documents",
+    "imageEditDirectory": "work/image-edits",
     "outputDirectory": "outputs",
     "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }
   },
@@ -44,6 +46,7 @@
     "role": "external-client",
     "assetCatalog": { "schemaVersion": 1, "route": "/assets", "guide": "docs/asset-catalog.md", "sources": ["runtime-tasks", "sprite-pipeline", "map-projects", "scene-exports"], "recycleBin": { "defaultScope": "active", "trashScope": "trashed", "preservesSourceFiles": true }, "browserDrafts": "not-indexed" },
     "conversationGuide": "workbench/conversation-guide.md",
+    "imageEditing": { "schemaVersion": 1, "contract": "lib/workbench/image-edit-contract.mjs", "guide": "docs/image-editing.md", "mode": "existing-image-edit", "targetKinds": ["map-layer", "interactable", "image-task", "scene-layer", "scene-instance"], "sceneTargets": "verified-source-snapshot-or-single-instance", "aiEditing": true, "localRequiresPython": false, "localRequiresKey": false, "manualMapProductionBoundary": "unchanged" },
     "presentationGuide": "docs/agent-preview-follow.md",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",
     "engineering": { "skill": ".agents/skills/forge-game-engineering/SKILL.md", "guide": "docs/game-engineering.md", "deliveryGuide": "docs/godot-delivery.md", "mode": "external-agent", "engine": "Godot 4.7.x", "source": "https://github.com/flxBurnOut/copyWorms", "createsTask": false },
@@ -75,6 +78,22 @@
         "workbench_export_to_game",
         "workbench_install_game_export",
         "workbench_complete_game_export",
+        "workbench_list_documents",
+        "workbench_get_document",
+        "workbench_create_document",
+        "workbench_save_document",
+        "workbench_apply_document_commands",
+        "workbench_restore_document",
+        "workbench_validate_document",
+        "workbench_simulate_document",
+        "workbench_adopt_document_image",
+        "workbench_export_document",
+        "workbench_observe_document",
+        "workbench_inspect_image_target",
+        "workbench_resolve_image_region",
+        "workbench_edit_image_region",
+        "workbench_apply_image_candidate",
+        "workbench_get_image_edit",
         "workbench_get_result",
         "workbench_read_artifact"
       ]
@@ -91,6 +110,49 @@
     ]
   },
   "capabilities": [
+    {
+      "id": "image-assets",
+      "name": "场景图片生成",
+      "shortName": "图片素材",
+      "description": "使用 GPT Image 2.5 生成或编辑图片；蒙版外像素由本地合成保留。process-image 使用现有素材做无费用局部合成与透明噪点清理。原图、派生图和来源分别保存，预览后单独采用。",
+      "category": "production",
+      "workflow": "workbench/workflows/image-assets-production.json",
+      "ui": {
+        "icon": "reference", "productionLine": "scene", "entryTitle": "生成场景素材",
+        "starterHint": "生成完整背景或透明物件，检查图片后采用到编辑器。",
+        "stages": ["描述与参考图", "生成并检查", "采用到场景"],
+        "accent": "cyan", "status": "ready", "route": "/tools/map-stitcher", "surface": "editor", "embedded": true,
+        "capabilities": ["GPT Image 2.5", "透明 PNG 物件", "多参考图与蒙版编辑", "原图与来源记录"]
+      },
+      "connector": {
+        "type": "local-adapter", "adapter": "image-assets", "providerSource": "map-stitcher",
+        "providerIds": ["gpt-image-2.5"], "defaultProvider": "gpt-image-2.5", "providerEnv": "IMAGE_ASSETS_PROVIDER"
+      },
+      "inputSchema": {
+        "type": "object", "required": ["operation"], "additionalProperties": false,
+        "allOf": [
+          { "if": { "properties": { "operation": { "const": "process-image" } }, "required": ["operation"] }, "then": { "required": ["image"] }, "else": { "required": ["prompt"] } },
+          { "if": { "properties": { "operation": { "const": "edit-image" } }, "required": ["operation"] }, "then": { "required": ["image"] } },
+          { "if": { "required": ["preserveAlpha"] }, "then": { "properties": { "operation": { "const": "edit-image" } } } }
+        ],
+        "properties": {
+          "operation": { "type": "string", "enum": ["generate-background", "generate-prop", "edit-image", "process-image"] },
+          "prompt": { "type": "string", "minLength": 1, "maxLength": 12000, "description": "生成/编辑操作必填；process-image 不接受此字段且不调用模型。" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "provider": { "type": "string", "enum": ["gpt-image-2.5"] },
+          "kind": { "type": "string", "enum": ["background", "prop"], "description": "edit-image / process-image 的素材类型，默认 background；prop 校验透明 PNG，并默认清理 Alpha=1 的像素。" },
+          "width": { "type": "integer", "minimum": 16, "maximum": 3840, "description": "与 height 同时提供，16 的倍数，合计 655360–8294400 像素，比例 1:3–3:1。" },
+          "height": { "type": "integer", "minimum": 16, "maximum": 3840 },
+          "image": { "type": "string", "minLength": 1, "description": "edit-image的源图，或process-image的待处理图：仓库内 PNG/JPEG/WebP 路径或 base64 data:image；原始文件保留。process-image不接受provider/prompt/references/width/height，不缩放，最长边3840、最多8294400像素。" },
+          "references": { "type": "array", "maxItems": 8, "items": { "type": "string" }, "description": "最多 8 张仓库内图片路径或 base64 data:image。每张最多 40 MiB，总计最多 80 MiB。" },
+          "mask": { "type": "string", "minLength": 1, "description": "edit-image / process-image：同尺寸透明PNG，仅alpha=0可编辑，alpha=1–255区域从保护源图逐字节复制（解码sRGB/RGBA8），不允许缩放。process-image须同时给preserveFrom。" },
+          "preserveFrom": { "type": "string", "minLength": 1, "description": "仅process-image：保护源图，与mask成对提供。image为已有编辑候选；蒙版外取此源图。" },
+          "preserveAlpha": { "type": "boolean", "description": "仅edit-image：可选保留编辑基准图全部Alpha字节，由本地合成并校验，不依赖模型遵守。开启时不缩放，跳过透明噪点清理；未提供时沿用原处理策略。" },
+          "alphaCleanupThreshold": { "type": "integer", "minimum": 0, "maximum": 16, "description": "将0<Alpha<=阈值的像素RGBA归零；默认prop=1、background=0。0关闭。带蒙版仅清理alpha=0的可编辑区，绝不改保护区。" }
+        }
+      },
+      "outputs": ["image", "rawImage", "rawSha256", "processingEvidence", "metadata", "sha256", "width", "height", "hasAlpha", "hasTransparency", "requiresAdoption", "usageEvidence"]
+    },
     {
       "id": "reference-art",
       "name": "角色与物品原图生成",
@@ -473,6 +535,18 @@
             "apiKeyEnv": "GEMINI_API_KEY"
           },
           {
+            "id": "gpt-image-2.5",
+            "name": "GPT Image 2.5",
+            "model": "gpt-image-2.5-sunburst",
+            "protocol": "openai-images-edits",
+            "endpoint": "https://api.openai.com/v1/images/edits",
+            "generationEndpoint": "https://api.openai.com/v1/images/generations",
+            "generationEndpointEnv": "MAP_STITCHER_OPENAI_GENERATION_API_URL",
+            "endpointEnv": "MAP_STITCHER_OPENAI_API_URL",
+            "apiKeyEnv": "OPENAI_API_KEY",
+            "credentialAliases": ["gpt-image-2"]
+          },
+          {
             "id": "gpt-image-2",
             "name": "GPT Image 2",
             "model": "gpt-image-2",
@@ -481,7 +555,8 @@
             "generationEndpoint": "https://api.openai.com/v1/images/generations",
             "generationEndpointEnv": "MAP_STITCHER_OPENAI_GENERATION_API_URL",
             "endpointEnv": "MAP_STITCHER_OPENAI_API_URL",
-            "apiKeyEnv": "OPENAI_API_KEY"
+            "apiKeyEnv": "OPENAI_API_KEY",
+            "credentialAliases": ["gpt-image-2.5"]
           },
           {
             "id": "hunyuan-image-3",
@@ -515,7 +590,7 @@
           "aspectRatio": { "type": "string", "enum": ["1:1", "3:2", "2:3"], "description": "generate-origin 的画幅比例，默认 1:1；保留模型返回的原始像素尺寸。" },
           "provider": {
             "type": "string",
-            "enum": ["nano-banana", "gpt-image-2", "hunyuan-image-3"],
+            "enum": ["nano-banana", "gpt-image-2.5", "gpt-image-2", "hunyuan-image-3"],
             "description": "整体层扩图使用的官方图片模型。省略时使用已激活的 API 设置。"
           },
           "images": {

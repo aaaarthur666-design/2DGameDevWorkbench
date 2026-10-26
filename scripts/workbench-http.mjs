@@ -47,6 +47,7 @@ const gameExportToken=randomUUID();
 const requireGameToken=request=>{if(request.headers['x-forge-game-token']!==gameExportToken)throw new Error('项目导出会话已失效，请关闭导出窗口后重试。');};
 
 import { readMapProject, saveMapProjectRequest } from '../lib/workbench/map-projects.mjs';
+import { documentRequest } from '../lib/workbench/editor-documents.mjs';
 
 const host = process.env.WORKBENCH_RUNTIME_HOST || '127.0.0.1';
 const port = readPort(process.env.WORKBENCH_RUNTIME_PORT, 8790);
@@ -64,6 +65,36 @@ const server = http.createServer(async (request, response) => {
         version: 1,
         service: '2d-game-workbench-runtime',
       });
+      return;
+    }
+    if (url.pathname === '/v1/documents' || url.pathname.startsWith('/v1/documents/')) {
+      try {
+        const manifest = await loadManifest();
+        let operation, input;
+        if (url.pathname === '/v1/documents') {
+          if (request.method === 'GET') {
+            operation = 'documents';
+            input = { ...(url.searchParams.has('kind') ? { kind: url.searchParams.get('kind') } : {}), ...(url.searchParams.has('limit') ? { limit: Number(url.searchParams.get('limit')) } : {}), ...(url.searchParams.has('offset') ? { offset: Number(url.searchParams.get('offset')) } : {}) };
+          } else if (request.method === 'POST') { operation = 'document-create'; input = await readJsonBody(request, 350 * 1024 * 1024); }
+        } else {
+          const parts = url.pathname.slice('/v1/documents/'.length).split('/');
+          const documentId = decodeURIComponent(parts[0]);
+          if (parts.length === 1 && request.method === 'GET') {
+            operation = 'document-get'; input = { documentId, ...(url.searchParams.has('revision') ? { revision: Number(url.searchParams.get('revision')) } : {}), ...(['metadata', 'metadataOnly'].some(key => url.searchParams.get(key) === 'true') ? { metadataOnly: true } : {}) };
+          } else if (parts.length === 2 && request.method === 'POST' && ['apply', 'save', 'restore', 'observe', 'validate', 'simulate', 'adopt-image', 'export'].includes(parts[1])) {
+            operation = `document-${parts[1]}`; input = { ...await readJsonBody(request, 350 * 1024 * 1024), documentId };
+          }
+        }
+        if (!operation) { sendJson(response, 405, { error: 'Unsupported document route or method.' }); return; }
+        sendJson(response, 200, await documentRequest(repositoryRoot, manifest, operation, input));
+      } catch (error) { sendJson(response, error.status || 400, documentFailure(error)); }
+      return;
+    }
+    if (url.pathname === '/v1/image-assets/settings' && ['GET', 'POST'].includes(request.method)) {
+      try {
+        const { connector } = findCapability(await loadManifest(), 'image-assets');
+        sendJson(response, 200, request.method === 'GET' ? getPublicMapGenerationSettings(connector) : updateMapGenerationSettings(connector, await readJsonBody(request)));
+      } catch (error) { sendJson(response, error.status || 400, { error: error.message }); }
       return;
     }
     if(url.pathname.startsWith('/v1/game-export/')) {
@@ -195,11 +226,12 @@ const server = http.createServer(async (request, response) => {
           await agentRequest(
             await loadManifest(),
             operation,
-            await readJsonBody(request),
+            await readJsonBody(request, operation.startsWith('document-') ? 350 * 1024 * 1024 : maxRequestBytes),
+            { documentAuthority: true },
           ),
         );
       } catch (error) {
-        sendJson(response, 400, { error: error.message });
+        sendJson(response, error.status || 400, documentFailure(error));
       }
       return;
     }
@@ -353,7 +385,9 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (request.method === 'POST' && url.pathname === '/v1/tasks') {
-      const body = await readJsonBody(request);
+      // Image task inputs permit 80 MiB of raw reference media; JSON base64
+      // overhead fits within 120 MiB. Each adapter retains its narrower limits.
+      const body = await readJsonBody(request, 120 * 1024 * 1024);
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         sendJson(response, 400, {
           status: 'failed',
@@ -416,12 +450,12 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => server.close(() => process.exit(0)));
 }
 
-async function readJsonBody(request) {
+async function readJsonBody(request, maximumBytes = maxRequestBytes) {
   const chunks = [];
   let total = 0;
   for await (const chunk of request) {
     total += chunk.length;
-    if (total > maxRequestBytes) throw new Error('Request body exceeds 50 MB.');
+    if (total > maximumBytes) throw Object.assign(new Error('Request body exceeds the permitted size.'), { status: 413 });
     chunks.push(chunk);
   }
   try {
@@ -429,6 +463,10 @@ async function readJsonBody(request) {
   } catch {
     throw new Error('Request body must be valid JSON.');
   }
+}
+
+function documentFailure(error) {
+  return { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.currentRevision !== undefined ? { currentRevision: error.currentRevision } : {}), ...(error.expectedRevision !== undefined ? { expectedRevision: error.expectedRevision } : {}), ...(error.editId ? { editId: error.editId } : {}), ...(error.taskId ? { taskId: error.taskId } : {}) };
 }
 
 async function sendArtifact(response, requestedPath) {

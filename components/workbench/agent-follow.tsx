@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, Radio } from 'lucide-react';
 import { getEditorSessions, saveBeforeNavigation } from '@/lib/workbench/editor-session';
-import { followDecision } from '@/lib/workbench/preview-follow-client.mjs';
+import { followDecision, previewSnapshotPath } from '@/lib/workbench/preview-follow-client.mjs';
 import manifest from '@/workbench/manifest.json';
 
 type Step = { id: string; viewPath: string; title: string; summary: string; expiresAt: number };
@@ -44,10 +44,7 @@ export function AgentFollow() {
     const onInput = () => { editedAt = Date.now(); };
     const snapshot = () => {
       const sessions = getEditorSessions();
-      const url = new URL(location.href);
-      const allowed = ['task', 'job', 'work', 'version', 'candidate', 'character', 'asset', 'project', 'object', 'artTask', 'scene', 'tab', 'importAsset', 'importPurpose', 'handoff', 'origin', 'fit', 'map', 'saved'];
-      for (const key of new Set(url.searchParams.keys())) if (!allowed.includes(key)) url.searchParams.delete(key);
-      return { pageId, ...(sessionId ? { sessionId } : {}), viewPath: url.pathname + url.search, visible: document.visibilityState === 'visible',
+      return { pageId, ...(sessionId ? { sessionId } : {}), viewPath: previewSnapshotPath(location.href), visible: document.visibilityState === 'visible',
         focused: document.hasFocus(), following: following.current,
         dirty: sessions.some((s) => s.dirty), busy: sessions.some((s) => s.busy),
         items: sessions.flatMap((s) => s.items.map((i) => ({ id: i.id.slice(0, 200), title: i.title.slice(0, 160), capabilityId: s.capabilityId.slice(0, 80) }))).slice(0, 12),

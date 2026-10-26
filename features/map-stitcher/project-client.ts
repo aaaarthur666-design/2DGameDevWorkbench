@@ -4,6 +4,7 @@ import {
 } from './project-package.mjs';
 import type { MapWorkspaceDraft } from './workspace-draft';
 import { blobToAsset } from './image-utils';
+import { imageBytesSha256 } from '../image-assets/browser-client.mjs';
 
 export async function unpackMapProject(
   bytes: ArrayBuffer,
@@ -25,6 +26,7 @@ export async function unpackMapProject(
           { type: asset.type },
         );
         const loaded = await blobToAsset(file, asset.name);
+        if (asset.generation) loaded.generation = asset.generation;
         urls.push(loaded.url);
         assets[layer as keyof typeof assets] = loaded;
       }
@@ -41,17 +43,21 @@ export async function unpackMapProject(
 }
 const endpoint = (id: string) =>
   `/api/workbench/map-stitcher/projects/${encodeURIComponent(id)}`;
-export async function fetchMapProject(id: string) {
-  const response = await fetch(endpoint(id), { cache: 'no-store' });
+export async function fetchMapProject(id: string, expectedRevision?: number) {
+  const response = await fetch(endpoint(id), { cache: 'no-store', signal: AbortSignal.timeout(90000) });
   if (response.status === 404) return undefined;
   if (!response.ok)
     throw new Error('地图工程服务暂不可读。请保留当前页面后重试。');
-  const draft = await unpackMapProject(await response.arrayBuffer());
-  if (draft.id !== id) throw new Error('地图工程身份不匹配。');
   const serverRevision = Number(response.headers.get('x-map-revision'));
   if (!Number.isSafeInteger(serverRevision) || serverRevision < 1)
     throw new Error('地图工程版本无效。');
-  return { ...draft, serverRevision, serverSynced: true };
+  if (expectedRevision !== undefined && expectedRevision !== serverRevision)
+    throw new Error('已采用图片之后地图又有新版本，请保留本机草稿并重新打开工程。');
+  const bytes = await response.arrayBuffer();
+  const serverSha256 = await imageBytesSha256(new Uint8Array(bytes));
+  const draft = await unpackMapProject(bytes);
+  if (draft.id !== id) throw new Error('地图工程身份不匹配。');
+  return { ...draft, serverRevision, serverSha256, serverSynced: true };
 }
 export async function persistMapProject(
   draft: MapWorkspaceDraft,
@@ -66,11 +72,15 @@ export async function persistMapProject(
       'x-map-revision': String(revision),
     },
     body: new Blob([new Uint8Array(bytes)], { type: 'application/zip' }),
+    signal: AbortSignal.timeout(90000),
   });
   const result = (await response.json()) as {
     error?: string;
     revision: number;
+    sha256: string;
   };
   if (!response.ok) throw new Error(result.error || '地图工程保存失败。');
-  return result.revision as number;
+  if (!Number.isSafeInteger(result.revision) || result.revision < 1 || result.sha256 !== await imageBytesSha256(new Uint8Array(bytes)))
+    throw new Error('地图工程保存响应的版本或源包哈希不匹配。');
+  return { revision: result.revision, sha256: result.sha256 };
 }

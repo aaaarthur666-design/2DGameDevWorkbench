@@ -19,8 +19,16 @@ import {
   type MapWorkspaceDraft,
 } from '@/features/map-stitcher/workspace-draft';
 import type { MapEditorController } from './use-map-editor-controller';
-import { persistMapProject } from '@/features/map-stitcher/project-client';
+import { fetchMapProject, persistMapProject } from '@/features/map-stitcher/project-client';
 import { createMapPreviewCache } from '@/features/map-stitcher/project-preview';
+import type { ImageWriteTicket } from '@/features/map-stitcher/editor-state';
+import type { ImageAdoptionReceipt } from '@/features/image-edit/client';
+
+export type MapSavedImageGuard = { projectId: string; revision: number; sha256: string; fingerprint: string; ticket: ImageWriteTicket };
+function workspaceFingerprint(c: MapEditorController, revision = c.revision) {
+  const { tiles: _tiles, shapes: _shapes, ...settings } = c.getWorkspaceSnapshot();
+  return `${c.workspaceId}:${revision}:${JSON.stringify(settings)}:${JSON.stringify(c.queueState)}`;
+}
 
 export function useMapWorkspace(c: MapEditorController) {
   const latest = useRef(c);
@@ -30,12 +38,13 @@ export function useMapWorkspace(c: MapEditorController) {
   const completed = useRef('');
   const savedRef = useRef(saved);
   const chain = useRef(Promise.resolve());
+  const saving = useRef<Promise<void> | null>(null);
+  const adoptionBarrier = useRef(false);
   const revisions = useRef(new Map<string, number>());
+  const sourceHashes = useRef(new Map<string, string>());
   const previewCache = useRef<ReturnType<typeof createMapPreviewCache> | null>(null);
   previewCache.current ||= createMapPreviewCache();
-  const currentSnapshot = c.getWorkspaceSnapshot();
-  const { tiles: _tiles, shapes: _shapes, ...settings } = currentSnapshot;
-  const fingerprint = `${c.workspaceId}:${c.revision}:${JSON.stringify(settings)}:${JSON.stringify(c.queueState)}`;
+  const fingerprint = workspaceFingerprint(c);
   const fingerprintRef = useRef(fingerprint);
   useLayoutEffect(() => {
     latest.current = c;
@@ -78,52 +87,112 @@ export function useMapWorkspace(c: MapEditorController) {
     [href],
   );
   const save = useCallback(async () => {
-    const current = latest.current;
-    if (!current.workspaceId || !current.sourceAsset) return;
-    const mark = fingerprintRef.current;
-    if (savedRef.current.fingerprint === mark) return;
-    const at = new Date().toISOString();
-    const item = makeItem(at)!;
-    // A saved draft is resumable, but a browser-owned queue never runs after the page closes.
-    const storedItem: WorkItem =
-      item.state === 'running'
-        ? {
-            ...item,
-            state: 'attention',
-            detail: '地图队列未完成，恢复后查看并继续',
-          }
-        : item;
-    const draft: MapWorkspaceDraft = {
-      version: 1,
-      id: current.workspaceId,
-      snapshot: current.getWorkspaceSnapshot(),
-      pending: current.queueState.jobs
-        .filter((j) => ['pending', 'running', 'failed'].includes(j.status))
-        .map(({ tileKey, layer, request }) => ({ tileKey, layer, request })),
-    };
+    if (adoptionBarrier.current) throw new Error('已采用图片正在协调共享版本；请保留页面，完成读取后再保存。');
+    if (saving.current) return saving.current;
     const write = chain.current
       .catch(() => undefined)
       .then(async () => {
-        const serverRevision = revisions.current.get(draft.id) || 0;
-        await saveWorkspaceDraft(draft.id, { ...draft, serverRevision, serverSynced: false }, [storedItem], 'map-current');
-        const preview = await previewCache.current!(draft.snapshot);
-        const nextRevision = await persistMapProject(draft, serverRevision, preview);
-        revisions.current.set(draft.id, nextRevision);
-        await saveWorkspaceDraft(draft.id, { ...draft, serverRevision: nextRevision, serverSynced: true }, [storedItem], 'map-current');
+        while (true) {
+          if (adoptionBarrier.current) throw new Error('已采用结果尚未协调，旧地图草稿未写回服务端。');
+          const current = latest.current;
+          if (!current.workspaceId || !current.sourceAsset) return;
+          const mark = fingerprintRef.current;
+          if (savedRef.current.fingerprint === mark) return;
+          const at = new Date().toISOString();
+          const item = makeItem(at)!;
+          const storedItem: WorkItem = item.state === 'running'
+            ? { ...item, state: 'attention', detail: '地图队列未完成，恢复后查看并继续' } : item;
+          const draft: MapWorkspaceDraft = {
+            version: 1, id: current.workspaceId, snapshot: current.getWorkspaceSnapshot(),
+            pending: current.queueState.jobs.filter(j => ['pending', 'running', 'failed'].includes(j.status))
+              .map(({ tileKey, layer, request }) => ({ tileKey, layer, request })),
+          };
+          const serverRevision = revisions.current.get(draft.id) || 0;
+          await saveWorkspaceDraft(draft.id, { ...draft, serverRevision, serverSynced: false }, [storedItem], 'map-current');
+          const preview = await previewCache.current!(draft.snapshot);
+          const committed = await persistMapProject(draft, serverRevision, preview);
+          revisions.current.set(draft.id, committed.revision);
+          sourceHashes.current.set(draft.id, committed.sha256);
+          await saveWorkspaceDraft(draft.id, { ...draft, serverRevision: committed.revision, serverSha256: committed.sha256, serverSynced: true }, [storedItem], 'map-current');
+          savedRef.current = { fingerprint: mark, at };
+          setSaved(savedRef.current);
+          setError('');
+          if (fingerprintRef.current === mark) {
+            markEditorSaved('map-stitcher');
+            return;
+          }
+        }
       });
     chain.current = write;
+    saving.current = write;
     try {
       await write;
-      savedRef.current = { fingerprint: mark, at };
-      if (fingerprintRef.current === mark) markEditorSaved('map-stitcher');
-      setSaved(savedRef.current);
-      setError('');
     } catch (error) {
       const message = error instanceof Error ? error.message : '地图工程保存失败，请保留页面并下载源文件。';
       setError(message);
       throw new Error(message);
-    }
+    } finally { if (saving.current === write) saving.current = null; }
   }, [makeItem]);
+  const flushSaved = async (ticket: ImageWriteTicket): Promise<MapSavedImageGuard> => {
+    await save();
+    const current = latest.current;
+    current.assertImageEditTicket(ticket);
+    const revision = revisions.current.get(current.workspaceId), sha256 = sourceHashes.current.get(current.workspaceId);
+    if (!revision || !sha256 || savedRef.current.fingerprint !== fingerprintRef.current)
+      throw new Error('地图最新内容尚未保存到服务端，请重试。');
+    return { projectId: current.workspaceId, revision, sha256, fingerprint: fingerprintRef.current, ticket };
+  };
+  const assertImageGuard = (guard: MapSavedImageGuard) => {
+    const current = latest.current;
+    current.assertImageEditTicket(guard.ticket);
+    if (current.workspaceId !== guard.projectId || fingerprintRef.current !== guard.fingerprint || revisions.current.get(guard.projectId) !== guard.revision)
+      throw new Error('地图在图片调整期间已变化，候选未覆盖本机内容。');
+  };
+  const acceptAdopted = async (receipt: ImageAdoptionReceipt, guard: MapSavedImageGuard): Promise<MapSavedImageGuard> => {
+    adoptionBarrier.current = true;
+    let loaded: Awaited<ReturnType<typeof fetchMapProject>>, installed = false;
+    try {
+      await chain.current;
+      assertImageGuard(guard);
+      const ref = receipt.target.targetRef;
+      if (ref.kind !== 'map-layer' || ref.projectId !== guard.projectId || ref.tileKey !== guard.ticket.tileKey || ref.layer !== guard.ticket.layer || typeof receipt.revision !== 'number' || receipt.currentRevision !== receipt.revision)
+        throw new Error('图片采用结果与当前地图目标或版本不匹配。');
+      loaded = await fetchMapProject(guard.projectId, receipt.revision);
+      if (!loaded) throw new Error('已采用图片的地图源包不存在。');
+      if (loaded.serverSha256 !== receipt.target.source?.projectSha256)
+        throw new Error('已采用地图的真实源包哈希与采用记录不符。');
+      assertImageGuard(guard);
+      if (loaded.serverRevision === guard.revision) {
+        if (loaded.serverSha256 !== guard.sha256) throw new Error('重复采用响应的源包哈希已变化。');
+        for (const tile of loaded.snapshot.tiles) for (const asset of Object.values(tile.images)) if (asset) URL.revokeObjectURL(asset.url);
+        adoptionBarrier.current = false;
+        setError('');
+        return guard;
+      }
+      if (loaded.serverRevision < guard.revision) throw new Error('历史采用响应不能替换较新的本机地图。');
+      const current = latest.current;
+      const nextRevision = current.restoreAdoptedImage(loaded.snapshot, guard.ticket);
+      installed = true;
+      revisions.current.set(guard.projectId, loaded.serverRevision);
+      sourceHashes.current.set(guard.projectId, loaded.serverSha256);
+      const mark = workspaceFingerprint(current, nextRevision);
+      fingerprintRef.current = mark;
+      savedRef.current = { fingerprint: mark, at: new Date().toISOString() };
+      setSaved(savedRef.current);
+      const item = makeItem(savedRef.current.at);
+      await saveWorkspaceDraft(guard.projectId, loaded, item ? [item] : [], 'map-current');
+      completed.current = '';
+      setError('');
+      adoptionBarrier.current = false;
+      markEditorSaved('map-stitcher');
+      return { projectId: guard.projectId, revision: loaded.serverRevision, sha256: loaded.serverSha256, fingerprint: mark, ticket: current.captureImageTicket(guard.ticket.tileKey, guard.ticket.layer) };
+    } catch (error) {
+      if (loaded && !installed) for (const tile of loaded.snapshot.tiles) for (const asset of Object.values(tile.images)) if (asset) URL.revokeObjectURL(asset.url);
+      const message = error instanceof Error ? error.message : '已采用结果读取失败。';
+      setError(`${message} 已采用结果保留在服务端；旧草稿自动保存已暂停，请重新打开工程。`);
+      throw error;
+    }
+  };
   useEffect(() => {
     let alive = true;
     const revision = latest.current.revision;
@@ -140,6 +209,7 @@ export function useMapWorkspace(c: MapEditorController) {
           return;
         }
         revisions.current.set(draft.id, draft.serverRevision || 0);
+        if (draft.serverSha256) sourceHashes.current.set(draft.id, draft.serverSha256);
         latest.current.restoreWorkspaceSnapshot(draft.snapshot, draft.id);
         if (draft.pending?.length) {
           latest.current.queue.pause(
@@ -186,7 +256,7 @@ export function useMapWorkspace(c: MapEditorController) {
           );
       },
     });
-    if (!dirty) return;
+    if (!dirty || adoptionBarrier.current) return;
     const timer = setTimeout(() => void save().catch(() => undefined), 800);
     return () => clearTimeout(timer);
   }, [
@@ -235,5 +305,5 @@ export function useMapWorkspace(c: MapEditorController) {
     url.searchParams.set('map', 'new');
     window.history.replaceState(window.history.state, '', url);
   };
-  return { loading, error, newProject };
+  return { loading, error, newProject, flushSaved, assertImageGuard, acceptAdopted };
 }

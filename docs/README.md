@@ -8,10 +8,11 @@ Forge 的公开文档面向安装、制作资产、MCP 接入与游戏项目交�
 | [Agent 客户端接入](agent-clients.md) | MCP 配置与产品 Skills |
 | [角色原图](reference-art.md) | 原图生成、导入与动画参考移送 |
 | [序列帧生成](sprite-generator.md) | 候选、检查、修补与导出 |
-| [地图拼接](map-stitcher.md) | 手动原图、扩展、碰撞和导出 |
+| [地图拼接](map-stitcher.md) | Image 2.5 背景、手动扩展、碰撞和导出 |
 | [交互物编辑器](interactable-editor.md) | 外观、交互行为与 Godot 资源 |
 | [交互物原图](prop-art.md) | 物品原图生成与采用 |
-| [场景组装](scene-composer.md) | 地图与交互物组装 |
+| [图片局部调整](image-editing.md) | 精确源图、区域配方、本地候选与版本保护 |
+| [场景组装](scene-composer.md) | 共享文档、AI 编辑与观察、地图与交互物组装 |
 | [资产目录](asset-catalog.md) | 查找、下载、回收站与恢复 |
 | [内部素材导入](internal-imports.md) | 已有素材在编辑器之间复用 |
 | [页面跟随](agent-preview-follow.md) | Agent 执行时的页面展示 |

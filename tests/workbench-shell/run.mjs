@@ -6,6 +6,7 @@ const server = await createServer({
   root: process.cwd(),
   configFile: false,
   appType: 'custom',
+  optimizeDeps: { noDiscovery: true, entries: [] },
   logLevel: 'error',
   resolve: { alias: { '@': resolve(process.cwd()) } },
   server: { middlewareMode: true },
@@ -63,6 +64,14 @@ try {
     assert.equal(item.capabilityId,'interactable-editor');
     assert.equal(item.title,'物品原图');
     assert.equal(item.href,'/tools/interactable-editor?artTask=prop-task');
+  });
+  test('Image 2.5 work items use existing editors without duplicate navigation modules', () => {
+    assert.equal(modules.some((entry) => entry.id === 'image-assets'), false);
+    for (const [operation, kind, module] of [['generate-background', 'background', 'map-stitcher'], ['generate-prop', 'prop', 'interactable-editor'], ['edit-image', 'prop', 'interactable-editor']]) {
+      const [item] = taskWorkItems([{ id: 'image-result', capabilityId: 'image-assets', status: 'completed', input: { operation, kind } }], modules);
+      assert.equal(item.capabilityId, module);
+      assert.equal(item.href, `/tools/${module}?imageTask=image-result`);
+    }
   });
   const at = '2026-09-05T10:00:00.000Z';
   const later = '2026-09-05T10:01:00.000Z';
