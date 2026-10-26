@@ -275,18 +275,20 @@
       "id": "sprite-generator",
       "name": "2D 序列帧生成",
       "shortName": "序列帧",
-      "description": "从角色设定或动作描述出发生成动画帧。地面攻击与空中攻击默认进行视觉检查并给问题帧添加提醒，不自动重新生成。逐帧修补由人决定，使用明确的攻击阶段与前后帧约束，每帧最多请求两次并人工采用。视觉检查默认使用混元 HY Vision 2.0（TokenHub），可选 OpenAI，使用单独配置的 API 并另行计费。",
+      "description": "按自由动作要求制作角色动画。专家制定通用分段与末姿势检查点；每段生成后须读取实际帧并明确确认，锁定末帧锚点后才继续。模型意见不自动放行。规划、绘制与视觉调用分别受授权预算约束；旧方案保持原语义。",
       "category": "production",
       "workflow": "workbench/workflows/sprite-production.json",
       "ui": {
         "icon": "frames",
         "productionLine": "player",
         "entryTitle": "制作玩家",
-        "starterHint": "准备角色图片，在序列帧工具中创建一个动作；可以先从待机动作开始。",
+        "starterHint": "选择角色，描述动作和结束姿势，查看方案后开始制作。",
         "stages": [
-          "准备素材",
-          "生成动作",
-          "检查并导出"
+          "准备与描述",
+          "查看制作方案",
+          "自动制作",
+          "检查与调整",
+          "导出与使用"
         ],
         "accent": "violet",
         "status": "ready",
@@ -316,6 +318,7 @@
           "operation": {
             "type": "string",
             "enum": [
+              "plan-motion", "revise-motion", "get-motion", "generate-motion", "pause-motion", "resume-motion", "get-motion-stage", "review-motion-stage", "target-motion-stage", "repair-motion-stage", "review-motion-repair",
               "create",
               "create-and-generate",
               "generate-existing",
@@ -329,8 +332,45 @@
               "attach-provider-job",
               "safety"
             ],
-            "description": "与 SpritePipeline REST API 对应的作业操作。"
+            "description": "新动作优先 plan-motion；准备好方案后 generate-motion。轮询已返回 taskId 用 get_task，不重复 run。旧作业继续用原操作。"
           },
+          "openWorkId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+          "expectedRevision": { "type": "integer", "minimum": 1 },
+          "planSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "stageIndex": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "anchorFrame": { "type": "integer", "minimum": 0, "maximum": 63, "description": "可选的当前播放片段零基锚点索引；省略使用最后一帧。提前截取须实际检查并 acknowledgeTrim。" },
+          "acknowledgeTrim": { "type": "boolean", "description": "明确确认以所选真实帧结束本段；原始尾帧保留，不自动丢弃。" },
+          "stageToken": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "stageDecision": { "type": "string", "enum": ["accept", "reject"], "description": "实际查看片段与末姿势后裁决；模型通过不能代替 Agent 或用户检查。" },
+          "planningAuthorized": { "type": "boolean", "description": "仅在用户已授权规划模型调用时为 true。" },
+          "autoExecute": { "type": "boolean", "description": "用户已授权预算内直接制作时可启用；否则仅出方案。修改方案后需重新确认。" },
+          "motionSpec": {
+            "type": "object", "required": ["character_id", "description"], "additionalProperties": false,
+            "properties": {
+              "character_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100 },
+              "description": { "type": "string", "minLength": 4, "maxLength": 2000 },
+              "ending": { "type": "string", "maxLength": 300 },
+              "return_to_reference": { "type": "boolean", "description": "仅当用户希望末帧回到原图姿势时为 true；默认 false，保持描述的终态。" },
+              "loop": { "type": "boolean" },
+              "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 60 },
+              "timing_mode": {"type":"string","enum":["auto","fixed"],"description":"auto 由方案安排节奏；fixed 必须遵守用户指定 FPS。"},
+              "candidate_count": { "type": "integer", "minimum": 1, "maximum": 8 },
+              "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+              "provider": { "type": "string", "enum": ["pixellab", "fixture"] },
+              "budget": { "type": "object", "additionalProperties": false, "properties": {
+                "max_planning_calls": { "type": "integer", "minimum": 4, "maximum": 16 },
+                "max_generation_calls": { "type": "integer", "minimum": 1, "maximum": 32 },
+                "max_review_calls": {"type":"integer","minimum":2,"maximum":80,"description":"新方案每个候选需 2 × 分段数 + 2 次视觉请求，分别检查各段与完整动作。"}
+              } }
+            }
+          },
+          "targetImageBase64": {"type":"string","minLength":4,"maxLength":2000000,"description":"已实际检查的透明 PNG 编码，与角色同尺寸；仅在当前方案尚未开始制作时绑定段末目标。"},
+          "clearTarget": {"type":"boolean","description":"显式取消本段目标图片；不会删除历史文件。"},
+          "repairStart": {"type":"integer","minimum":1,"maximum":62,"description":"内部替换窗口起始帧，零基。外观修复：128像素限2帧，64像素2至14个偶数帧；运动修复4至16个偶数帧。保留段首末帧。"},
+          "repairEnd": {"type":"integer","minimum":1,"maximum":62,"description":"内部替换窗口结束帧，包含此帧，零基。"},
+          "repairMode": {"type":"string","enum":["appearance","transition"]},
+          "repairAttempt": {"type":"integer","minimum":0,"maximum":1},
+          "generationAuthorized": {"type":"boolean","description":"本次额外修复已获授权；仍受当前任务剩余生成和复核预算限制。"},
           "characterId": {
             "type": "string",
             "minLength": 1,
@@ -447,6 +487,8 @@
         }
       },
       "outputs": [
+        "openWorkId",
+        "work",
         "jobRecord",
         "orderedFrames",
         "spriteSheet",

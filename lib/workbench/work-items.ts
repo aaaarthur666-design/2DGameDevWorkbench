@@ -38,7 +38,7 @@ export type StoredTask = {
   requiredEnvironment?: string;
   createdAt?: string;
   updatedAt?: string;
-  adapter?: { remoteJobId?: string; remoteStatus?: string };
+  adapter?: { remoteJobId?: string; remoteStatus?: string; openWorkId?: string };
 };
 export type SpriteJob = {
   job_id: string;
@@ -48,6 +48,7 @@ export type SpriteJob = {
   character_id?: string;
   action_name?: string;
   action_id?: string;
+  open_work_id?: string;
 };
 
 export const workStateLabels: Record<WorkItemState, string> = {
@@ -82,14 +83,24 @@ export function spriteState(
 
 export function spriteWorkItem(job: SpriteJob, href: string): WorkItem {
   return {
-    id: `sprite:${job.job_id}`,
+    id: job.open_work_id ? `motion:${job.open_work_id}` : `sprite:${job.job_id}`,
     capabilityId: 'sprite-generator',
     title: `${job.character_name || job.character_id || '角色'} · ${job.action_name || job.action_id || '动作'}`,
     updatedAt: job.updated_at,
     savedAt: job.updated_at,
-    href: `${href}?job=${encodeURIComponent(job.job_id)}`,
+    href: job.open_work_id ? `${href}?work=${job.open_work_id}` : `${href}?job=${encodeURIComponent(job.job_id)}`,
     ...spriteState(job.status),
   };
+}
+
+export type OpenMotionSummary = { id: string; title: string; status: string; job_status?: string; updated_at: string };
+export function openMotionWorkItem(work: OpenMotionSummary, href: string): WorkItem {
+  const state = work.job_status ? spriteState(work.job_status) : {
+    state: work.status === 'planning' ? 'running' as const : 'attention' as const,
+    detail: work.status === 'planning' ? '正在制定制作方案' : work.status === 'ready' ? '方案已保存，等待确认制作' : '方案需要处理', stage: 1,
+  };
+  return { id: `motion:${work.id}`, capabilityId: 'sprite-generator', title: work.title,
+    href: `${href}?work=${work.id}`, updatedAt: work.updated_at, savedAt: work.updated_at, ...state };
 }
 
 export function interactableItemId(projectId: string, objectId: string) {
@@ -156,11 +167,11 @@ export function taskWorkItems(
             }))
           : [
               {
-                id: jobId ? `sprite:${jobId}` : `task:${task.id}`,
+                id: task.adapter?.openWorkId ? `motion:${task.adapter.openWorkId}` : jobId ? `sprite:${jobId}` : `task:${task.id}`,
                 title: jobId
                   ? `角色动画 · ${jobId}`
                   : `${capabilityModule.entryTitle} · ${operationLabel(input.operation)}`,
-                href: jobId
+                href: task.adapter?.openWorkId ? `${capabilityModule.href}?work=${task.adapter.openWorkId}` : jobId
                   ? `${capabilityModule.href}?job=${encodeURIComponent(jobId)}`
                   : `/advanced?tab=records&task=${encodeURIComponent(task.id)}`,
               },

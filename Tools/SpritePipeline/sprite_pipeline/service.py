@@ -497,7 +497,28 @@ class SpritePipelineService:
 
     def _create_job_unlocked(self, request: GenerationRequest, fingerprint: str) -> JobRecord:
         character, character_path = self.presets.load_character(request.character_id)
-        base_action, action_path = self.presets.load_action(request.action_id)
+        if request.open_plan:
+            from .collaboration.workspace import OpenMotionWorkspace
+            binding = request.open_plan
+            work = OpenMotionWorkspace(self).load(binding.work_id)
+            if (work.revision != binding.revision or work.plan_sha256 != binding.plan_sha256
+                    or work.spec != binding.spec or work.plan != binding.plan
+                    or (binding.plan.quality is not None and work.planning_config != binding.model_snapshot)
+                    or work.character != character.model_dump(mode="json")):
+                raise ConflictError("任务、角色或方案已改变，请查看最新版本")
+            if binding.compiled_prompts:
+                from .collaboration.quality import compiled_prompt
+                if binding.compiled_prompts != [compiled_prompt(binding.plan,character,i) for i in range(len(binding.plan.stages))]:
+                    raise ConflictError('实际生成提示词与方案合同不一致')
+            base_action = ActionPreset(action_id=request.action_id, display_name=binding.plan.title,
+                frame_count=sum(stage.frame_count for stage in binding.plan.stages),
+                fps=binding.plan.quality.playback_fps if binding.plan.quality else binding.spec.fps,
+                loop=binding.spec.loop, grounded=binding.plan.grounded, manifest_action_name=binding.plan.animation_name,
+                action_description=binding.spec.description[:1000].ljust(8),
+                loop_constraint="The final motion must connect to the first frame." if binding.spec.loop else None)
+            action_path = None
+        else:
+            base_action, action_path = self.presets.load_action(request.action_id)
         updates: dict[str, Any] = {}
         if request.frame_count is not None:
             updates["frame_count"] = request.frame_count
@@ -524,7 +545,7 @@ class SpritePipelineService:
             if not request.loop:
                 updates["loop_constraint"] = None
         action = ActionPreset.model_validate({**base_action.model_dump(), **updates})
-        if request.provider != "import":
+        if request.provider != "import" and request.open_plan is None:
             provider_count = action.generation_frame_count
             if provider_count < 4 or provider_count > 16 or provider_count % 2:
                 raise ValidationHarnessError(
@@ -543,8 +564,12 @@ class SpritePipelineService:
         if request.motion_repair is not None:
             from .motion_correction import MotionCorrection
             motion_inputs = MotionCorrection(self).generation_inputs(request)
-        full_prompt = motion_inputs[1] if motion_inputs else segment_inputs[2] if segment_inputs else compose_generation_prompt(character, action)
-        if request.provider == "pixellab" and len(full_prompt) > 1000:
+        full_prompt = ("\n\n".join(stage.prompt for stage in request.open_plan.plan.stages) if request.open_plan else
+                       motion_inputs[1] if motion_inputs else segment_inputs[2] if segment_inputs else compose_generation_prompt(character, action))
+        if request.open_plan and request.open_plan.plan.quality:
+            from .collaboration.quality import compiled_prompt
+            full_prompt = '\n\n'.join(request.open_plan.compiled_prompts or [compiled_prompt(request.open_plan.plan,character,i) for i in range(len(request.open_plan.plan.stages))])
+        if request.provider == "pixellab" and request.open_plan is None and len(full_prompt) > 1000:
             raise ValidationHarnessError(
                 "composed PixelLab action prompt exceeds the 1000 character API limit",
                 details={"length": len(full_prompt), "limit": 1000},
@@ -552,6 +577,8 @@ class SpritePipelineService:
 
         reference_source = (character_path.parent / character.reference_frame).resolve()
         self._validate_reference_image(reference_source, character.cell_width, character.cell_height)
+        if request.open_plan and sha256_file(reference_source) != request.open_plan.reference_sha256:
+            raise ConflictError("角色原图已改变，请重新制定方案")
         job_id, job_dir = self.store.create_layout(character.character_id, action.action_id)
         try:
             reference_dest = job_dir / "input" / "reference.png"
@@ -562,6 +589,8 @@ class SpritePipelineService:
                 self._atomic_write_bytes(job_dir / "input" / "last_frame.png", segment_inputs[1])
             else:
                 shutil.copy2(reference_source, reference_dest)
+            if request.open_plan and sha256_file(reference_dest) != request.open_plan.reference_sha256:
+                raise ConflictError("复制参考图期间原文件发生变化")
             for field, filename in (
                 ("master", character.master),
                 ("palette", character.palette),
@@ -597,7 +626,7 @@ class SpritePipelineService:
                 character=character,
                 action=action,
                 character_preset_path=self.settings.record_path(character_path),
-                action_preset_path=self.settings.record_path(action_path),
+                action_preset_path=self.settings.record_path(action_path or job_dir / "input" / "action.json"),
                 reference_sha256=sha256_file(reference_dest),
                 input_sha256=input_sha256,
                 full_prompt=full_prompt,
@@ -605,6 +634,13 @@ class SpritePipelineService:
             )
             from .motion_correction import default_policy
             job.motion_control = default_policy(request, action)
+            if request.open_plan:
+                from .collaboration.contracts import PlanControl, PlanExecution, StageRun
+                job.plan_control = PlanControl()
+                for candidate in job.candidates:
+                    candidate.plan_execution = PlanExecution(stages=[StageRun() for _ in request.open_plan.plan.stages])
+                    if request.open_plan.plan.quality:
+                        candidate.plan_execution.quality_review = {'state': 'pending', 'requests': []}
             from .attack_sequence import initialize
             initialize(job)
             job.touch("job_created", provider=request.provider, candidate_count=request.candidate_count)
@@ -829,6 +865,9 @@ class SpritePipelineService:
         if any(c.attack_sequence for c in job.candidates):
             from .attack_sequence import FixedAttackGeneration
             return FixedAttackGeneration(self).advance(job_id,provider,wait=wait,candidate_index=candidate_index)
+        if job.request.open_plan:
+            from .collaboration.execution import PlanGeneration
+            return PlanGeneration(self).advance(job_id, provider, wait=wait, candidate_index=candidate_index)
         if candidate_index is not None:
             targets = [self._candidate(job, candidate_index).candidate_index]
         else:
@@ -1003,6 +1042,19 @@ class SpritePipelineService:
         from .providers import get_provider
 
         snapshot = self.store.load(job_id)
+        if snapshot.request.open_plan:
+            from .collaboration.execution import PlanGeneration
+            with self.store.locked_job(job_id) as current:
+                candidate = self._candidate(current, candidate_index)
+                if candidate.frames:
+                    return current
+                if not any(r.state in {"pending", "complete"} for r in candidate.plan_execution.stages):
+                    raise ConflictError("没有可查询的原请求，请先核对远端编号")
+                if candidate.status == CandidateStatus.failed and candidate.provider_status == "completed":
+                    candidate.status = CandidateStatus.provider_pending
+                    candidate.error = None
+            return PlanGeneration(self).advance(job_id, get_provider(snapshot.request.provider, self.settings),
+                                                candidate_index=candidate_index, allow_submit=False)
         if snapshot.request.provider != "pixellab":
             raise ValidationHarnessError(
                 "only PixelLab candidates can be recovered from an existing provider job"
@@ -1950,6 +2002,14 @@ class SpritePipelineService:
             candidate = self._candidate(job, candidate_index)
             if candidate.frames:
                 return job
+            if job.request.open_plan:
+                run = next((r for r in candidate.plan_execution.stages if r.state != "complete"), None)
+                if run is None or run.state not in {"submitting", "unknown", "pending"}:
+                    raise ConflictError("当前片段没有待核对的提交")
+                if run.provider_job_id and run.provider_job_id != remote_id:
+                    raise ConflictError("片段已有不同的远端编号")
+                run.provider_job_id = remote_id
+                run.state = "pending"
             if candidate.provider_job_id and candidate.provider_job_id != remote_id:
                 raise ConflictError("candidate already has a different provider job ID")
             if candidate.status not in (
@@ -1995,6 +2055,15 @@ class SpritePipelineService:
             job_id = str(row["job_id"])
             try:
                 job = self.reconcile_saved_results(job_id)
+                if job.request.open_plan and job.generation_requested_at is not None:
+                    from .providers import get_provider
+                    from .collaboration.execution import PlanGeneration
+                    provider = get_provider(job.request.provider, self.settings)
+                    before_revision = job.revision
+                    advanced = PlanGeneration(self).advance(job_id, provider)
+                    if advanced.revision != before_revision:
+                        summary["advanced"].append({"job_id": job_id, "status": advanced.status.value})
+                    continue
                 if job.request.provider != "pixellab" or job.generation_requested_at is None:
                     continue
                 stale_before = utc_now() - timedelta(
@@ -2663,9 +2732,26 @@ class SpritePipelineService:
         *,
         reviewer: str,
         acknowledge_warnings: bool = False,
+        expected_frames: str | None = None,
+        review_note: str = "",
     ) -> JobRecord:
         with self.store.locked_job(job_id) as job:
             candidate = self._candidate(job, candidate_index)
+            if expected_frames is not None:
+                from .collaboration.api import candidate_digest
+                if candidate_digest(candidate) != expected_frames:
+                    raise ConflictError("动画帧已改变，请重新播放检查")
+            if job.request.open_plan and job.request.open_plan.plan.quality:
+                if job.request.open_plan.plan.quality.version >= 3 and (
+                    not candidate.plan_execution or any(r.state != 'accepted' for r in candidate.plan_execution.stages)
+                ):
+                    raise ExportBlockedError('实际姿势检查点尚未全部确认，不能直接采用完整动画')
+                from .collaboration.visual_review import review_state
+                visual = review_state(candidate)
+                if visual['state'] in {'pending', 'running'}:
+                    raise ExportBlockedError('视觉验收尚未结束，请等待结果')
+                if visual.get('verdict') != 'pass' and (not acknowledge_warnings or not review_note.strip()):
+                    raise ExportBlockedError('视觉验收尚未通过；请先人工检查实际帧，记录结论并明确接受提醒')
             from .motion_correction import active as motion_active
             if motion_active(job):
                 raise ExportBlockedError("自动视觉检查和补做尚未完成")
@@ -2711,6 +2797,8 @@ class SpritePipelineService:
             candidate.status = CandidateStatus.approved
             self._refresh_job_status(job)
             job.touch("candidate_approved", candidate_index=candidate_index, reviewer=reviewer, warnings_acknowledged=bool(warning_count))
+            if review_note:
+                job.touch("manual_review_note", candidate_index=candidate_index, note=review_note)
         return self.store.load(job_id)
 
     def reject_candidate(self, job_id: str, candidate_index: int, *, reviewer: str, note: str = "") -> JobRecord:
@@ -3187,6 +3275,8 @@ class SpritePipelineService:
             export_dir = self.settings.exports_dir / job.character.character_id / job.action.action_id
             export_dir.mkdir(parents=True, exist_ok=True)
             stem = Path(options.filename).stem if options.filename else f"{job.character.character_id}_{job.action.action_id}"
+            if job.request.open_plan and not options.filename:
+                stem += f"_v{job.request.open_plan.revision}_candidate_{candidate_index:02d}"
             destinations = {
                 "sheet": export_dir / f"{stem}.png",
                 "preview": export_dir / f"{stem}.preview.gif",

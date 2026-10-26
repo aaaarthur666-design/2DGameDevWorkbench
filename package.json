@@ -43,6 +43,7 @@
     "test:presentation": "node tests/workbench-presentation/run.mjs",
     "test:workbench-shell": "node tests/workbench-shell/run.mjs",
     "test:frontend": "node tests/frontend-service/run.mjs",
+    "test:open-motion": "node tests/open-motion/run.mjs",
     "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
     "format": "oxfmt",

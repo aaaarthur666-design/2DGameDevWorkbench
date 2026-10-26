@@ -1,8 +1,16 @@
 # 连接器与任务契约
 
+v4 增加 `target-motion-stage`（制作前本地绑定真实末图）、`repair-motion-stage`（已授权窗口修复）和 `review-motion-repair`（按预览 token 与人工依据采用/拒绝）。`get-motion-stage` 同时提供 `repairPreviews` 的完整有序图片。详情与索引约定见 [序列帧工作区](sprite-generator.md)。修复的源 token、请求编号、原始帧、失败回执和采用映射永久保留；未知提交不重发，生成预算为剩余正常分段预留调用，视觉预算包含历史复核与采用后的再次复核。
+
+开放动作质量合同使用 `motionSpec.timing_mode=auto|fixed` 和 `budget.max_review_calls`。v3 每候选需 `2 × 分段数 + 2` 次视觉调用，覆盖分段与最终动画，不得超过授权预算。新方案与模型配置冻结在原生 job 绑定中；v1/v2 方案验证旧哈希并使用旧语义。真实 API 请求使用编译后的完整提示词，原始帧与交付时间线各自有来源映射。最终视觉报告在 `plan_execution.quality_review`，分段报告与接受快照在各 `stages[].review/accepted`，保留回执、帧摘要和人工依据。模型报告不能自动采用。
+
+`get-motion-stage` 取指定候选与零基阶段的有序 PNG、目标和 token。`review-motion-stage` 绑定 `expectedRevision`、`stageToken`，携带 `stageDecision=accept|reject`、`reviewNote` 与必要的 `acknowledgeWarnings`；与 Web `POST /v1/open-motion/{work}/review-stage` 共用检查。接受冻结实际帧与末帧锚点，拒绝停止后续请求；重复接受不重新启用已暂停任务。只有已确认的真实快照可进入下一段。`pendingCheckpoints` 表示需要实际检查，不是生成失败。GET 不调用模型。
+
 ## 1. 范围
 
 本文描述 MCP、CLI、Web HTTP bridge 与能力适配器共享的任务和文档语义。生产输入以 `workbench/manifest.json` 为机器权威；共享文档命令以 `lib/workbench/document-contract.mjs`、图片会话以 `lib/workbench/image-edit-contract.mjs` 及实际 MCP schema 为准。本文解释跨能力约束和协议转换，不复制完整 JSON Schema。
+
+开放动作使用 `sprite-generator` 的 `plan-motion` / `revise-motion` / `get-motion` / `generate-motion` / `pause-motion` / `resume-motion`。`motionSpec` 含原始描述、角色、终态、播放设置和调用上限；嵌套字段在任务持久化前按 manifest 校验，不能夹带 Key 或未知控制字段。规划明确授权 `planningAuthorized`，异步轮询沿用原 taskId；结果含 `openWorkId`、`work` 及精确 `?work=` 链接。确认生成绑定 `expectedRevision` 和 `planSha256`，禁止执行旧方案。只有用户已授权直接制作时才设置 `autoExecute`。本机页面的 `/api/workbench/open-motion` 仅代理列明的工作区、帧图及已保存导出路径；不能作任意 HTTP 代理。
 
 当前注册五项 `local-adapter`，其中 Agent 开放 image-assets、原图、序列帧和交互物四项。legacy map-stitcher 的底层契约供手动前端使用；共享场景编辑另走文档工具：
 

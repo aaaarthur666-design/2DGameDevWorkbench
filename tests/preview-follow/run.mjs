@@ -7,8 +7,8 @@ import { spawn } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { loadManifest, repositoryRoot, agentRequest } from '../../lib/workbench/runtime.mjs';
-import { frontendHeartbeat, frontendContext, previewPath } from '../../lib/workbench/preview-follow.mjs';
-import { followDecision } from '../../lib/workbench/preview-follow-client.mjs';
+import { frontendHeartbeat, frontendContext, previewPath, queuePresentation } from '../../lib/workbench/preview-follow.mjs';
+import { followDecision, previewSnapshotPath } from '../../lib/workbench/preview-follow-client.mjs';
 
 const manifest = await loadManifest();
 const dir = path.resolve(repositoryRoot, manifest.workspace.presentationDirectory);
@@ -58,6 +58,24 @@ assert.equal(decision({ busy: true }), 'busy');
 assert.equal(decision({ editing: true }), 'editing');
 assert.equal(decision({ handled: true }), 'ignore');
 assert.equal(decision({ currentPath: '/tools/sprite-generator?job=j&candidate=2', targetPath: '/tools/sprite-generator?candidate=2&job=j', busy: true }), 'displayed');
+
+const identityManifest = { ...manifest, workspace: { ...manifest.workspace, presentationDirectory: `${manifest.workspace.presentationDirectory}/identities` } };
+const identityPage = { ...page, pageId: randomUUID(), dirty: false };
+for (const viewPath of [
+  '/tools/sprite-generator?work=motion-a&version=2&candidate=1',
+  '/tools/interactable-editor?document=prop-a&object=door-a&imageEdit=edit-a&imageCandidate=2',
+  '/tools/map-stitcher?map=map-a&imageEdit=edit-b&imageCandidate=source',
+  '/tools/map-stitcher?imageTask=image-a',
+  '/tools/scene-composer?document=scene-a&imageEdit=edit-c&imageCandidate=3',
+  '/assets?asset=image:source-a&imageEdit=edit-d&imageCandidate=2',
+]) {
+  const request = await queuePresentation(repositoryRoot, identityManifest, { viewPath, title: 'Exact preview identity', summary: 'Identity round trip' });
+  const snapshotPath = previewSnapshotPath(`http://localhost${viewPath}&previewSession=private-session&apiKey=not-forwarded`);
+  assert.equal(previewPath(identityManifest, snapshotPath), previewPath(identityManifest, viewPath));
+  assert.equal(decision({ currentPath: snapshotPath, targetPath: viewPath }), 'displayed');
+  await frontendHeartbeat(repositoryRoot, identityManifest, { ...identityPage, viewPath: snapshotPath, ack: { requestId: request.requestId, state: 'displayed', reason: 'page-arrived' } });
+  assert.equal((await frontendContext(repositoryRoot, identityManifest, { requestId: request.requestId })).presentation.displayed, true);
+}
 
 const client = new Client({ name: 'preview-follow-test', version: '1' });
 const transport = new StdioClientTransport({ command: process.execPath, args: ['scripts/workbench-mcp.mjs'], cwd: repositoryRoot, env: { ...process.env }, stderr: 'pipe' });

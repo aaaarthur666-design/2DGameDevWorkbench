@@ -1,8 +1,16 @@
 # 系统架构
 
+开放动作 v4：全局意图与段级绘图描述分开；`motion` 保存通用外观/运动关系，短提示参与生成，完整约束参与复核。`targets.py` 在制作前绑定并冻结真实段末图，独立 `targets/` 快照不改变旧输入清单。`repairs.py` 对当前未确认片段执行有上限的局部编辑，原始目录不变，采用后以 `active_frames` 与映射表达替换并归档旧复核。窗口外帧字节不变；端点改变导致的后续依赖不得静默沿用。`motion_evidence.py` 仅提供近静止提示，不判断物理正确或自动删帧。Web 与 MCP 共用这些接口和预算。
+
 ## 1. 架构目标
 
-Forge 是一个“外部 Agent 驱动、Web 工作台协作、能力可插拔”的本地优先项目。Codex、WorkBuddy 或其他支持 MCP 的客户端是主 Agent；仓库中的 Web 应用不内置大语言模型，也不承担意图规划。
+Forge 是一个“外部 Agent 驱动、Web 工作台协作、能力可插拔”的本地优先项目。Codex、WorkBuddy 或其他支持 MCP 的客户端是主 Agent；Web 不提供通用 Agent 对话。角色动作模块的服务端包含受限的多专家规划器，只处理明确的动作任务与已授权调用预算。
+
+角色动作五阶段主界面通过有路径白名单的 Web API 访问 `SpritePipeline /v1/open-motion`；MCP/CLI 的 sprite adapter 也访问同一服务。`collaboration/contracts.py` 定义版本化 TaskSpec、PlanProposal、PlanBinding 与片段回执；workspace 保存参考快照、原始需求、专家质询和历史版本；execution 复用原生 Job 的帧存储、技术 QA、人工采用和 Godot 导出。规划和生成分别持久记录调用前意图，进程锁禁止并发重发；没有远端编号的模糊结果需人工核对。仅 GET 不触发收费请求。
+
+开放动作质量扩展使用通用合同与提示词编译，不维护动作名称分支。`quality.py` 编译事件、装备归属、结束与节奏约束，并保存移除额外上下文帧的播放映射；原始数据保持完整。`visual_review.py` 先观察全帧再验收三项合同，持久保存输入摘要与每次调用回执；中断不自动重试，帧改变后报告过期。视觉意见不自动触发再生成或采用，技术硬门禁与人工裁决仍独立存在。`model_config.py` 分离服务、可选型号与专家角色，密钥按服务保护，任务使用冻结配置。旧 v1 方案保持原哈希和执行语义；新合同不会改写独立上游固定攻击管线。
+
+开放动作 v3 在 `collaboration/checkpoints.py` 管理实际片段证据、两步模型复核、人工裁决和锁定快照。`complete → reviewing → awaiting_review → accepted/rejected` 与原提供方提交状态分离，只有 accepted 的真实末帧可进入后段。所有视觉调用共享任务预算；进程中断不重发，阶段接受带哈希令牌并且幂等。最终组装只读取已确认快照，然后复核整段；旧方案不启用新门禁。Web 与 MCP 共用相同裁决接口。
 
 架构需要同时保证：
 

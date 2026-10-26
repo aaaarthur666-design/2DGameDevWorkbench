@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,18 @@ def atomic_write_json(path: Path, data: Any) -> None:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_name, path)
+        for attempt in range(8):
+            try:
+                os.replace(temp_name, path)
+                break
+            except PermissionError as exc:
+                # A concurrent read of job/summary JSON on Windows can briefly
+                # deny atomic replacement. Retry only the same local rename;
+                # this cannot repeat a provider call or overwrite a newer job
+                # because callers retain their mutation lock throughout.
+                if os.name != "nt" or getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 7:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
     except Exception:
         try:
             os.unlink(temp_name)

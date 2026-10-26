@@ -62,7 +62,7 @@ def test_old_summary_backfills_materials_once(library_setup):
     summary.pop('artworks')
     path.write_text(json.dumps(summary))
     assert any(row['kind'] == 'animation' for row in library.list_artworks())
-    assert json.loads(path.read_text())['summary_schema_version'] == 2
+    assert json.loads(path.read_text())['summary_schema_version'] == 3
     with patch.object(service.store, 'load', side_effect=AssertionError('second list should use summary')):
         assert any(row['kind'] == 'animation' for row in library.list_artworks())
 

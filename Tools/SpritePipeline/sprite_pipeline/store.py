@@ -19,7 +19,7 @@ from .settings import HarnessSettings
 
 
 _JOB_ID = re.compile(r"^[0-9]{8}_[a-z0-9_]+_[0-9]{3}$")
-_JOB_SUMMARY_SCHEMA_VERSION = 2
+_JOB_SUMMARY_SCHEMA_VERSION = 3
 _JOB_SUMMARY_MAX_BYTES = 128 * 1024
 
 
@@ -189,10 +189,20 @@ class JobStore:
         )
         from .motion_correction import active as motion_active
         needs_recovery = needs_recovery or (motion_active(job) and job.generation_requested_at is not None)
+        if job.request.open_plan and job.plan_control and job.generation_requested_at is not None:
+            needs_recovery = any(
+                c.plan_execution and not c.frames and c.status.value not in terminal_candidates and (
+                    any(r.state in {"submitting", "pending", "reviewing", "repairing", "complete"} for r in c.plan_execution.stages)
+                    or (job.plan_control.enabled and all(r.state not in {"failed", "unknown", "awaiting_review", "rejected"} for r in c.plan_execution.stages))
+                ) for c in job.candidates
+            )
+            needs_recovery = needs_recovery or any(c.frames and c.plan_execution and
+                (c.plan_execution.quality_review or {}).get('state') in {'pending','running'} for c in job.candidates)
         return {
             "summary_schema_version": _JOB_SUMMARY_SCHEMA_VERSION,
             "job_revision": job.revision,
             "job_id": job.job_id,
+            "open_work_id": job.request.open_plan.work_id if job.request.open_plan else None,
             "status": job.status.value,
             "updated_at": job.updated_at.isoformat(),
             "created_at": job.created_at.isoformat(),
