@@ -2,7 +2,7 @@
 import hashlib
 import io
 from PIL import Image
-from .contracts import digest
+from .contracts import digest, review_calls_per_check
 from .targets import checked_png
 from ..attack_timeline import is_context_frame
 from ..errors import ConflictError, ValidationHarnessError, ProviderError
@@ -61,6 +61,8 @@ class LocalRepairs:
                     if attempt['identity']!=identity:raise ConflictError('同一修复请求编号的内容不同')
                     return attempt
             candidate=self.s._candidate(job,index)
+            from .adjustments import pending_adjustment
+            if pending_adjustment(self.s,job,index,stage):raise ConflictError('请先处理当前修改备选')
             if any(a['state'] in {'submitting','pending','unknown','awaiting_review'} for a in run.repairs):raise ConflictError('先处理已有修复，不创建重复请求')
             if run.state not in {'awaiting_review','rejected'} or candidate.frames or any(r.submission_attempts for r in candidate.plan_execution.stages[stage+1:]):
                 raise ConflictError('只修复当前未锁定片段；后段已执行时需新版本重新核对依赖')
@@ -76,7 +78,7 @@ class LocalRepairs:
                 raise ValidationHarnessError('修复次数或已授权生成预算已用完；不会自动追加')
             remaining=sum(r.state!='accepted' for c in job.candidates for r in c.plan_execution.stages)
             finals=sum(not c.frames for c in job.candidates)
-            if review_call_count(job)+2*(remaining+finals)>job.request.open_plan.spec.budget.max_review_calls:
+            if review_call_count(job)+review_calls_per_check(job.request.open_plan.spec)*(remaining+finals)>job.request.open_plan.spec.budget.max_review_calls:
                 raise ValidationHarnessError('视觉预算不足以重新检查当前片段、后续片段及整段；不会跳过检查')
             base=self.read_frames(job_id,evidence['frames']);reference=(self.store.job_dir(job_id)/'input/reference.png').read_bytes()
             if hashlib.sha256(reference).hexdigest()!=job.reference_sha256:raise ConflictError('参考图已改变')

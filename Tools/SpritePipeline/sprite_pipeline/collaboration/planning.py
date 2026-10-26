@@ -131,7 +131,12 @@ class PlanningModel:
         data = {"original_request": work.spec.model_dump(mode="json"),
                 "reference": work.character, "question": question,
                 "peer_messages": messages, "calls_remaining": work.spec.budget.max_planning_calls - len(work.planning_calls)}
-        content = [{"type": "input_text", "text": INSTRUCTIONS + "\nROLE: " + ROLES[role] + "\nTASK DATA:\n" + json.dumps(data, ensure_ascii=False)},
+        instructions = INSTRUCTIONS
+        if work.spec.review_protocol == 'experts_v1':
+            instructions = instructions.replace(
+                'Review allowance = candidate_count * (2*stage_count + 2).\nThe two final calls inspect the WHOLE clip, including seams.',
+                'Review allowance = candidate_count * 5 * (stage_count + 1). Each segment and the final WHOLE clip reserve two baseline calls, two independent opinions and at most one dispute call.\nDo not remove a useful segment or weaken the motion merely to fit the review allowance; ask a critical budget question if the required checks do not fit.')
+        content = [{"type": "input_text", "text": instructions + "\nROLE: " + ROLES[role] + "\nTASK DATA:\n" + json.dumps(data, ensure_ascii=False)},
                    {"type": "input_image", "image_url": "data:image/png;base64," + base64.b64encode(reference).decode(), "detail": "high"}]
         if crop is not None:
             with Image.open(io.BytesIO(reference)) as source:

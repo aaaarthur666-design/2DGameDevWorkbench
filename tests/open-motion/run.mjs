@@ -14,7 +14,7 @@ await mkdir(root, { recursive: true });
 const reservation = net.createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening');
 const port = reservation.address().port; await new Promise(r => reservation.close(r));
 const python = process.env.SPRITE_TEST_PYTHON || path.resolve('Tools/SpritePipeline/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-const child = spawn(python, ['Tools/SpritePipeline/tests/open_motion_server.py', root, String(port), '--checkpoints'], { windowsHide: true, stdio: ['ignore','pipe','pipe'] });
+const child = spawn(python, ['Tools/SpritePipeline/tests/open_motion_server.py', root, String(port), '--checkpoints', '--expert-reviews'], { windowsHide: true, stdio: ['ignore','pipe','pipe'] });
 let log = ''; child.stdout.on('data', d => { log += d; }); child.stderr.on('data', d => { log += d; });
 const base = `http://127.0.0.1:${port}`;
 const request = async (route, body) => {
@@ -28,12 +28,13 @@ try {
   for (let n=0; n<100; n++) { try { await request('/health'); break; } catch { if (child.exitCode !== null || n===99) throw new Error(log || 'Test API startup failed'); await delay(100); } }
   process.env.SPRITE_PIPELINE_API_URL = base;
   const manifest = await loadManifest(), capability = findCapability(manifest, 'sprite-generator');
-  const motionSpec = { character_id:'test_hero', description:'角色低头检查手套，最后保持低头', provider:'fixture', candidate_count:2, budget:{max_planning_calls:8,max_generation_calls:5,max_review_calls:14} };
+  const motionSpec = { character_id:'test_hero', description:'角色低头检查手套，最后保持低头', provider:'fixture', review_protocol:'experts_v1', candidate_count:2, budget:{max_planning_calls:8,max_generation_calls:5,max_review_calls:35} };
   const input = { operation:'plan-motion', motionSpec, planningAuthorized:true };
   assert.deepEqual(validateInput(capability,input),[]);
   assert.ok(validateInput(capability,{...input,planningAuthorized:false}).length);
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,apiKey:'must-not-be-stored'}}).length);
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,budget:{max_generation_calls:99}}}).length);
+  assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,review_protocol:'invented'}}).length);
   let outcome = await runConnector(manifest,capability,input);
   const taskId = outcome.task.id;
   for (let n=0;n<100 && outcome.task.status==='running';n++) { await delay(100); outcome=await refreshTask(manifest,taskId); }
@@ -54,12 +55,17 @@ try {
   for (let candidateIndex=1;candidateIndex<=2;candidateIndex++) for(let stageIndex=0;stageIndex<2;stageIndex++) {
     for(let n=0;n<150;n++) {
       const current=await request(`/v1/open-motion/${workId}`);
-      if(current.job.candidates[candidateIndex-1].plan_execution.stages[stageIndex].state==='awaiting_review')break;
+      const checkpoint=current.job.candidates[candidateIndex-1].plan_execution.stages[stageIndex];
+      if(checkpoint.state==='awaiting_review'&&checkpoint.review?.expert_review?.simulated)break;
       assert.ok(n<149,'checkpoint did not become ready');await delay(100);
     }
     const inspected=await runConnector(manifest,capability,{operation:'get-motion-stage',openWorkId:workId,candidateIndex,stageIndex});
     const evidence=JSON.parse(await readFile(inspected.task.outputs.find(p=>p.endsWith('/result.json')),'utf8'));
     assert.equal(evidence.orderedFrames.length,4);assert.equal(evidence.stage.state,'awaiting_review');
+    assert.equal(evidence.stage.review.protocol,'experts_v1');
+    assert.equal(evidence.stage.review.expert_review.calls_used,5);
+    assert.equal(evidence.stage.review.expert_review.simulated,true);
+    assert.ok(evidence.stage.review.requires_human_adjudication.length);
     assert.equal((await readFile(evidence.orderedFrames[0])).subarray(1,4).toString(),'PNG');
     await assert.rejects(()=>request(`/v1/open-motion/${workId}/resume`,{expected_revision:1}));
     if(candidateIndex===1&&stageIndex===0){
@@ -80,10 +86,15 @@ try {
       stageToken:evidence.stage.token,stageDecision:'accept',reviewNote:'已查看诊断片段与末姿势，仅验收工具流程',acknowledgeWarnings:true,
       ...(candidateIndex===1&&stageIndex===0?{anchorFrame:2,acknowledgeTrim:true}:{})});
   }
-  for (let n=0;n<150;n++) { const c=await request(`/v1/open-motion/${workId}`);if(c.job.candidates.every((c,i)=>c.frames.length===(i===0?7:8)))break;await delay(100); }
+  // The offline service restores diagnostic flags after publishing the review.
+  // Wait for its final receipt before checking provenance, rather than racing it.
+  for (let n=0;n<150;n++) { const c=await request(`/v1/open-motion/${workId}`);if(c.job.candidates.every((c,i)=>c.frames.length===(i===0?7:8)&&c.quality_review?.state==='complete'&&c.quality_review.expert_review?.simulated))break;await delay(100); }
   const complete=await request(`/v1/open-motion/${workId}`);
   assert.deepEqual(complete.job.candidates.map(c=>c.frames.length),[7,8]);
   assert.ok(complete.job.candidates.every(c=>c.diagnostic_only));
+  assert.ok(complete.job.candidates.every(c=>c.quality_review.protocol==='experts_v1'&&c.quality_review.expert_review.calls_used===5));
+  const reviewCalls=complete.job.candidates.reduce((sum,c)=>sum+c.quality_review.requests.length+c.plan_execution.stages.reduce((n,s)=>n+s.review.requests.length+s.review_history.reduce((n,r)=>n+r.requests.length,0),0),0);
+  assert.equal(reviewCalls,35);
   const attempts=complete.job.candidates.map(c=>c.submission_attempts);
   await request(`/v1/open-motion/${workId}/generate`,{expected_revision:1,plan_sha256:work.plan_sha256});
   assert.deepEqual((await request(`/v1/open-motion/${workId}`)).job.candidates.map(c=>c.submission_attempts),attempts);
@@ -96,6 +107,34 @@ try {
   assert.equal(proxied.status,200); assert.equal((await proxied.json()).id,workId);
   const checkpointImage=await proxy.GET(new Request(`http://localhost/api/workbench/open-motion?path=open-motion/${workId}/candidates/1/stages/0/frames/3`));
   assert.equal(checkpointImage.status,200);assert.match(checkpointImage.headers.get('content-type'),/image\/png/);
+  // Independent preference alternative: read context, submit once, poll same receipt,
+  // compare exact files and adopt a derived version without touching source bytes.
+  const contextRun=await runConnector(manifest,capability,{operation:'get-motion-adjustment',openWorkId:workId,expectedRevision:1,candidateIndex:2});
+  const selection=JSON.parse(await readFile(contextRun.task.outputs.find(p=>p.endsWith('/result.json')),'utf8'));
+  assert.equal(selection.orderedFrames.length,8);
+  const altInput={operation:'create-motion-adjustment',openWorkId:workId,expectedRevision:1,candidateIndex:2,
+    adjustmentStart:1,adjustmentEnd:2,adjustmentToken:selection.adjustmentContext.token,
+    adjustmentRequest:'我希望这一处抬手幅度更小，这是个人偏好，并非原版有错',generationAuthorized:true,requestKey:'isolated-adjustment-test'};
+  assert.deepEqual(validateInput(capability,altInput),[]);
+  assert.ok(validateInput(capability,{...altInput,generationAuthorized:false}).length);
+  let alt=await runConnector(manifest,capability,altInput);
+  for(let n=0;alt.task.status==='running'&&n<100;n++){await delay(100);alt=await refreshTask(manifest,alt.task.id);}
+  assert.equal(alt.task.status,'attention_required');
+  const alternative=JSON.parse(await readFile(alt.task.outputs.find(p=>p.endsWith('/result.json')),'utf8'));
+  assert.equal(alternative.adjustment.state,'ready');
+  assert.equal(alternative.adjustment.planning_calls.length,1);assert.equal(alternative.adjustment.review_calls.length,5);
+  assert.equal(alternative.originalFrames.length,8);assert.equal(alternative.alternativeFrames.length,8);
+  for(const i of [0,3,4,5,6,7])assert.deepEqual(await readFile(alternative.originalFrames[i]),await readFile(alternative.alternativeFrames[i]));
+  const imageProxy=await proxy.GET(new Request(`http://localhost/api/workbench/open-motion?path=open-motion/${workId}/adjustments/${alternative.adjustmentId}/proposed/1`));
+  assert.equal(imageProxy.status,200);
+  const before=await request(`/v1/open-motion/${workId}`);
+  const adopted=await runConnector(manifest,capability,{operation:'review-motion-adjustment',openWorkId:workId,expectedRevision:1,
+    adjustmentId:alternative.adjustmentId,adjustmentToken:alternative.adjustment.preview_token,stageDecision:'accept',
+    reviewNote:'完整播放隔离诊断图后确认保留原帧与连续性，仅验收工程',acknowledgeWarnings:true});
+  assert.equal(adopted.task.status,'completed');
+  const after=await request(`/v1/open-motion/${workId}`);assert.equal(after.revision,2);assert.notEqual(after.job.job_id,before.job.job_id);
+  assert.equal(after.job.candidates[0].status,'approved');
+  const old=await request(`/v1/open-motion/${workId}?revision=1`);assert.equal(old.job.job_id,before.job.job_id);
   console.log('Open motion: nested input rejection, real Python API + shared adapter planning/generation, exact preview, candidate completion, idempotency and bounded frontend proxy passed; paid calls=0.');
 } finally {
   if (vite) await vite.close();

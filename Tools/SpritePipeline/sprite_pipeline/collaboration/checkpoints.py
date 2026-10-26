@@ -1,7 +1,6 @@
 """Real, hash-bound pose checkpoints. Models advise; explicit review unlocks continuation."""
 from __future__ import annotations
 import hashlib
-import json
 from .contracts import digest
 from .model_config import ModelRegistry
 from .visual_review import Observations, Audit, evidence_panels, grounded_audit
@@ -9,6 +8,7 @@ from ..attack_timeline import is_context_frame
 from ..errors import ConflictError, ValidationHarnessError
 from ..models import CandidateStatus, utc_now
 from ..vision_evidence import image_part, raster
+from .review_inputs import observation_content, audit_content
 
 
 def checked_plan(job):
@@ -117,10 +117,15 @@ class Checkpoints:
             r = self.run_record(current,index,stage)
             r.state = 'reviewing'
             r.review = {'state':'running','verdict':'uncertain','token':evidence['token'],'requests':[],'motion_evidence':metrics}
+            if job.request.open_plan.spec.review_protocol == 'experts_v1':
+                r.review['protocol'] = 'experts_v1'
             current.plan_control.message = f'正在检查第 {stage+1} 段实际姿势与运动'
         try:
             if self.s._candidate(job,index).diagnostic_only:
                 report = {'state':'diagnostic', 'verdict':'uncertain', 'summary':'诊断片段未调用视觉模型，需确认流程。'}
+                if job.request.open_plan.spec.review_protocol == 'experts_v1':
+                    from .production_review import diagnostic_report
+                    report.update(diagnostic_report())
             else:
                 paths = [self.s.store.resolve_job_path(job_id,f['path']) for f in evidence['frames']]
                 reference = self.s.store.job_dir(job_id)/'input/reference.png'
@@ -131,8 +136,7 @@ class Checkpoints:
                 target = next((t for t in job.request.open_plan.end_targets if t.stage == stage),None)
                 if target:
                     pictures += [{'type':'input_text','text':'TARGET POSE GUIDE, NOT a generated frame. Verify whether actual frames approach it; do not claim exact pixel equality. Human target note: '+target.note},image_part(raster(self.s.store.job_dir(job_id)/'targets'/target.filename,256))]
-                observations = self.call(job_id,index,stage,'observe',[
-                    {'type':'input_text','text':'Describe EVERY labelled actual frame in order, in concise Chinese: body/limb pose, solid equipment count/ownership, and visible change. Do not guess desired motion. Effects/trails are not a second solid object. Mark uncertainty.'},*pictures],Observations,len(paths))
+                observations = self.call(job_id,index,stage,'observe',observation_content(pictures,segment=True),Observations,len(paths))
                 if [f.frame for f in observations.frames] != list(range(1,len(paths)+1)):
                     raise ValidationHarnessError('分段逐帧观察不完整或顺序错误')
                 with self.s.store.locked_job(job_id) as current:
@@ -143,12 +147,18 @@ class Checkpoints:
                     'user_request':job.request.open_plan.spec.description,
                     'pixel_cues_not_verdict':metrics,
                     'seconds_per_frame':1/job.action.fps, 'observations':observations.model_dump(mode='json')}
-                audit = self.call(job_id,index,stage,'audit',[
-                    {'type':'input_text','text':'Inspect this segment ONLY, not later events. Check completeness (local goal AND visible final checkpoint pose, body orientation, observable support/weight transfer and leading/following parts), equipment (original identity, contour/rigidity under perspective, same solid items and physical ownership, input continuity), and rhythm (local timing, entry/exit motion, intended holds vs unrequested stalls). Distinguish camera/body facing from held-object angle. A pass-through boundary is not a stationary pose. Cite ordered frame evidence for every check. Account for ALL frames when describing timing; a trail alone cannot prove speed. Do not infer accurate skeleton/forces from ambiguous pixels. Pixel metrics are cues, not pass/fail rules. Image evidence overrides prior observations. Return exactly these three dimensions in Chinese. Data follows:\n'+json.dumps(contract,ensure_ascii=False)},*pictures],Audit,len(paths))
+                from .adjustment_review import add_accepted_goals
+                contract=add_accepted_goals(contract,self.s._candidate(job,index),stage)
+                audit = self.call(job_id,index,stage,'audit',audit_content(pictures,contract,job.action.fps,segment=True),Audit,len(paths))
                 if {c.dimension for c in audit.checks} != {'completeness','equipment','rhythm'} or any(f > len(paths) for c in audit.checks for f in c.frames):
                     raise ValidationHarnessError('分段验收证据无效')
                 verdict,checks,summary = grounded_audit(audit,len(paths))
                 report = {'state':'complete','verdict':verdict,'checks':checks,'summary':summary,'model_audit':audit.model_dump(mode='json')}
+                if job.request.open_plan.spec.review_protocol == 'experts_v1':
+                    from .production_review import ProductionReview
+                    report = ProductionReview(self.s, job_id, index, stage=stage).finish(report,
+                        lambda phase, content, schema, count: self.call(job_id,index,stage,phase,content,schema,count),
+                        expected_token=evidence['token'], expected_fps=job.action.fps)
         except Exception as exc:
             report = {'state':'failed','verdict':'uncertain','summary':str(exc) if isinstance(exc,ValidationHarnessError) else '分段视觉检查未完成，未自动重试；请人工检查。'}
         with self.s.store.locked_job(job_id) as current:
@@ -164,12 +174,16 @@ class Checkpoints:
                 raise ValidationHarnessError('视觉调用达到已授权上限，未继续请求')
             profile = self.registry.profile('reviewer',job.request.open_plan.model_snapshot)
             request = {'phase':phase,'state':'submitting','profile':profile.model_dump(mode='json')}
+            if job.request.open_plan.spec.review_protocol == 'experts_v1':
+                request['input_sha256'] = digest(content)
             self.run_record(job,index,stage).review['requests'].append(request)
         receipt = {}
         try:
             result, metadata = self.registry.send('reviewer',content,schema,count,snapshot=job.request.open_plan.model_snapshot,
                 schema_name='open_motion_checkpoint',on_response=receipt.update)
             request.update(state='complete',**metadata)
+            if job.request.open_plan.spec.review_protocol == 'experts_v1':
+                request['response'] = result.model_dump(mode='json')
             return result
         finally:
             if request['state'] == 'submitting': request.update(state='failed_or_unknown',**receipt)
@@ -196,6 +210,8 @@ class Checkpoints:
                 return  # Idempotent response recovery, never re-enable a paused task.
             if run.state != 'awaiting_review':
                 raise ConflictError('当前片段不能重复裁决或绕过未完成的检查')
+            from .adjustments import pending_adjustment
+            if pending_adjustment(self.s,job,index,stage):raise ConflictError('请先采用备选或保留原版，再确认当前片段')
             if any(a['state'] in {'submitting','pending','unknown','awaiting_review'} for a in run.repairs):
                 raise ConflictError('请先处理局部修复预览或未知请求，再确认原片段')
             if run.review.get('token') != token:

@@ -1,8 +1,10 @@
 'use client';
 /* oxlint-disable next/no-img-element -- Displays exact saved pixel frames. */
 import { useEffect, useState } from 'react';
-import { motionRequest, motionUrl, type MotionWork, type MotionStage } from './open-motion-model';
+import { motionRequest, motionUrl, type MotionWork, type MotionStage, type MotionReview } from './open-motion-model';
 import { MotionLocalRepair, type RepairAttempt } from './motion-local-repair';
+import { MotionVisualReview } from './motion-visual-review';
+import { MotionAdjustment } from './motion-adjustment';
 
 type Evidence = {
   token: string;
@@ -11,7 +13,7 @@ type Evidence = {
   frames: { sha256: string; raw_index: number }[];
   definition: MotionStage;
   repairs?: RepairAttempt[];
-  review: { state: string; verdict: string; summary?: string; checks?: {dimension: string; evidence: string}[] };
+  review: MotionReview;
 };
 
 export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
@@ -22,23 +24,31 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
   const [played,setPlayed]=useState(false), [watched,setWatched]=useState(false), [slow,setSlow]=useState(false);
   const [note,setNote]=useState(''), [ack,setAck]=useState(false), [busy,setBusy]=useState(false);
   const [anchor,setAnchor]=useState<number|null>(null), [ackTrim,setAckTrim]=useState(false);
+  const [adjustmentPending,setAdjustmentPending]=useState(false);
+  const [adjustmentOpen,setAdjustmentOpen]=useState(false);
+  const [evidenceRevision,setEvidenceRevision]=useState<number|null>(null);
   const route=`open-motion/${work.id}/candidates/${candidate}/stages/${stage}`;
   const query={revision:String(work.revision)};
   useEffect(()=>{
     const abort=new AbortController();
-    void motionRequest<Evidence>(route,undefined,{revision:String(work.revision)},abort.signal).then(next=>setData(previous=>previous?.token===next.token&&previous?.state===next.state&&JSON.stringify(previous?.repairs)===JSON.stringify(next.repairs)?previous:next)).catch(e=>{if(!abort.signal.aborted)setError(e.message);});
+    void motionRequest<Evidence>(route,undefined,{revision:String(work.revision)},abort.signal).then(next=>{
+      if(abort.signal.aborted)return;
+      setData(previous=>previous?.token===next.token&&previous?.state===next.state&&JSON.stringify(previous?.review)===JSON.stringify(next.review)&&JSON.stringify(previous?.repairs)===JSON.stringify(next.repairs)?previous:next);
+      setEvidenceRevision(work.job?.revision??null);
+    }).catch(e=>{if(!abort.signal.aborted)setError(e.message);});
     return ()=>abort.abort();
   },[route,work.revision,work.job?.revision]);
+  const evidenceToken=data?.token, frameCount=data?.frames.length || 0, frameFps=data?.fps;
   useEffect(()=>{
-    if(!data)return;
+    if(!evidenceToken)return;
     let live=true;
-    void Promise.all(data.frames.map((_,i)=>new Promise<void>((resolve,reject)=>{
+    void Promise.all(Array.from({length:frameCount},(_,i)=>new Promise<void>((resolve,reject)=>{
       const img=new Image();img.onload=()=>resolve();img.onerror=()=>reject(new Error('片段图片未完整加载，请刷新后检查。'));
-      img.src=motionUrl(`${route}/frames/${i}`,{revision:String(work.revision),v:data.token});
-    }))).then(()=>{if(live){setLoadedToken(data.token);setPlayed(false);setWatched(false);setFrame(0);setPlaying(false);}}).catch(e=>{if(live)setError(e.message);});
+      img.src=motionUrl(`${route}/frames/${i}`,{revision:String(work.revision),v:evidenceToken});
+    }))).then(()=>{if(live){setLoadedToken(evidenceToken);setPlayed(false);setWatched(false);setFrame(0);setPlaying(false);}}).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
-  },[data,route,work.revision]);
-  const loaded=Boolean(data&&loadedToken===data.token);
+  },[evidenceToken,frameCount,frameFps,route,work.revision]);
+  const loaded=Boolean(data&&loadedToken===data.token&&evidenceRevision===work.job?.revision);
   useEffect(()=>{
     if(!playing||!data||!loaded)return;
     if(frame>=data.frames.length-1){
@@ -57,7 +67,7 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
   }
   if(!data)return <section className="motion-card">{error||'正在读取当前片段…'}</section>;
   const endpoint=anchor??data.frames.length-1, trimmed=endpoint<data.frames.length-1;
-  const canAccept=!readOnly&&!busy&&loaded&&played&&watched&&note.trim().length>=4&&
+  const canAccept=!readOnly&&!busy&&!adjustmentPending&&loaded&&played&&watched&&note.trim().length>=4&&
     data.state==='awaiting_review'&&(data.review.verdict==='pass'||ack)&&(!trimmed||ackTrim)&&!data.repairs?.some(a=>['submitting','pending','unknown','awaiting_review'].includes(a.state));
   return <section className="motion-card motion-checkpoint">
     <h2>确认第 {stage+1} 段 · {data.definition.name}</h2>
@@ -80,14 +90,16 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
       <label>本段结束锚点<select aria-label="本段结束锚点" value={endpoint} onChange={e=>{setAnchor(Number(e.target.value));setAckTrim(false);setWatched(false);}}>{data.frames.map((_,i)=><option key={i} value={i}>第 {i+1} 帧{i===data.frames.length-1?'（原始末帧）':''}</option>)}</select></label>
       {trimmed&&<label><input type="checkbox" checked={ackTrim} onChange={e=>setAckTrim(e.target.checked)} />确认采用第 1–{endpoint+1} 帧，其余原始帧保留在记录中</label>}
     </details>
-    <ul>{data.definition.acceptance.map(item=><li key={item}>{item}</li>)}</ul>
-    <details><summary>模型复核意见（不能代替实际检查）</summary><p>{data.review.summary}</p>{data.review.checks?.map(c=><p key={c.dimension}>{c.evidence}</p>)}</details>
+    {!adjustmentOpen&&<><ul>{data.definition.acceptance.map(item=><li key={item}>{item}</li>)}</ul>
+    <MotionVisualReview report={data.review} />
     <label><input type="checkbox" checked={watched} disabled={!played} onChange={e=>setWatched(e.target.checked)} />我已播放此段并检查实际末姿势、装备和节奏</label>
     <label>本段检查结论<textarea value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="记录实际看到的姿势、运动及衔接情况" /></label>
     {data.review.verdict!=='pass'&&<label><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)} />已核对模型的未通过或不确定意见，按实际画面确认接受</label>}
     {error&&<p className="motion-danger">{error}</p>}
     <button className="motion-primary" disabled={!canAccept} onClick={()=>void decide('accept')}>确认此段，继续制作</button>
     <details><summary>本段未达到要求</summary><p>停止后续制作，保留已确认片段和原始帧。返回描述修改方案时，会建立新版本；不会自动重新收费生成。</p><button disabled={readOnly||busy||note.trim().length<4} onClick={()=>void decide('reject')}>本段不合格，停止后续制作</button></details>
-    <MotionLocalRepair work={work} candidate={candidate} stage={stage} token={data.token} count={data.frames.length} attempts={data.repairs||[]} onSaved={onSaved} readOnly={readOnly}/>
+    </>}
+    <MotionAdjustment work={work} candidate={candidate} stage={stage} onSaved={onSaved} readOnly={readOnly} onPendingChange={setAdjustmentPending} onOpenChange={setAdjustmentOpen}/>
+    {!!data.repairs?.length&&<details><summary>旧版局部修复记录</summary><MotionLocalRepair work={work} candidate={candidate} stage={stage} token={data.token} count={data.frames.length} attempts={data.repairs} onSaved={onSaved} readOnly={readOnly}/></details>}
   </section>;
 }

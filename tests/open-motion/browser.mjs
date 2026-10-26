@@ -13,7 +13,7 @@ const root = path.resolve('work/test-runs', `motion-browser-${randomUUID()}`);
 await mkdir(root,{recursive:true});
 const socket=net.createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
 const python=process.env.SPRITE_TEST_PYTHON || path.resolve('Tools/SpritePipeline/.venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
-const server=spawn(python,['Tools/SpritePipeline/tests/open_motion_server.py',root,String(port),'--checkpoints'],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+const server=spawn(python,['Tools/SpritePipeline/tests/open_motion_server.py',root,String(port),'--checkpoints','--expert-reviews'],{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let log='';server.stderr.on('data',d=>{log+=d;});
 const base=`http://127.0.0.1:${port}`,delay=ms=>new Promise(r=>setTimeout(r,ms));
 let browser, page;
@@ -22,10 +22,12 @@ try {
   browser=await playwright.chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
   page=await browser.newPage({viewport:{width:1440,height:1000}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  // Do not send follow-context, library or task requests to a user's live bridge.
+  await page.route('**/api/workbench/**',route=>route.fulfill({status:503,json:{error:'本隔离验收仅启用角色动作接口'}}));
   await page.route('**/api/workbench/open-motion?**',async route=>{
     const request=route.request(),url=new URL(request.url());
     const target=new URL('/v1/'+(url.searchParams.get('path')||'open-motion'),base);
-    for(const key of ['revision','candidate'])if(url.searchParams.has(key))target.searchParams.set(key,url.searchParams.get(key));
+    for(const key of ['revision','candidate','stage'])if(url.searchParams.has(key))target.searchParams.set(key,url.searchParams.get(key));
     let body=request.postData();
     if(body){const value=JSON.parse(body);if(value.spec)value.spec.provider='fixture';body=JSON.stringify(value);}
     const response=await fetch(target,{method:request.method(),headers:{'content-type':'application/json'},...(body?{body}:{})});
@@ -67,6 +69,10 @@ try {
   await page.getByText('模型设置',{exact:true}).click();
   assert.equal(await page.getByLabel('已有角色').inputValue(),'test_hero');
   await page.getByLabel('已有角色').selectOption('test_hero');
+  await page.getByText('候选数量、播放速度与调用上限',{exact:true}).click();
+  assert.equal(await page.getByLabel('视觉复核方式',{exact:true}).inputValue(),'experts_v1');
+  assert.equal(await page.getByLabel('视觉验收调用上限',{exact:true}).inputValue(),'25');
+  await page.getByText('候选数量、播放速度与调用上限',{exact:true}).click();
   await page.getByLabel('角色要做什么',{exact:true}).fill('先摘帽鞠躬，最后保持低头姿势');
   assert.equal((await (await fetch(base+'/v1/open-motion')).json()).works.length,0);
   await page.reload();
@@ -87,21 +93,31 @@ try {
     await page.getByRole('heading',{name:new RegExp(`确认第 ${stage+1} 段`)}).waitFor({timeout:30000});
     const acceptStage=page.getByRole('button',{name:'确认此段，继续制作',exact:true});
     assert.equal(await acceptStage.isDisabled(),true);
+    await page.getByText('查看独立专家与争议复核过程',{exact:true}).click();
+    await page.getByRole('heading',{name:'外观专家 · 独立意见',exact:true}).waitFor();
+    await page.getByRole('heading',{name:'争议复核',exact:true}).waitFor();
+    assert.equal(await page.getByText('需要实际画面裁决',{exact:true}).isVisible(),true);
+    await page.screenshot({path:path.join(root,`expert-review-stage-${stage+1}.png`),fullPage:true});
+    await page.getByText('查看独立专家与争议复核过程',{exact:true}).click();
     if(stage===0){await page.reload();await page.getByRole('heading',{name:/确认第 1 段/}).waitFor();}
     if(stage===0){
-      await page.getByText('只修复这一段的局部问题',{exact:true}).click();
-      await page.getByLabel('要修复的实际问题',{exact:true}).fill('保留其他姿势，只修复中间两帧的物品轮廓；诊断流程。');
-      await page.getByLabel('允许增加一次 PixelLab 修复请求；采用后重新复核',{exact:true}).check();
-      await page.getByRole('button',{name:'生成局部修复预览',exact:true}).click();
-      await page.getByRole('button',{name:'同步播放修复前后整段',exact:true}).waitFor();
-      await page.screenshot({path:path.join(root,'repair-preview.png'),fullPage:true});
+      await page.getByText('调整部分帧',{exact:true}).click();
+      await page.getByLabel('修改开始帧',{exact:true}).fill('2');
+      await page.getByLabel('修改结束帧',{exact:true}).fill('3');
+      await page.getByLabel('修改要求（选填）',{exact:true}).fill('我希望这里抬手幅度更小，即便原版已经可用；仅验收流程。');
+      const wid=new URL(workUrl).searchParams.get('work');
+      assert.equal((await (await fetch(`${base}/v1/open-motion/${wid}/adjustments?revision=1&candidate=1&stage=0`)).json()).tasks.length,0);
+      await page.getByRole('button',{name:'生成一个备选',exact:true}).click();
+      await page.getByRole('button',{name:'同步播放完整对比',exact:true}).waitFor();
+      assert.equal(await page.getByRole('button',{name:'采用新版',exact:true}).isDisabled(),true);
+      await page.screenshot({path:path.join(root,'adjustment-preview.png'),fullPage:true});
       await page.setViewportSize({width:720,height:1000});
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'repair preview must fit the page');
       await page.setViewportSize({width:1440,height:1000});
-      await page.getByRole('button',{name:'同步播放修复前后整段',exact:true}).click();
-      await page.getByLabel('修复检查结论',{exact:true}).fill('已核对整个诊断片段与两侧接缝，窗口外帧不变。');
-      await page.getByRole('button',{name:'采用修复版本并重新检查',exact:true}).click();
-      const wid=new URL(workUrl).searchParams.get('work');
+      await page.getByRole('button',{name:'同步播放完整对比',exact:true}).click();
+      await page.getByLabel('备选对比结论',{exact:true}).fill('已核对完整诊断片段与两侧接缝，窗口外帧不变。');
+      await page.getByLabel('已看过实际画面，接受本次视觉与技术提醒',{exact:true}).check();
+      await page.getByRole('button',{name:'采用新版',exact:true}).click();
       for(let i=0;i<100;i++){const v=await (await fetch(`${base}/v1/open-motion/${wid}`)).json();const r=v.job.candidates[0].plan_execution.stages[0];if(r.state==='awaiting_review'&&r.active_frames)break;assert.ok(i<99);await delay(100);}
       await page.getByRole('heading',{name:/确认第 1 段/}).waitFor();
     }
@@ -123,8 +139,9 @@ try {
   await page.getByRole('heading',{name:'检查与调整',exact:true}).waitFor({timeout:30000});
   const adopt=page.getByRole('button',{name:'采用此候选，进入导出'});
   assert.equal(await adopt.isDisabled(),true);
+  await page.waitForFunction(()=>document.querySelector('#motion-action-status')?.textContent.includes('先播放检查'));
   assert.match(await page.locator('#motion-action-status').innerText(),/先播放检查/);
-  await page.getByText('需要调整时',{exact:true}).click();
+  await page.getByText('其他调整工具',{exact:true}).click();
   await page.getByRole('link',{name:'打开逐帧编辑工作区',exact:true}).click();
   const returnLink=page.getByRole('link',{name:'返回当前作品',exact:true});
   await returnLink.waitFor();
@@ -166,6 +183,35 @@ try {
   await page.waitForFunction(()=>{const b=[...document.querySelectorAll('[role=dialog] button')].find(b=>b.textContent.includes('仅下载 ZIP'));return b&&!b.disabled;});
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({state:'hidden'});
+  // A finished/exported clip can be changed for preference, with no source loss.
+  await page.getByRole('button',{name:/检查与调整/}).first().click();
+  const wid=new URL(workUrl).searchParams.get('work');
+  const original=await (await fetch(`${base}/v1/open-motion/${wid}`)).json();
+  for(let attempt=0;attempt<2;attempt++){
+    await page.getByRole('button',{name:/检查与调整/}).first().click();
+    await page.getByText('调整部分帧',{exact:true}).click();
+    await page.getByLabel('修改开始帧',{exact:true}).fill('5');
+    await page.getByLabel('修改结束帧',{exact:true}).fill('6');
+    await page.getByLabel('修改要求（选填）',{exact:true}).fill('个人偏好：让这两帧的抬手幅度更小，其他帧保持原样。');
+    assert.equal(await page.getByRole('button',{name:'进入导出',exact:true}).count(),0,'old adoption action is hidden while adjusting');
+    await page.getByRole('button',{name:'生成一个备选',exact:true}).click();
+    if(attempt===0){await page.reload();await page.getByRole('heading',{name:'检查与调整',exact:true}).waitFor();}
+    await page.getByRole('button',{name:'同步播放完整对比',exact:true}).waitFor();
+    await page.getByRole('button',{name:'同步播放完整对比',exact:true}).click();
+    await page.getByLabel('备选对比结论',{exact:true}).fill('完整对比了实际帧与接缝，仅验收隔离流程。');
+    await page.getByLabel('已看过实际画面，接受本次视觉与技术提醒',{exact:true}).check();
+    await page.setViewportSize({width:720,height:1000});
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    await page.setViewportSize({width:1440,height:1000});
+    await page.getByRole('button',{name:attempt?'采用新版':'保留原版',exact:true}).scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(root,`complete-alternative-${attempt+1}.png`),fullPage:true});
+    await page.getByRole('button',{name:attempt?'采用新版':'保留原版',exact:true}).click();
+    if(!attempt){const retained=await(await fetch(`${base}/v1/open-motion/${wid}`)).json();assert.equal(retained.revision,1);assert.equal(retained.job.job_id,original.job.job_id);}
+  }
+  await page.getByText('版本 2 · 已保存本机',{exact:true}).waitFor();
+  const revised=await(await fetch(`${base}/v1/open-motion/${wid}`)).json();
+  assert.equal(revised.revision,2);assert.equal(revised.job.candidates[0].status,'approved');
+  for(const i of [0,1,2,3,6])assert.equal(revised.job.candidates[0].frames[i].sha256,original.job.candidates[0].frames[i].sha256);
   await page.getByRole('button',{name:/准备与描述/}).first().click();
   await page.getByLabel('角色要做什么',{exact:true}).fill('修改为鞠躬后坐下，结束保持坐姿');
   await page.reload();

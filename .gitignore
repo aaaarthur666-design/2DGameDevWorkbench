@@ -124,4 +124,6 @@ logs/
 !/docs/reference-art.md
 !/docs/scene-composer.md
 !/docs/sprite-generator.md
+!/docs/sprite-review-evaluation.md
+!/docs/motion-adjustments.md
 !/docs/workbench-interface.md

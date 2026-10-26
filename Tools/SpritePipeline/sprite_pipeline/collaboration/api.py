@@ -17,6 +17,7 @@ from ..vision_review import VisionReviewer, PROVIDERS
 from .contracts import Contract, TaskSpec, digest
 from .workspace import OpenMotionWorkspace
 from .model_config import ModelRegistry, ModelConfiguration
+from .adjustments import Adjustments, AdjustmentInput
 
 
 class Create(Contract):
@@ -88,6 +89,13 @@ class RepairReview(Export):
     decision: Literal['accept','reject']
 
 
+class AdjustmentDecision(Contract):
+    token: str = Field(pattern=r'^[0-9a-f]{64}$')
+    decision: Literal['accept','reject']
+    note: str = Field(default='',max_length=2000)
+    acknowledge_warnings: bool = False
+
+
 class Settings(Contract):
     provider: Literal["hunyuan", "openai"] | None = None
     configuration: ModelConfiguration | None = None
@@ -111,6 +119,7 @@ def candidate_digest(candidate):
 def create_router(service):
     router = APIRouter(prefix="/v1/open-motion", tags=["Open motion"])
     workspace = OpenMotionWorkspace(service)
+    adjustments = Adjustments(service)
 
     def view(work_id, revision=None):
         result = workspace.view(work_id, revision)
@@ -308,6 +317,27 @@ def create_router(service):
                 service.attach_provider_job_id(work.job_id, body.candidate_index, body.provider_job_id)
             service.recover_completed_candidate(work.job_id, body.candidate_index)
         return view(work_id)
+
+    @router.get('/{work_id}/adjustments')
+    def adjustment_context(work_id: str, revision: int, candidate: int = 1, stage: int | None = None):
+        return adjustments.context(work_id,revision,candidate,stage)
+
+    @router.post('/{work_id}/adjustments')
+    def create_adjustment(work_id: str, body: AdjustmentInput):
+        return {'adjustment':adjustments.create(work_id,body),'work':view(work_id)}
+
+    @router.get('/{work_id}/adjustments/{adjustment_id}')
+    def get_adjustment(work_id: str, adjustment_id: str):
+        return {'adjustment':adjustments.load(work_id,adjustment_id),'work':view(work_id)}
+
+    @router.get('/{work_id}/adjustments/{adjustment_id}/{kind}/{frame}')
+    def adjustment_image(work_id: str, adjustment_id: str, kind: str, frame: int):
+        return Response(adjustments.image(work_id,adjustment_id,kind,frame),media_type='image/png',headers={'Cache-Control':'no-store'})
+
+    @router.post('/{work_id}/adjustments/{adjustment_id}/decision')
+    def decide_adjustment(work_id: str, adjustment_id: str, body: AdjustmentDecision):
+        task=adjustments.decide(work_id,adjustment_id,token=body.token,decision=body.decision,note=body.note,acknowledge=body.acknowledge_warnings)
+        return {'adjustment':task,'work':view(work_id)}
 
     @router.get("/{work_id}/progress-image")
     def progress(work_id: str, candidate: int = 1):

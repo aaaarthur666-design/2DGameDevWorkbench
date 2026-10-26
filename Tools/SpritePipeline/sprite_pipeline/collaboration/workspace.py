@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from ..errors import ConflictError, NotFoundError, ValidationHarnessError
 from ..jsonio import atomic_write_json, read_json
-from .contracts import ExpertTurn, OpenWork, PlanBinding, TaskSpec, digest, bind_original_requirements
+from .contracts import ExpertTurn, OpenWork, PlanBinding, TaskSpec, digest, bind_original_requirements, default_new_review, review_calls_per_check
 from .planning import PlanningModel
 
 
@@ -77,8 +77,6 @@ class OpenMotionWorkspace:
         spec = TaskSpec.model_validate(spec)
         if not planning_authorized:
             raise ValidationHarnessError("制定方案会调用模型，请先授权本次规划额度")
-        if spec.provider != 'fixture' and spec.budget.max_review_calls < 4 * spec.candidate_count:
-            raise ValidationHarnessError('视觉预算至少需要每个候选 4 次（一个片段检查加整段复核）；尚未调用规划模型，请先调整预算')
         if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", request_key):
             raise ValidationHarnessError("请求标识无效")
         fingerprint = digest({"spec": spec.model_dump(mode="json"), "auto_execute": auto_execute})
@@ -89,6 +87,10 @@ class OpenMotionWorkspace:
                 if receipt["fingerprint"] != fingerprint:
                     raise ConflictError("同一请求标识已用于其他需求")
                 return self.load(receipt["id"])
+            spec = default_new_review(spec)
+            minimum = 2 * review_calls_per_check(spec) * spec.candidate_count
+            if spec.provider != 'fixture' and spec.budget.max_review_calls < minimum:
+                raise ValidationHarnessError(f'所选复核协议至少需要 {minimum} 次视觉额度（每候选一个片段检查和整段复核）；尚未调用规划模型，请先调整预算')
             if not self.model.configured:
                 raise ValidationHarnessError("请先在模型设置中配置规划模型；不会创建空生成任务")
             character, preset_path = self.service.presets.load_character(spec.character_id)
@@ -118,8 +120,14 @@ class OpenMotionWorkspace:
                 if work.request_sha256 != fingerprint:
                     raise ConflictError("同一请求标识已用于其他需求")
                 return work
+            # Revising an older task does not silently upgrade its policy/cost.
+            if spec.review_protocol is None:
+                spec = spec.model_copy(update={'review_protocol': work.spec.review_protocol or 'baseline'})
             if work.revision != expected_revision:
                 raise ConflictError("需求版本已改变，请刷新后继续")
+            minimum = 2 * review_calls_per_check(spec) * spec.candidate_count
+            if spec.provider != 'fixture' and spec.budget.max_review_calls < minimum:
+                raise ValidationHarnessError(f'所选复核协议至少需要 {minimum} 次视觉额度；未创建新版本或调用规划模型')
             if work.status == "planning":
                 raise ConflictError("规划尚在执行，请等待结果后修改")
             if work.job_id:
@@ -328,4 +336,9 @@ class OpenMotionWorkspace:
         result["job"] = self.store.load(work.job_id).model_dump(mode="json") if work.job_id else None
         result["view_path"] = "/tools/sprite-generator?work=" + work.id
         result["diagnostic_only"] = work.spec.provider == "fixture" or bool(result["job"] and any(c["diagnostic_only"] for c in result["job"]["candidates"]))
+        from .adjustments import Adjustments
+        adjustments=Adjustments(self.service).listing(work.id)
+        if adjustments:
+            result['adjustment_usage']={k:sum(len(t[k+'_calls']) for t in adjustments) for k in ('planning','generation','review')}
+            result['adjustment_usage']['tasks']=[{k:t[k] for k in ('id','revision','candidate','stage','state')} for t in adjustments]
         return result

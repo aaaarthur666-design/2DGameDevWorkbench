@@ -72,7 +72,7 @@ def setup(tmp_path):
 
 
 def spec(description="角色摘帽后鞠躬，结束时保持低头", **kwargs):
-    return TaskSpec(character_id="test_hero", description=description, provider="fixture", **kwargs)
+    return TaskSpec(character_id="test_hero", description=description, provider="fixture", **{'review_protocol':'baseline', **kwargs})
 
 
 def ready(workspace, value=None):

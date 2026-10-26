@@ -13,6 +13,7 @@ export type MotionSpec = {
     max_review_calls?: number;
   };
   provider: 'pixellab' | 'fixture';
+  review_protocol?: 'baseline' | 'experts_v1';
   seed?: number | null;
 };
 export type MotionStage = {
@@ -28,6 +29,7 @@ export type MotionStage = {
 };
 export type MotionPlan = {
   quality?: {
+    version: number;
     event_contract: string;
     appearance_contract: string;
     ending_contract: string;
@@ -48,17 +50,29 @@ export type MotionFrame = {
   active_path: string;
   review_status: string;
 };
-export type MotionCandidate = {
-  quality_review?: {
+export type MotionReviewCheck = {
+  dimension: 'completeness' | 'equipment' | 'rhythm';
+  frames: number[];
+  evidence: string;
+  status?: 'pass' | 'fail' | 'uncertain';
+  confidence?: number;
+};
+export type MotionReviewOpinion = { summary?: string; checks?: MotionReviewCheck[] };
+export type MotionReview = MotionReviewOpinion & {
     state: string;
     verdict: 'pass' | 'fail' | 'uncertain';
-    summary?: string;
-    checks?: {
-      dimension: 'completeness' | 'equipment' | 'rhythm';
-      frames: number[];
-      evidence: string;
-    }[];
-  };
+    protocol?: 'experts_v1';
+    requests?: {phase: string; state: string}[];
+    expert_review?: {
+      state: string; phase?: string; summary?: string; calls_used?: number; max_calls?: number; simulated?: boolean;
+      baseline?: MotionReviewOpinion;
+      experts?: Record<string, MotionReviewOpinion>;
+      resolution?: {summary?: string; checks?: (MotionReviewCheck & {classification: string; observation?: string; prior_claim_correction?: string})[]};
+      requires_human_adjudication?: {dimension: string; reason: string}[];
+    };
+};
+export type MotionCandidate = {
+  quality_review?: MotionReview;
   candidate_index: number;
   status: string;
   frames: MotionFrame[];
@@ -87,6 +101,7 @@ export type MotionJob = {
   request: { open_plan?: { work_id: string; revision: number } };
 };
 export type MotionWork = {
+  adjustment_usage?: {planning:number;generation:number;review:number;tasks:{id:string;revision:number;candidate:number;stage:number|null;state:string}[]};
   end_targets?: {stage: number; sha256: string; note: string}[];
   id: string;
   revision: number;
@@ -125,10 +140,11 @@ export const blankSpec: MotionSpec = {
   budget: {
     max_planning_calls: 8,
     max_generation_calls: 4,
-    max_review_calls: 10,
+    max_review_calls: 25,
   },
   timing_mode: 'auto',
   provider: 'pixellab',
+  review_protocol: 'experts_v1',
 };
 export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
   // Local drafts merge defaults; the API serializes fields in schema order.
@@ -148,6 +164,7 @@ export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
       ordered({
         timing_mode: 'auto',
         ...a,
+        review_protocol: a.review_protocol ?? 'baseline',
         budget: { max_review_calls: 2, ...a.budget },
         seed: a.seed ?? null,
       }),
@@ -156,6 +173,7 @@ export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
       ordered({
         timing_mode: 'auto',
         ...b,
+        review_protocol: b.review_protocol ?? 'baseline',
         budget: { max_review_calls: 2, ...b.budget },
         seed: b.seed ?? null,
       }),
@@ -166,6 +184,7 @@ export function motionStep(work: MotionWork | null): number {
   if (!work) return 0;
   if (!work.job) return 1;
   if (work.job.candidates.some(c=>c.plan_execution.stages.some(s=>s.state==='awaiting_review'))) return 2;
+  if (work.adjustment_usage?.tasks.some(t=>t.revision===work.revision&&t.stage===null&&!['adopted','rejected'].includes(t.state))) return 3;
   if (work.job.candidates.some((c) => c.status === 'approved')) return 4;
   if (work.job.candidates.some((c) => c.frames.length > 0)) return 3;
   return 2;

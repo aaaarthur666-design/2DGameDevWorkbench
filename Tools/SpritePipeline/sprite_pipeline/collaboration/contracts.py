@@ -15,7 +15,7 @@ class Contract(BaseModel):
 class Budget(Contract):
     max_planning_calls: int = Field(default=8, ge=4, le=16)
     max_generation_calls: int = Field(default=4, ge=1, le=32)
-    max_review_calls: int = Field(default=10, ge=2, le=80)
+    max_review_calls: int = Field(default=10, ge=2, le=200)
 
 
 class TaskSpec(Contract):
@@ -30,6 +30,31 @@ class TaskSpec(Contract):
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     budget: Budget = Field(default_factory=Budget)
     provider: Literal["pixellab", "fixture"] = "pixellab"
+    # Missing on historical records: preserve their hash and two-call behavior.
+    review_protocol: Literal['baseline', 'experts_v1'] | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_legacy_spec(self, handler):
+        data = handler(self)
+        if self.review_protocol is None:
+            data.pop('review_protocol', None)
+        return data
+
+
+def review_calls_per_check(spec):
+    return 5 if spec.review_protocol == 'experts_v1' else 2
+
+
+def default_new_review(spec):
+    """Only for a NEW request after idempotency lookup; never for loading jobs."""
+    value = spec.model_copy(deep=True)
+    if value.review_protocol is None:
+        # Older clients supplied a two-pass budget without a protocol field.
+        # Do not silently reinterpret that already bounded request.
+        value.review_protocol = 'baseline' if 'max_review_calls' in spec.budget.model_fields_set else 'experts_v1'
+    if value.review_protocol == 'experts_v1' and 'max_review_calls' not in spec.budget.model_fields_set:
+        value.budget.max_review_calls = 25 * value.candidate_count
+    return value
 
 
 class Requirement(Contract):
@@ -291,7 +316,8 @@ class PlanBinding(Contract):
             raise ValueError("The requested return to reference must be bound to the final stage")
         if len(self.plan.stages) * self.spec.candidate_count > self.spec.budget.max_generation_calls:
             raise ValueError("The plan exceeds the authorized generation-call limit")
-        reviews = 2 * (1 + len(self.plan.stages)) if self.plan.quality and self.plan.quality.version >= 3 else 2
+        checks = 1 + len(self.plan.stages) if self.plan.quality and self.plan.quality.version >= 3 else 1
+        reviews = review_calls_per_check(self.spec) * checks
         if self.plan.quality and self.spec.candidate_count * reviews > self.spec.budget.max_review_calls:
             raise ValueError(f'Each candidate needs {reviews} visual calls for segment checks and final review; respect the review budget')
         source = self.spec.description + "\n" + self.spec.ending
@@ -313,6 +339,13 @@ class StageRun(Contract):
     repairs: list[dict[str, Any]] = Field(default_factory=list, max_length=2)
     active_frames: list[dict[str, Any]] | None = None
     review_history: list[dict[str, Any]] = Field(default_factory=list)
+    adjustment_history: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_serializer(mode='wrap')
+    def preserve_legacy_stage(self, handler):
+        data=handler(self)
+        if not self.adjustment_history:data.pop('adjustment_history',None)
+        return data
 
 
 class PlanExecution(Contract):

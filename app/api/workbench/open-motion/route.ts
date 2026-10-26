@@ -4,10 +4,10 @@ import manifest from '@/workbench/manifest.json';
 const work = '[0-9a-f]{32}';
 const job = '[a-zA-Z0-9_]{1,200}';
 const read = new RegExp(
-  `^(?:open-motion(?:/(?:settings|references(?:/[a-z0-9_]+)?|${work}(?:/reference|/targets/[0-3]|/progress-image|/candidates/[1-8]/stages/[0-3](?:/frames/[0-9]{1,2}|/repairs/[0-1]/frames/[0-9]{1,2})?)?))?|jobs/${job}(?:/candidates/[1-8]/frames/[0-9]{1,2}/image|/exports/(?:sheet|preview|godot))?)$`,
+  `^(?:open-motion(?:/(?:settings|references(?:/[a-z0-9_]+)?|${work}(?:/reference|/targets/[0-3]|/progress-image|/adjustments(?:/${work}(?:/(?:source|proposed)/[0-9]{1,2})?)?|/candidates/[1-8]/stages/[0-3](?:/frames/[0-9]{1,2}|/repairs/[0-1]/frames/[0-9]{1,2})?)?))?|jobs/${job}(?:/candidates/[1-8]/frames/[0-9]{1,2}/image|/exports/(?:sheet|preview|godot))?)$`,
 );
 const write = new RegExp(
-  `^open-motion(?:/(?:settings|references|${work}/(?:revise|generate|pause|resume|review|review-stage|target|repair-stage|review-repair|export|recover)))?$`,
+  `^open-motion(?:/(?:settings|references|${work}/(?:revise|generate|pause|resume|review|review-stage|target|repair-stage|review-repair|export|recover|adjustments(?:/${work}/decision)?)))?$`,
 );
 
 async function proxy(request: Request) {
@@ -41,6 +41,11 @@ async function proxy(request: Request) {
   const candidate = url.searchParams.get('candidate');
   if (candidate && /^[1-8]$/.test(candidate))
     target.searchParams.set('candidate', candidate);
+  const stage = url.searchParams.get('stage');
+  if (stage !== null) {
+    if (!/^[0-3]$/.test(stage)) return Response.json({error:'片段编号无效'},{status:400});
+    target.searchParams.set('stage',stage);
+  }
   try {
     const body = request.method === 'POST' ? await request.text() : undefined;
     if (body && Buffer.byteLength(body) > 2_100_000)

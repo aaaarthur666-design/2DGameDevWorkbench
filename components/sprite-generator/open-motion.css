@@ -300,6 +300,24 @@
 .motion-error p {
   margin: 2px;
 }
+.motion-visual-review {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.motion-visual-review details {
+  margin-top: 10px;
+}
+.motion-visual-review summary {
+  cursor: pointer;
+}
+.motion-visual-review h3 {
+  font-size: 14px;
+  margin: 14px 0 6px;
+}
+.motion-review-progress {
+  color: var(--theme-muted);
+  font-size: 12px;
+}
 .motion-muted {
   color: var(--theme-muted);
   font-size: 12px;
@@ -647,3 +665,24 @@
     width: 66px;
   }
 }
+.motion-adjustment {border-top:1px solid var(--motion-border, #d5dced);padding-top:16px;margin-top:16px;min-width:0;}
+.motion-adjustment > summary {cursor:pointer;font-weight:600;}
+.motion-adjustment-body {display:grid;gap:14px;padding-top:14px;min-width:0;}
+.motion-adjustment-body p {margin:0;overflow-wrap:anywhere;}
+.motion-adjustment-body label {min-width:0;}
+.motion-adjustment-body label:has(input[type=checkbox]) {display:flex;flex-direction:row;align-items:flex-start;gap:8px;}
+.motion-adjustment-body input[type=checkbox] {width:16px;height:16px;flex:0 0 16px;padding:0;margin:2px 0;}
+.motion-frame-selection {display:flex;gap:5px;overflow-x:auto;max-width:100%;padding:6px 2px;touch-action:pan-y;}
+.motion-frame-selection button {flex:0 0 54px;padding:3px;border:2px solid transparent;border-radius:7px;user-select:none;}
+.motion-frame-selection button[aria-pressed=true] {border-color:#7754ff;background:rgba(119,84,255,.14);}
+.motion-frame-selection button:disabled {opacity:.5;}
+.motion-frame-selection img {width:44px;height:44px;object-fit:contain;image-rendering:pixelated;pointer-events:none;}
+.motion-frame-selection span {display:block;font-size:10px;white-space:nowrap;}
+.motion-adjustment-range {display:flex;align-items:end;gap:12px;flex-wrap:wrap;}
+.motion-adjustment-range label {width:88px;}
+.motion-adjustment-range span {font-size:12px;padding-bottom:8px;}
+.motion-adjustment-compare {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.motion-adjustment-compare figure {margin:0;min-width:0;}
+.motion-adjustment-compare figcaption {margin-bottom:8px;text-align:center;}
+.motion-adjustment-compare img {max-width:100%;width:256px;image-rendering:pixelated;}
+@media(max-width:540px){.motion-adjustment-compare {gap:6px;}.motion-adjustment-body {gap:10px;}}

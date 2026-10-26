@@ -52,6 +52,8 @@ import {
 } from './open-motion-model';
 import './open-motion.css';
 import { MotionStageReview } from './motion-stage-review';
+import { MotionAdjustment } from './motion-adjustment';
+import { MotionVisualReview } from './motion-visual-review';
 
 type Character = {
   id: string;
@@ -199,6 +201,7 @@ function OpenMotionStudio({
   const [uploadName, setUploadName] = useState(''),
     [uploadFacing, setUploadFacing] = useState('right');
   const [remoteId, setRemoteId] = useState('');
+  const [adjustmentOpen,setAdjustmentOpen]=useState(false);
   const settingsRef = useRef<HTMLDetailsElement>(null);
   const requestKey = useRef(''),
     lastStatus = useRef(-1),
@@ -313,6 +316,7 @@ function OpenMotionStudio({
               setSpec({
                 ...blankSpec,
                 ...saved.spec,
+                review_protocol: saved.spec.review_protocol,
                 ...(characterId ? { character_id: characterId } : {}),
               });
               requestKey.current = saved.requestKey || '';
@@ -782,7 +786,7 @@ function OpenMotionStudio({
                                 ...spec.budget,
                                 max_review_calls: Math.max(
                                   spec.budget.max_review_calls || 2,
-                                  Number(e.target.value) * 10,
+                                  Number(e.target.value) * (spec.review_protocol==='experts_v1'?25:10),
                                 ),
                               },
                             })
@@ -851,11 +855,21 @@ function OpenMotionStudio({
                         />
                       </label>
                       <label>
+                        视觉复核方式
+                        <select aria-label="视觉复核方式" value={spec.review_protocol || 'baseline'} onChange={e=>edit({
+                          review_protocol:e.target.value as 'baseline'|'experts_v1',
+                          budget:{...spec.budget,max_review_calls:Math.max(spec.budget.max_review_calls||2,(e.target.value==='experts_v1'?25:10)*spec.candidate_count)},
+                        })}>
+                          <option value="experts_v1">独立专家与争议复核</option>
+                          <option value="baseline">基础视觉检查</option>
+                        </select>
+                      </label>
+                      <label>
                         视觉验收调用上限
                         <input
                           type="number"
                           min={2}
-                          max={80}
+                          max={200}
                           value={spec.budget.max_review_calls || 2}
                           onChange={(e) =>
                             edit({
@@ -867,10 +881,13 @@ function OpenMotionStudio({
                           }
                         />
                       </label>
-                      <p>每个候选包含逐段检查和整段复核，需要 2 × 分段数 + 2 次视觉请求。</p>
+                      <p>{spec.review_protocol==='experts_v1'
+                        ? '每段及整段各含 2 次基础检查、2 次独立判断；有争议时再复核 1 次。每候选预留 5 ×（分段数 + 1）次，修复后的重新检查也计入总额度。'
+                        : '每个候选包含逐段检查和整段复核，需要 2 × 分段数 + 2 次视觉请求。'}</p>
                     </div>
                   </details>
                   <div className="motion-notice">
+                    复核方式：{spec.review_protocol==='experts_v1'?'独立专家与争议复核':'基础视觉检查'}。{' '}
                     制定方案最多调用规划模型 {spec.budget.max_planning_calls}{' '}
                     次；此按钮不会生成动画。PixelLab 最多{' '}
                     {spec.budget.max_generation_calls} 次；视觉验收最多{' '}
@@ -885,6 +902,9 @@ function OpenMotionStudio({
                 <section className="motion-card">
                   <h2>{work.plan?.title || '正在形成制作方案'}</h2>
                   <p>{work.plan?.summary || work.message}</p>
+                  {work.plan?.quality&&<p className="motion-muted">复核方式：{work.spec.review_protocol==='experts_v1'?'独立专家与争议复核':'基础视觉检查'}；
+                    本方案最多预留 {(work.spec.review_protocol==='experts_v1'?5:2)*(work.plan.quality.version>=3?work.plan.stages.length+1:1)*work.spec.candidate_count} 次视觉请求，
+                    已设总上限 {work.spec.budget.max_review_calls ?? 10} 次。按实际调用计费；确认片段和最终采用仍由你决定。</p>}
                   {!work.plan && (
                     <div className="motion-experts">
                       {Object.entries(roles).map(([role, name]) => (
@@ -1028,8 +1048,8 @@ function OpenMotionStudio({
               </div>
             )}
             {step === 2 && work && (
-              <div className="motion-grid">
-                {checkpoint ? <MotionStageReview key={`${work.id}:${checkpoint.candidate}:${checkpoint.stage}`} work={work} candidate={checkpoint.candidate} stage={checkpoint.stage} readOnly={readOnly} onSaved={applyWork} /> : <section className="motion-card">
+              <div className={`motion-grid${checkpoint?' motion-review-grid':''}`}>
+                {checkpoint ? <MotionStageReview key={`${work.id}:${work.revision}:${checkpoint.candidate}:${checkpoint.stage}`} work={work} candidate={checkpoint.candidate} stage={checkpoint.stage} readOnly={readOnly} onSaved={applyWork} /> : <section className="motion-card">
                   <h2>{work.job?.plan_control.message || work.message}</h2>
                   <div className="motion-canvas motion-large">
                     {work.job && (
@@ -1177,48 +1197,14 @@ function OpenMotionStudio({
                   <h2>{step === 3 ? '人工检查与采用' : '交付这个动作'}</h2>
                   {step === 3 ? (
                     <>
+                      {!adjustmentOpen&&<>
                       <div className="motion-notice">
                         {candidate?.quality_review
                           ? '请查看下方视觉验收状态与帧证据，并实际播放检查。最终是否采用由你决定。'
                           : '本任务仅有尺寸、透明度等技术检查；动作是否正确仍需人工确认。'}
                       </div>
                       {candidate?.quality_review && (
-                        <div
-                          className={
-                            candidate.quality_review.verdict === 'pass'
-                              ? 'motion-notice'
-                              : 'motion-error'
-                          }
-                        >
-                          <b>
-                            视觉验收：
-                            {
-                              {
-                                pass: '通过',
-                                fail: '发现问题',
-                                uncertain: '待人工确认',
-                              }[candidate.quality_review.verdict || 'uncertain']
-                            }
-                          </b>
-                          <p>
-                            {candidate.quality_review.summary ||
-                              '正在逐帧核对…'}
-                          </p>
-                          {candidate.quality_review.checks?.map((c) => (
-                            <p key={c.dimension}>
-                              <b>
-                                {
-                                  {
-                                    completeness: '动作完整性',
-                                    equipment: '装备一致性',
-                                    rhythm: '节奏',
-                                  }[c.dimension]
-                                }
-                              </b>{' '}
-                              · 第 {c.frames.join('、')} 帧：{c.evidence}
-                            </p>
-                          ))}
-                        </div>
+                        <MotionVisualReview report={candidate.quality_review} />
                       )}
                       <ul className="motion-criteria">
                         {work.plan?.stages
@@ -1294,8 +1280,16 @@ function OpenMotionStudio({
                           )}
                         </>
                       )}
+                      </>}
+                      <MotionAdjustment key={`${work.id}:${work.revision}:${candidateIndex}`} work={work} candidate={candidateIndex} readOnly={readOnly} onOpenChange={setAdjustmentOpen} onSaved={value=>{
+                        applyWork(value);
+                        if(value.revision!==work.revision){
+                          setCandidateIndex(1);
+                          void wb.navigate(`/tools/sprite-generator?work=${value.id}&version=${value.revision}&candidate=1`).catch(e=>setError(e.message));
+                        }
+                      }} />
                       <details>
-                        <summary>需要调整时</summary>
+                        <summary>其他调整工具</summary>
                         <p>
                           修改动作要求会保存旧版本，并重新规划。逐帧编辑沿用现有工具；修改后须重新检查和采用。
                         </p>
@@ -1392,7 +1386,7 @@ function OpenMotionStudio({
               '描述草稿保存在当前浏览器；提交后由本机服务保存。'
             )
           ) : step === 3 ? (
-            reviewBlocker ||
+            (adjustmentOpen?'选择允许修改的帧，生成备选后再比较采用。原版保持保留。':reviewBlocker) ||
             (approved
               ? '当前候选已采用，可以进入导出。'
               : '检查确认已完成，可以采用当前候选。')
@@ -1484,7 +1478,7 @@ function OpenMotionStudio({
                   : '继续已授权制作'}
             </button>
           )}
-          {step === 3 && (
+          {step === 3 && !adjustmentOpen && (
             <button
               className="motion-primary"
               disabled={busy || Boolean(reviewBlocker)}

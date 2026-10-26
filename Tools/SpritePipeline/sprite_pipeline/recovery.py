@@ -45,6 +45,9 @@ class RecoveryWorker:
         while not self._stop.is_set():
             try:
                 workspace.recover_planning(stopping=self._stop.is_set)
+                if not self._stop.is_set():
+                    from .collaboration.adjustments import Adjustments
+                    Adjustments(self.service).recover(stopping=self._stop.is_set)
             except Exception:
                 # Individual requests retain their safe failure receipts. A
                 # broken file must not terminate recovery for existing jobs.

@@ -5,6 +5,10 @@ description: Design and implement Godot 4.7 game projects from ready Forge asset
 
 # Forge game engineering
 
+Controlled animation alternatives are not delivered art until explicitly adopted. For a completed motion, adoption creates a new work version and native job, with the selected candidate normalized to candidate 1. Resolve the returned exact identity and approved export; do not reuse the old job or silently replace another candidate. Preserve frame order/FPS, unselected source frames, actor settings and other clips. A preview or expert report does not authorize game integration. See [controlled alternatives](../../../docs/motion-adjustments.md).
+
+Formal expert opinions, dispute reports and offline evaluation reports are evidence, not asset approval or engine acceptance. A suggestion to clear an old concern does not authorize replacing frames, changing playback timing or importing another candidate. Continue to consume the exact approved export and preserve its frame mapping. Saved tasks are not automatically re-reviewed. See [visual review boundaries](../../../docs/sprite-review-evaluation.md).
+
 For open-motion v4, target pose PNGs and local repair previews are production evidence, not engine-ready clips. Use only the final selected export with its accepted frame/repair mapping. Do not concatenate context images, reapply rejected repairs, remove low-change frames or replace endpoints during game integration; preserve timing and other clips.
 
 Open-motion checkpoint snapshots are intermediate production evidence, not delivered animation clips. Consume the final approved/exported candidate and its exact playback mapping; do not concatenate raw segments or substitute an accepted pose PNG for a completed SpriteFrames asset. Segment acceptance and model reports do not prove final animation or engine acceptance.
