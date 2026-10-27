@@ -56,6 +56,18 @@ try {
     await guidanceResponse.json(),
     await agentRequest(await loadManifest(), 'guidance'),
   );
+  const topicResponse = await fetch(`${baseUrl}/v1/agent/guidance`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ topic: 'motion' }),
+  });
+  assert.equal(topicResponse.status, 200);
+  assert.deepEqual(await topicResponse.json(), await agentRequest(await loadManifest(), 'guidance', { topic: 'motion' }));
+  for (const input of [{ topic: '../SECURITY.md' }, { topic: 'missing-topic' }, { source: 'SECURITY.md' }]) {
+    const invalid = await fetch(`${baseUrl}/v1/agent/guidance`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    });
+    assert.equal(invalid.status, 400);
+  }
 
   const template = await fetch(`${baseUrl}/v1/agent/interactable-template`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'pickup', name: '钥匙' }),

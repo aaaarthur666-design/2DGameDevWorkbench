@@ -1,11 +1,14 @@
 # 使用文档
 
-Forge 的公开文档面向安装、制作资产、MCP 接入与游戏项目交付。内部开发说明、工作记录与私人作品不随源码分发。
+Forge 的公开文档面向安装、制作资产、MCP 接入与游戏项目交付。开发导航和指导维护说明随源码维护；本机工作记录与私人作品不随源码分发。
 
 | 文档 | 内容 |
 | --- | --- |
 | [使用与操作手册](operations-manual.md) | 安装、制作、导出、备份与排错 |
-| [Agent 客户端接入](agent-clients.md) | MCP 配置与产品 Skills |
+| [Agent 任务导航](../AGENTS.md) | 按任务选择 Skill、开发和维护入口 |
+| [Agent 客户端接入](agent-clients.md) | MCP 配置、按需指导与宿主排错 |
+| [工具与任务语义](agent-client-tools.md) | 工具索引、状态和结果数据 |
+| [客户端验收](agent-client-validation.md) | 宿主行为场景与历史验证记录 |
 | [角色原图](reference-art.md) | 原图生成、导入与动画参考移送 |
 | [序列帧生成](sprite-generator.md) | 候选、检查、修补与导出 |
 | [视觉专家与争议复核](sprite-review-evaluation.md) | 独立意见、争议复核、实际画面对比与调用边界 |

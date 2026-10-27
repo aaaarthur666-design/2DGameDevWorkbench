@@ -9,6 +9,7 @@ import { imageEditInputs, imageEditTools } from '../lib/workbench/image-edit-con
 import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { previewInputs, previewTools } from '../lib/workbench/preview-follow-contract.mjs';
 import { WorkBuddyPreview } from '../lib/workbench/workbuddy-preview.mjs';
+import { guidanceTopics } from '../lib/workbench/agent-guidance.mjs';
 import { queuePresentation } from '../lib/workbench/preview-follow.mjs';
 import { KINDS } from '../features/interactable-editor/contract.mjs';
 
@@ -30,11 +31,17 @@ import {gameExportInputs,gameExportTools} from '../lib/workbench/game-export-con
 const server = new McpServer(
   {
     name: '2d-game-workbench',
-    version: '0.11.0',
+    version: '0.12.0',
   },
   {
-    instructions:
-      'WorkBuddy preview first: list/get_environment/present return preview with a session-specific hostAction. Discover the host-native present_files schema and open preview.hostAction.arguments before production. workbench_run_task returns preview_required with createsTask=false and providerCalled=false until THIS session has a visible page; then run automatically enables following. This is not a failed generation: retry the same run only after opening the page. Use previewPolicy=user-declined or user-dismissed only when the user has declined/closed the preview in this conversation; host-unavailable only after verifying the native host tool is absent or failed and reporting that limitation. Never silently opt out to bypass preview. Never reopen a dismissed preview on reconnection. Other clients stay headless unless they explicitly present. Game integration: check workbench_list_game_exports for pending deliveries when continuing an authorized game task. Use get_game_export to inspect the exact package and selected target, read agentAssets.engineering.skill, install_game_export for verified file placement, then use host file tools to complete mounts, clip merges and gameplay signal wiring according to the actual project. Record real file and engine evidence with complete_game_export. A waiting delivery never means the host Agent was automatically started. Preserve user-modified files, other animation clips, existing controllers and project.godot. Legacy map-stitcher generation, stitching and expansion remain manual; the independent image-assets Route A capability is open for authorized GPT Image 2.5 backgrounds, transparent props and image edits. Shared scene/interactable documents support only the documented typed editing tools, exact-revision observation, validation and deterministic event simulation; existing exports may be consumed. WorkBuddy session startup: on the first user message, read workbench_get_environment and its preview. Start offline frontend services once and poll readiness for at most 60 seconds; stop on conflicts. Use workbench_present for a known artwork to get its exact preview.hostAction. Discover the host-native present_files schema and pass preview.hostAction.arguments unchanged, including previewSession. Confirm a visible matching page with workbench_get_frontend_context. Do not replace the session URL with the plain homepage or a result URL. This is a first-conversation Agent workflow, not a handshake browser side effect. Only the host tool can confirm that the page opened; if unavailable, report that limitation and show the URL. Never open the OS default browser as a substitute. Do not apply WorkBuddy browser startup to other MCP clients or diagnostic clients. Continue the original user request after this local setup; it authorizes no generation or provider charges. For vague production requests, follow conversationGuidance returned by list_capabilities: inspect context and existing assets before asking, use the host-native AskUserQuestion only if currently available after inspecting its schema, otherwise ask concisely in chat. Do not create placeholder tasks while clarifying or mistake unanswered questions for consent. Only the legacy map-stitcher capability remains a manual frontend workflow and cannot be prepared or run through MCP. Use the separately registered image-assets capability for authorized standalone background/transparent prop generation and image editing, followed by explicit adoption into shared documents. For interactables, get a template without creating a task, edit its project, save-project for frontend continuation, then export-godot when requested. This server exposes the capabilities of the current 2D game workbench project. List capabilities before selecting one, then inspect its schema. Use prepare_task only for explicitly requested input validation. Resolve authorization before external execution; planning or clarification creates no task. Call run_task only when execution is authorized. get_task safely refreshes running adapter jobs before returning their persisted state. An awaiting_configuration task is not complete. Never invent outputs, and keep exact task IDs and paths in structured details; normal replies lead with the outcome and exact artwork link, without dumping JSON or IDs. Use get_environment and start_services for local readiness, list_presets for real IDs, list_tasks for earlier work, and get_result/read_artifact to inspect actual outputs. Review candidate frames before approve, recording visual evidence in reviewNote; check/approve/export are separate operations. Asset inventory: use list_assets for actual artwork, not list_tasks; filter candidateCount and candidateIndex and sortBy createdAt for the latest multi-candidate generation. Follow pagination to avoid missing old work. get_asset verifies the selected files; get_asset_manifest produces a handoff without modifying sources. Browser-only drafts are outside the server inventory; incomplete coverage is not proof an asset is gone. Presentation: before the first execution step call workbench_present with the discovered capabilityId or exact selected task/job/asset identity to arm page following for this MCP connection. Subsequent run_task/get_task responses automatically publish their current step; call workbench_present again when intentionally selecting another artwork or candidate through read-only result/asset tools. Check workbench_get_frontend_context with requestId to confirm displayed, never infer display from queued/pending or a returned URL. Follow the original task across generation, review, save and export with a short stage update; do not wait until the final answer to show the result. Repeated same-step polling must not reload the page. Respect paused/blocked states and never force host navigation around them. This channel navigates the existing frontend, it does not open a browser; the host-native present_files is only for the first preview. Context includes page identity and editing state, not map pixels or draft contents. Presentation: prefer presentation.summary and viewUrl. Reply with a short outcome, preview/link and one next step; show technical details only when asked or necessary for troubleshooting. Navigate an existing host preview only when supported and editing is safely saved; otherwise offer the exact link. A returned URL or browserOpened:false never proves the browser opened. Do not reopen a dismissed preview. AskUserQuestion is host-owned: discover it and read its schema, ask one material choice at a time, and never treat cancellation as consent. For ambiguous generation failures inspect the saved remoteJobId and recover the original job instead of resubmitting.',
+    instructions: [
+      'Forge provides asset production, versioned editing and Godot delivery. Discover an unfamiliar capability and its schema; reuse confirmed schemas during the session.',
+      'list_capabilities returns a short overview and topic index. Read workbench_get_guidance(topic) only for the current task; production and engineering are workflow routers.',
+      'Continue within the user\'s existing scope and budget, including delegated inspection and selection. Ask for unresolved consequential choices or scope changes. Read-only discussion creates no production task; prepare_task optionally saves input validation for authorized work.',
+      'Poll the original task/job. Resolve unknown paid submissions using their saved receipts and provider IDs before a new attempt. Shared editing uses current version/hash guards and stable commandId.',
+      'On the first WorkBuddy user message, check workbench_get_environment; start offline frontend services once, poll readiness for at most 60 seconds and stop on conflicts. Follow guidance topic presentation for host opening. WorkBuddy requires a visible preview for this session before production: discover the host present_files schema, open preview.hostAction and confirm the session page. preview_required creates no task or provider call; continue with the same parameters after connecting. Use previewPolicy only for an explicit user refusal/dismissal or verified host-tool failure. Use workbench_present at step/selection changes and workbench_get_frontend_context to confirm arrival. Respect paused, closed and unsaved pages. Other clients remain headless unless they present. Page acknowledgement confirms arrival, not artwork quality.',
+      'The registered MCP surface excludes map production; explicit webpage requests can use available host browser tools. Report actual assets, checks and target-engine evidence with appropriate detail.',
+    ].join(' '),
   },
 );
 
@@ -155,7 +162,7 @@ registerTool(
   {
     title: 'List 2D workbench capabilities',
     description:
-      'List the production capabilities and local adapters registered in this project, including optional external-service configuration and the conversation guide for turning vague requests into executable tasks.',
+      'List registered production capabilities, a short workflow overview and the on-demand guidance topic index.',
     inputSchema: {},
     annotations: {
       readOnlyHint: true,
@@ -171,6 +178,17 @@ registerTool(
       conversationGuidance: await agentRequest(manifest, 'guidance'),
     };
   },
+);
+
+registerTool(
+  'workbench_get_guidance',
+  {
+    title: 'Read a workbench guidance topic',
+    description: 'Read one registered workflow or reference without creating tasks or contacting a provider. Omit topic for the overview and topic index.',
+    inputSchema: { topic: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional().describe('Topic ID returned by list_capabilities, or overview.') },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  async input => agentRequest(await loadManifest(), 'guidance', input),
 );
 
 registerTool(
@@ -191,7 +209,8 @@ registerTool(
   },
   async ({ capabilityId }) => {
     const manifest = await loadManifest();
-    return { capability: findAgentCapability(manifest, capabilityId) };
+    return { capability: findAgentCapability(manifest, capabilityId),
+      guidanceTopics: guidanceTopics(manifest).filter(topic => topic.capabilityId === capabilityId) };
   },
 );
 

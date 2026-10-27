@@ -55,6 +55,8 @@ tests/game-engineering/__pycache__/
 # Local development instructions and host state (product Skills are distributed)
 [Aa][Gg][Ee][Nn][Tt].md
 [Aa][Gg][Ee][Nn][Tt][Ss].md
+# Shared root navigation ships with the project; other host instructions stay local.
+!/AGENTS.md
 CLAUDE.md
 /CONTRIBUTING.md
 /.codex/
@@ -108,6 +110,8 @@ logs/
 !/docs/MAP_STITCHER_ARCHITECTURE.md
 !/docs/README.md
 !/docs/agent-clients.md
+!/docs/agent-client-tools.md
+!/docs/agent-client-validation.md
 !/docs/agent-preview-follow.md
 !/docs/architecture.md
 !/docs/asset-catalog.md

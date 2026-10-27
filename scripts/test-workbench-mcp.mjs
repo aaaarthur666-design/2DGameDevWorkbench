@@ -7,13 +7,14 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { access } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { loadManifest, agentRequest } from '../lib/workbench/runtime.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '..');
 const expectedTools = [
   'workbench_list_capabilities',
+  'workbench_get_guidance',
   'workbench_describe_capability',
   'workbench_prepare_task',
   'workbench_run_task',
@@ -51,9 +52,7 @@ const transport = new StdioClientTransport({
 
 try {
   await client.connect(transport);
-  assert.match(client.getInstructions(), /first user message/);
-  assert.match(client.getInstructions(), /present_files/);
-  assert.match(client.getInstructions(), /not a handshake browser side effect/);
+  assert.ok(client.getInstructions()?.trim());
   const environment = await client.callTool({
     name: 'workbench_get_environment',
     arguments: {},
@@ -90,10 +89,32 @@ try {
   const guide = await agentRequest(await loadManifest(), 'guidance');
   assert.deepEqual(capabilities.structuredContent.conversationGuidance, guide);
   assert.equal(guide.createsTask, false);
-  assert.match(guide.text, /AskUserQuestion/);
-  assert.match(guide.text, /角色与动作/);
-  assert.match(guide.text, /地图/);
-  assert.match(guide.text, /交互物/);
+  assert.equal(guide.providerCalled, false);
+  assert.equal(guide.topic, 'overview');
+  const manifest = await loadManifest();
+  assert.deepEqual(guide.topics, manifest.agentAssets.guidanceTopics);
+  assert.equal(guide.text, await readFile(path.join(repositoryRoot, guide.source), 'utf8'));
+  const taskDirectory = path.join(repositoryRoot, manifest.workspace.taskDirectory);
+  const tasksBeforeGuidance = await readdir(taskDirectory).catch(() => []);
+  assert.equal(listed.tools.find(tool => tool.name === 'workbench_get_guidance').annotations.readOnlyHint, true);
+  const overview = await client.callTool({ name: 'workbench_get_guidance', arguments: {} });
+  assert.deepEqual(overview.structuredContent, guide);
+  for (const topic of guide.topics) {
+    const response = await client.callTool({ name: 'workbench_get_guidance', arguments: { topic: topic.id } });
+    assert.ok(!response.isError, JSON.stringify(response));
+    const value = response.structuredContent;
+    assert.equal(value.source, topic.source);
+    assert.equal(value.text, await readFile(path.join(repositoryRoot, topic.source), 'utf8'));
+    assert.equal(value.topics, undefined, 'a requested topic does not reload all guidance');
+    assert.equal(value.createsTask, false);
+    assert.equal(value.providerCalled, false);
+    assert.deepEqual(JSON.parse(response.content[0].text), value, 'text-only clients receive the same topic');
+  }
+  for (const topic of ['unknown-topic', '../SECURITY.md', '']) {
+    const response = await client.callTool({ name: 'workbench_get_guidance', arguments: { topic } });
+    assert.ok(response.isError, 'unregistered topics and paths must be rejected');
+  }
+  assert.deepEqual(await readdir(taskDirectory).catch(() => []), tasksBeforeGuidance);
   await assert.rejects(
     agentRequest(await loadManifest(), 'guidance', { prompt: 'make a chest' }),
     /Invalid/,

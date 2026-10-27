@@ -14,7 +14,7 @@
 | 确定性拼接已有图片并生成状态/引擎包 | 本地适配器 `compose` | 不需要 |
 | 填充透明模板的整体图层 | Web `generate-layer` | 需要已配置 Gemini、OpenAI Images 或混元 |
 
-地图原图生产、拼接、区域绘制和扩图仍为人工地图编辑流程，不向 MCP Agent 开放自动执行。Agent 可以通过独立的 `image-assets` 生成或编辑背景 / 物品 PNG，也可通过已交付的 7A 高层图像 API 局部调整已保存的单张源图；两者均须明确采用，完成图片不代表已经创建或导出地图。详见[图像局部编辑](image-editing.md)。
+地图原图生产、拼接、区域绘制和扩图沿用前端编辑流程；仓库 MCP / Agent CLI 未开放这些地图生产操作。用户明确要求网页操作时，可使用宿主实际提供的浏览器能力，遵循页面原有保存、锁定和版本检查。Agent 可以通过独立的 `image-assets` 生成或编辑背景 / 物品 PNG，也可通过已交付的 7A 高层图像 API 局部调整已保存的单张源图；两者均须明确采用，完成图片不代表已经创建或导出地图。详见[图像局部编辑](image-editing.md)。
 
 ## 开始编辑
 
@@ -45,7 +45,7 @@
 
 OpenAI 纯文本原图使用 `/v1/images/generations`，参考图 / 编辑 / 扩图使用 `/v1/images/edits`。原有自定义地址保留：edits 地址以 `/edits` 结尾时会沿用同一服务的 `/generations`；其他自定义地址需设置 `MAP_STITCHER_OPENAI_GENERATION_API_URL`。独立图片能力从 manifest 的地图 provider 列表引用 GPT Image 2.5 配置，不复制一份 provider 或 Key。
 
-旧 `map-stitcher` / `generate-origin` 及其 `generated-origin.png` 记录继续兼容，仍可按原配置使用 Nano Banana 2、GPT Image 2 / 2.5 或混元 Image 3.0。旧图的身份与历史不改写，地图制作的手动边界继续生效。
+旧 `map-stitcher` / `generate-origin` 及其 `generated-origin.png` 记录继续兼容，仍可按原配置使用 Nano Banana 2、GPT Image 2 / 2.5 或混元 Image 3.0。旧图的身份与历史不改写，地图制作继续通过前端入口完成。
 
 手动验收：先保留一份有内容的地图，打开生成面板并检查模型设置；生成一张后确认旧图未变，下载预览，再点“用作中心图”，检查首圈卡片并生成一块扩图。最后从“打开”找回旧地图、刷新后重新打开新地图，确认两份草稿都在。真实图片生成会使用你配置的 API 额度；自动回归使用隔离模拟服务。
 
@@ -142,7 +142,7 @@ SceneMaker 的 ground 映射到 surface，整体图由旧视觉层合成，矩�
 
 旧 `map-stitcher` 的地图生产操作继续属于手动前端工作流，不向 MCP / Agent CLI 开放发现或执行。前端通过 `workbench/manifest.json` 和共享 Runtime 调用本地 `compose`、原图 `generate-origin` 和整体层 `generate-layer` 适配器；生产产物写入 `outputs/<task-id>/`。7A 的单源图局部调整使用独立高层图像接口，不开放这些地图生产操作。具体输入见 [连接器契约](connector-contract.md)。
 
-页面 WebMCP 另提供七个操作入口，但不能用于绕过 Agent 手动地图边界：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入工作台共享的 runtime task ledger。
+页面 WebMCP 在宿主支持时另提供七个页面操作入口，用户明确要求网页操作时按实际 schema 使用：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入工作台共享的 runtime task ledger。
 
 ### 已保存源图的局部调整（7A–7D）
 
