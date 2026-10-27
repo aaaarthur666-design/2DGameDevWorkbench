@@ -48,6 +48,12 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 | `workbench_edit_image_region` | 执行本地配方或显式 ai-edit，保存独立候选；采用是单独操作 |
 | `workbench_apply_image_candidate` | 按目标版本、源哈希和锁采用确切候选 |
 | `workbench_get_image_edit` | 读取持久会话、候选及原任务身份 |
+| `workbench_get_scene_workflow_settings` | 读取场景专家模型与凭据是否可用，不返回 Key |
+| `workbench_list_scene_workflows` / `workbench_get_scene_workflow` | 只读有界协作历史、讨论、用量和检查 |
+| `workbench_create_scene_workflow` | 在指定范围与额度内启动专家规划和可选候选制作 |
+| `workbench_execute_scene_workflow` / `workbench_revise_scene_workflow` | 执行确切方案或在原额度内请求局部修订 |
+| `workbench_pause_scene_workflow` / `workbench_resume_scene_workflow` | 安全边界暂停，或显式恢复已保存步骤 |
+| `workbench_observe_scene_workflow` / `workbench_adopt_scene_workflow` | 读取真实候选图片，或按原场景版本采用已检查候选 |
 
 启动工具改变本机进程状态；prepare/run 持久化任务；文档写入维护自己的版本。读取指导不创建任务或调用提供方，get_task 可刷新原有异步记录。读取完整操作语义时按[生产 Skill](../.agents/skills/2d-game-workbench/SKILL.md)选择主题。
 
@@ -56,6 +62,8 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 首次使用不熟悉的操作时 list/describe，之后可复用已确认的 schema。用户已经要求执行且输入充分时直接 run；需要校验并保存准备记录时可 prepare。讨论、浏览和等待执行授权时无需建立任务。跨能力工作使用各自实际 operation 和任务身份。
 
 共享文档、图片会话和版本化修改经 canonical Bridge 完成，沿用其 revision/hash 与 commandId 契约；详细字段分别见[场景](scene-composer.md)、[交互物](interactable-editor.md)和[图片编辑](image-editing.md)。
+
+跨步骤的场景规划可使用[场景专家协作](scene-collaboration.md)。协作任务有独立的工作流版本、制作依赖图和候选工作区，`get/list/observe` 不调度模型；创建、执行和修订必须在用户已授权范围与额度内。最终采用另外核对来源场景版本和确切候选哈希。
 
 ## 状态与异步任务
 

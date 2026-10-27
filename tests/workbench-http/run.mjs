@@ -19,6 +19,7 @@ const child = spawn(process.execPath, ['scripts/workbench-http.mjs'], {
     OPENAI_API_KEY: '',
     TOKENHUB_API_KEY: '',
     MAP_STITCHER_IMAGE_PROVIDER: '',
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --import=${new URL('../helpers/mock-keychain.mjs', import.meta.url).href}`.trim(),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
@@ -108,8 +109,8 @@ try {
       apiKey: 'runtime-test-secret',
     }),
   });
-  assert.equal(settingsResponse.status, 200);
   const savedSettings = await settingsResponse.json();
+  assert.equal(settingsResponse.status, 200, savedSettings.error);
   assert.equal(savedSettings.active, true);
   assert.equal(savedSettings.provider, 'nano-banana');
   assert.equal(
@@ -130,6 +131,18 @@ try {
   assert.equal(hunyuanSaved.providers.find(p => p.id === 'hunyuan-image-3').configured, true);
   assert.equal(hunyuanSaved.providers.find(p => p.id === 'nano-banana').configured, true);
   assert.equal(JSON.stringify(hunyuanSaved).includes('test-tokenhub-secret'), false);
+
+  const expertSettings = await jsonFetch(`${baseUrl}/v1/agent/scene-workflow-settings`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ configuration: { default: { provider: 'tokenhub', model: 'fixture-vision' }, roles: { visual_reviewer: { provider: 'openai', model: 'fixture-reviewer' } } }, keys: { openai: 'scene-expert-test-key' } }),
+  });
+  assert.equal(expertSettings.configured, true);
+  assert.equal(expertSettings.configuration.roles.visual_reviewer.model, 'fixture-reviewer');
+  assert.equal(JSON.stringify(expertSettings).includes('scene-expert-test-key'), false);
+  assert.equal(JSON.stringify(expertSettings).includes('test-tokenhub-secret'), false);
+  const preserved = await jsonFetch(`${baseUrl}/v1/map-stitcher/settings`);
+  assert.equal(preserved.provider, 'hunyuan-image-3');
+  assert.equal(preserved.providers.find(p => p.id === 'nano-banana').configured, true, 'expert settings preserve existing image-provider keys');
 
   const tile = await sharp({
     create: {

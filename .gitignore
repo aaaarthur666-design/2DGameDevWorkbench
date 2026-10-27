@@ -127,6 +127,7 @@ logs/
 !/docs/prop-art.md
 !/docs/reference-art.md
 !/docs/scene-composer.md
+!/docs/scene-collaboration.md
 !/docs/sprite-generator.md
 !/docs/sprite-review-evaluation.md
 !/docs/motion-adjustments.md

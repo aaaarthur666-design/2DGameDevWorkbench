@@ -9,6 +9,7 @@
 | 预览和页面跟随 | `lib/workbench/*preview*`、前端跟随组件 | `test:preview-follow`、`test:presentation` |
 | 图片生成 / 局部编辑 | `lib/workbench/adapters/image-assets.mjs`、`image-edit*.mjs` | `test:image-assets`、受影响的 `tests/image-edit/` 用例 |
 | 场景 / 交互物共享文档 | `features/scene-composer/`、`features/interactable-editor/`、`lib/workbench/document-*.mjs` | `test:editor-documents`、`test:scene-composer`、`test:interactable`；观察或接线变化加相应测试 |
+| 场景专家协作 | `lib/workbench/scene-workflow*.mjs`、`features/scene-workflow/`、`components/scene-composer/scene-workflow-panel.tsx` | `test:scene-workflow`；共享保存或图片执行变化加对应回归；[流程与边界](../../docs/scene-collaboration.md) |
 | 开放动作 | `Tools/SpritePipeline/sprite_pipeline/collaboration/`、`components/sprite-generator/` | 受影响的 Python 测试、`test:open-motion` |
 | 游戏交付 / 工程 helper | `features/godot-export/`、`lib/workbench/game-export*.mjs`、工程 Skill 的脚本 | `test:game-export`、`test:engineering` |
 | 启动器与平台支持 | `scripts/dev.mjs`、服务 supervisor、平台凭据模块 | `test:frontend`、`test:dev-supervisor`、`test:desktop-services` 或凭据测试 |

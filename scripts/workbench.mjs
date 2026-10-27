@@ -85,6 +85,10 @@ Commands:
 
 Image editing agent operations: image-inspect, image-resolve, image-edit,
   image-apply, image-session-create, image-session-get (canonical Bridge required).
+Scene collaboration agent operations: scene-workflow-list, scene-workflow-create,
+  scene-workflow-get, scene-workflow-execute, scene-workflow-revise,
+  scene-workflow-pause, scene-workflow-resume, scene-workflow-observe,
+  scene-workflow-adopt, scene-workflow-settings (canonical Bridge required).
 `;
 }
 

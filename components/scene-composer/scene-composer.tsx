@@ -24,6 +24,7 @@ import {
   FolderOpen,
   Search,
   MoreHorizontal,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,6 +93,7 @@ import { SceneLinksPanel } from './scene-links-panel';
 import { ScenePreviewFeedback } from './scene-preview-feedback';
 import { ObjectArt } from './scene-art';
 import { SceneImagePreview } from './scene-image-preview';
+import { SceneWorkflowPanel } from './scene-workflow-panel';
 import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
 import { imageSlotChoices, imageTargetEquals, readImageEdit, validateSceneImageReceipt, verifiedSceneImageSource } from '@/features/image-edit/client';
 import type { ImageTargetInfo, ImageTargetRef } from '@/features/image-edit/client';
@@ -224,11 +226,14 @@ export function SceneComposer() {
   const [handoffUrl, setHandoffUrl] = useState('');
   const [imageEdit, setImageEdit] = useState<{ target: ImageTargetRef; guard: DocumentSavedSnapshot<Scene> | null; navigation?: ImageEditNavigation } | null>(null);
   const [imageOpening, setImageOpening] = useState(false), [imageSlot, setImageSlot] = useState('visual');
+  const [workflow, setWorkflow] = useState<DocumentSavedSnapshot<Scene> | null>(null);
+  const [workflowOpening, setWorkflowOpening] = useState(false);
+  const workflowGuard = useRef<DocumentSavedSnapshot<Scene> | null>(null);
   const imageEditRef = useRef(imageEdit), imageEditing = useRef(false), imageNavigationConsumed = useRef(false);
   useLayoutEffect(() => { imageEditRef.current = imageEdit; }, [imageEdit]);
-  const doc = useSceneDocument(Boolean(imageEdit), imageOpening),
+  const doc = useSceneDocument(Boolean(imageEdit) || Boolean(workflow), imageOpening || workflowOpening),
     { scene, ready, busy: documentBusy } = doc;
-  const busy = documentBusy || imageOpening || Boolean(imageEdit);
+  const busy = documentBusy || imageOpening || Boolean(imageEdit) || workflowOpening || Boolean(workflow);
   const [selected, setSelected] = useState<string[]>([]),
     [tab, setTab] = useState<'materials' | 'nodes'>('materials');
   const [search, setSearch] = useState(''),
@@ -570,6 +575,18 @@ export function SceneComposer() {
     const href = await storeEditorHandoff('map-stitcher', 'map', {source: scene.map.source, name: scene.map.name + '.zip'});
     setHandoffUrl(href);
   });
+  const openWorkflow = async () => {
+    if (busy || preview || workflowGuard.current) return;
+    setWorkflowOpening(true);
+    try {
+      const original = await documentFingerprint({ ...validateScene(doc.current.current), revision: 0 });
+      await doc.save();
+      const guard = await doc.shared.flushSaved();
+      if (original !== guard.fingerprint) throw new Error('保存期间场景发生变化，请重新打开协作。');
+      workflowGuard.current = guard; setWorkflow(guard);
+    } catch (error) { setNotice(error instanceof Error ? error.message : '场景协作尚未打开。'); }
+    finally { setWorkflowOpening(false); }
+  };
   const openImageEdit = async (target: ImageTargetRef, navigation?: ImageEditNavigation) => {
     if (busy || preview || imageEditing.current) return;
     imageEditing.current = true; setImageOpening(true);
@@ -702,7 +719,7 @@ export function SceneComposer() {
 
   return (
     <>
-    <main className="sc-workspace" data-scene-composer inert={imageOpening || Boolean(imageEdit)}>
+    <main className="sc-workspace" data-scene-composer inert={imageOpening || Boolean(imageEdit) || workflowOpening || Boolean(workflow)}>
       <header className="sc-header">
         <div className="sc-title">
           <EditorWorkbenchMenu />
@@ -741,6 +758,14 @@ export function SceneComposer() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || preview || !ready}
+            onClick={() => void openWorkflow()}
+          >
+            <Users /> 场景协作
+          </Button>
           <Button
             size="sm"
             disabled={busy || !scene.map || !ready}
@@ -1967,6 +1992,23 @@ export function SceneComposer() {
         </DialogContent>
       </Dialog>
     </main>
+    {workflow && <SceneWorkflowPanel
+      document={workflow.document}
+      beforeAdopt={async () => {
+        const guard = workflowGuard.current;
+        if (!guard || doc.current.current.id !== guard.document.id || await documentFingerprint({ ...validateScene(doc.current.current), revision: 0 }) !== guard.fingerprint) throw new Error('本机场景在协作期间发生变化，请保留候选并重新打开。');
+      }}
+      onAdopt={async receipt => {
+        const guard = workflowGuard.current;
+        if (!guard || receipt.documentId !== guard.document.id) throw new Error('采用回执与当前场景不匹配。');
+        const { document } = await readDocument<Scene>(receipt.documentId, receipt.revision);
+        if (document.contentHash !== receipt.contentHash) throw new Error('采用后的场景版本校验未通过。');
+        const next = await doc.shared.acceptAdopted(document, guard);
+        workflowGuard.current = next; setWorkflow(next); setSelected([]);
+        setNotice('协作候选已采用到当前场景。');
+      }}
+      onClose={() => { workflowGuard.current = null; setWorkflow(null); }}
+    />}
     {imageEdit && <ImageEditWorkspace
       onNavigationChange={writeImageEditNavigation}
       target={imageEdit.target}

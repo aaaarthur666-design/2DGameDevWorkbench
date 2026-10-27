@@ -76,6 +76,8 @@ npm run workbench -- status <task-id> --json
 
 共享工程使用 `npm run workbench -- agent documents --json` 发现，再以 `agent document-get|document-apply|document-observe|document-simulate|document-adopt-image|document-export` 配合 `--input <json-file>` 操作。文档 CLI 与 MCP 都转发长驻 Runtime Bridge，Bridge 离线时明确失败，不回退为另一进程直接写文件。HTTP 等价为 `POST /v1/agent/<operation>`；网页使用 `/api/workbench/documents` 同源代理。
 
+有界场景专家协作使用 `scene-workflow-*` 操作，与共享文档共用 Bridge。先读取 `workbench_get_guidance({topic: "scene-collaboration"})`，确认已保存场景、模型、范围与调用额度。任务读操作不会自动恢复付费调用；完整工具表与采用／恢复语义见[场景专家协作](scene-collaboration.md)。
+
 ## 浏览器与部署
 
 仓库 STDIO MCP 操作持久任务与共享 Bridge。Browser WebMCP 仅在宿主支持 `document.modelContext` 且页面打开时存在，使用页面真实工具与锁定、版本、忙碌状态。地图拼接/扩图未在仓库 MCP 中开放；用户明确要求网页操作时，按页面已有流程执行。能力选择见[生产 Skill](../.agents/skills/2d-game-workbench/SKILL.md)。

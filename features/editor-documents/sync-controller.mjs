@@ -211,21 +211,21 @@ export class DocumentSyncController {
   }
   async acceptAdopted(remote, guard) {
     await this.whenIdle();
-    if (this.disposed) throw new Error('共享工程已切换，已采用图片仍保留在服务端。');
+    if (this.disposed) throw new Error('共享工程已切换，已采用候选仍保留在服务端。');
     this.saving = true;
     try {
       const local = await this.prepared();
       if (remote.id !== this.options.id || remote.kind !== this.options.kind || !Number.isSafeInteger(remote.revision) || remote.revision < guard.document.revision)
-        throw new Error('已采用图片的共享版本或身份不匹配。');
+        throw new Error('已采用候选的共享版本或身份不匹配。');
       if (this.cache?.revision !== guard.document.revision || local.fingerprint !== guard.fingerprint)
-        throw new Error('本机工程在图片调整期间已变化；已采用结果保留在服务端，本机草稿未替换。');
+        throw new Error('本机工程在候选制作期间已变化；已采用结果保留在服务端，本机草稿未替换。');
       const head = (await this.options.api.metadata(this.options.id)).document;
       if (head.revision !== remote.revision) throw new Error('采用后共享工程已有更新，请保留本机草稿并读取最新版本。');
       if (this.options.current() !== local.snapshot) throw new Error('读取采用结果期间本机工程已变化，已保留本机内容。');
       if (remote.revision === guard.document.revision) {
         if (await documentFingerprint(await this.options.prepare(remote.content)) !== local.fingerprint)
           throw new Error('重复采用响应与当前本机版本内容不匹配。');
-        this.update({ status: 'synced', message: `图片已采用 · 共享版本 ${remote.revision}`, revision: remote.revision, conflict: false });
+        this.update({ status: 'synced', message: `候选已采用 · 共享版本 ${remote.revision}`, revision: remote.revision, conflict: false });
         return guard;
       }
       await this.options.applyRemote(remote.content);
@@ -233,7 +233,7 @@ export class DocumentSyncController {
       await this.remember(remote.revision, fingerprint);
       this.pending = null;
       this.initialized = true;
-      this.update({ status: 'synced', message: `图片已采用 · 共享版本 ${remote.revision}`, revision: remote.revision, conflict: false });
+      this.update({ status: 'synced', message: `候选已采用 · 共享版本 ${remote.revision}`, revision: remote.revision, conflict: false });
       return { document: remote, fingerprint };
     } catch (error) {
       // Once the server adopted a candidate, never autosave the old local image over it.

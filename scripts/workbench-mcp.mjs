@@ -6,6 +6,7 @@ import * as z from 'zod/v4';
 import { assetInputs, assetTools } from '../lib/workbench/asset-contract.mjs';
 import { documentInputs, documentTools } from '../lib/workbench/document-contract.mjs';
 import { imageEditInputs, imageEditTools } from '../lib/workbench/image-edit-contract.mjs';
+import { sceneWorkflowInputs, sceneWorkflowTools } from '../lib/workbench/scene-workflow-contract.mjs';
 import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { previewInputs, previewTools } from '../lib/workbench/preview-follow-contract.mjs';
 import { WorkBuddyPreview } from '../lib/workbench/workbuddy-preview.mjs';
@@ -378,6 +379,14 @@ const discoveryTools = [
 for (const [name,operation,description] of gameExportTools) {
   registerTool(name,{description,inputSchema:gameExportInputs[operation].shape,annotations:{readOnlyHint:['game-exports','game-export'].includes(operation),destructiveHint:false,idempotentHint:true,openWorldHint:false}},async input=>agentRequest(await loadManifest(),operation,input));
 }
+for (const [name, operation, description] of sceneWorkflowTools) {
+  registerTool(name, { description, inputSchema: sceneWorkflowInputs[operation].shape,
+    annotations: { readOnlyHint: ['scene-workflow-list', 'scene-workflow-get', 'scene-workflow-observe'].includes(operation), destructiveHint: false, idempotentHint: true,
+      openWorldHint: ['scene-workflow-create', 'scene-workflow-execute', 'scene-workflow-revise', 'scene-workflow-resume'].includes(operation) } },
+  async input => agentRequest(await loadManifest(), operation, input));
+}
+registerTool('workbench_get_scene_workflow_settings', { description: 'Read scene expert model profiles and credential readiness only; no model call or key values.', inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  async () => agentRequest(await loadManifest(), 'scene-workflow-settings', {}));
 for (const [name, operation, description] of documentTools) {
   registerTool(name, { description, inputSchema: documentInputs[operation].shape, annotations: { readOnlyHint: ['documents', 'document-get', 'document-observe', 'document-validate', 'document-simulate'].includes(operation), destructiveHint: false, idempotentHint: operation !== 'document-export', openWorldHint: false } }, async input => agentRequest(await loadManifest(), operation, input));
 }

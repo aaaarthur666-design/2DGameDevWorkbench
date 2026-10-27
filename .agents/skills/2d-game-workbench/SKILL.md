@@ -18,7 +18,8 @@ Complete the user's requested asset workflow using the shared workbench runtime.
 | Local or AI changes to an existing saved image | inspect_image_target → resolve_image_region → edit_image_region → inspect → apply_image_candidate | [Image editing](../../../docs/image-editing.md) · image-editing |
 | Interactable behavior or shared scene | template / saved document → typed commands → inspect → requested save/export | [Interactables](../../../docs/interactable-editor.md) / [Scenes](../../../docs/scene-composer.md) · interactables / scenes |
 | Existing artwork, downloads or handoff | list_assets → exact get_asset/get_result; list_tasks for execution history | [Asset catalog](../../../docs/asset-catalog.md) · assets |
-| Map canvas, stitching or expansion | Current editor; use host browser tools when the user requests webpage operation | [Map editor](../../../docs/map-stitcher.md) · maps |
+| Scene production with expert planning, new artwork or automatic map creation/extension | create_scene_workflow → inspect candidate/review → adopt within the agreed scope and budgets | [Scene collaboration](../../../docs/scene-collaboration.md) · scene-collaboration |
+| Map canvas, region editing or manual stitching | Current editor; use host browser tools when the user requests webpage operation | [Map editor](../../../docs/map-stitcher.md) · maps |
 | Delivery to a game | Exact existing export and selected project, then the engineering Skill | [Delivery](../../../docs/godot-delivery.md) · delivery |
 
 The server exposes workbench_get_guidance({topic}) for these documents, including clients without repository file access. Tool names in the table are abbreviated; discover their current names and schema before using an unfamiliar operation.
@@ -35,7 +36,7 @@ Prefer the project's MCP tools. Reuse discovered schemas during the session; ref
 
 Resolve real character, asset and task identities from context or discovery. Check environment readiness only for services the task needs; start an installed offline service when appropriate. A conflicting service calls for diagnosis rather than repeated startup.
 
-Use the user's existing authorization throughout the agreed workflow. Routine parameters and internal IDs are implementation choices. prepare_task optionally validates and saves a preparation record for authorized work; read-only discussion needs no production record. The selected capability schema determines which operations the MCP/CLI supports. Map production is currently absent from that surface; this does not prohibit explicitly requested webpage work or authorized development of the feature.
+Use the user's existing authorization throughout the agreed workflow. Routine parameters and internal IDs are implementation choices. prepare_task optionally validates and saves a preparation record for authorized work; read-only discussion needs no production record. The selected capability schema determines which operations the MCP/CLI supports. Direct map-stitcher adapter operations remain outside that surface; bounded automatic map creation/extension is available through scene-workflow tools. Read the collaboration guide and freeze the map policy, production providers and quotas before creation. Explicit webpage work and authorized feature development remain available.
 
 ## Preserve the work's identity
 

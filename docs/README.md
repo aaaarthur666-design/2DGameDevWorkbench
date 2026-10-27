@@ -18,6 +18,7 @@ Forge 的公开文档面向安装、制作资产、MCP 接入与游戏项目交�
 | [交互物原图](prop-art.md) | 物品原图生成与采用 |
 | [图片局部调整](image-editing.md) | 精确源图、区域配方、本地候选与版本保护 |
 | [场景组装](scene-composer.md) | 共享文档、AI 编辑与观察、地图与交互物组装 |
+| [场景专家协作](scene-collaboration.md) | 专家咨询、素材生成、自动地图拼接、独立复核与版本采用 |
 | [资产目录](asset-catalog.md) | 查找、下载、回收站与恢复 |
 | [内部素材导入](internal-imports.md) | 已有素材在编辑器之间复用 |
 | [页面跟随](agent-preview-follow.md) | Agent 执行时的页面展示 |
