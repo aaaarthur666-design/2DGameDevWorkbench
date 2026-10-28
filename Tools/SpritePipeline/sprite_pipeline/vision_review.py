@@ -129,7 +129,11 @@ class VisionReviewer:
         except Exception:
             raise ValidationHarnessError("视觉检查参考图或动画帧无法读取；尚未发送请求") from None
 
-    def _send(self, content, schema_type, provider, key, frame_count, on_request, *, schema_name="attack_motion_review", on_response=None, model_options=None):
+    def _send(self, content, schema_type, provider, key, frame_count, on_request, *, schema_name="attack_motion_review", on_response=None, model_options=None, output_format=None):
+        if output_format not in (None, 'json_object', 'json_schema'):
+            raise ValidationHarnessError('未知的模型输出格式；未发送请求')
+        if provider != 'hunyuan' and output_format == 'json_object':
+            raise ValidationHarnessError('当前 Responses 适配使用既有严格 Schema；未发送请求')
         info = dict(PROVIDERS[provider])
         if model_options:
             info['model'] = model_options['model']
@@ -160,6 +164,8 @@ class VisionReviewer:
             chat_content.append({"type":"text","text":"Return exactly one JSON object matching this schema, without prose or Markdown. " + json.dumps(schema,ensure_ascii=False)})
             body={"model":info["model"],"stream":False,"temperature":0,"max_tokens":6000,
                   "messages":[{"role":"user","content":chat_content}],"response_format":{"type":"json_object"}}
+            if output_format == 'json_schema':
+                body['response_format']={'type':'json_schema','json_schema':{'name':schema_name,'strict':True,'schema':schema}}
         if model_options:
             limit = model_options['max_output_tokens']
             effort = model_options['reasoning_effort']
@@ -182,7 +188,26 @@ class VisionReviewer:
                 if on_request is not None: on_request()
                 response=client.post(info["endpoint"], headers={"Authorization":"Bearer "+key}, json=body)
             if response.status_code != 200:
-                raise ValidationHarnessError(f"视觉检查请求失败（HTTP {response.status_code}）；未自动重试", details={'http_status':response.status_code})
+                failure={'http_status':response.status_code}
+                # Keep bounded diagnostics, never raw provider bodies, echoed
+                # prompts, images or credentials. Existing request transport stays unchanged.
+                try:
+                    if response.status_code != 400:
+                        raise ValueError('Only malformed-request diagnostics are inspected')
+                    payload=response.json()
+                    error=payload.get('error') or payload.get('Response',{}).get('Error',{})
+                    if isinstance(error,dict):
+                        code=error.get('code') or error.get('Code') or error.get('type')
+                        if isinstance(code,str) and re.fullmatch(r'[A-Za-z][A-Za-z_.]{2,79}',code):failure['provider_error_code']=code
+                        message=str(error.get('message') or error.get('Message') or '').lower()
+                        for parameter in ('max_completion_tokens','max_tokens','reasoning_effort','response_format','image_url','model'):
+                            if parameter in message:failure['provider_error_parameter']=parameter;break
+                    request_id=response.headers.get('x-request-id') or response.headers.get('x-tc-requestid')
+                    if isinstance(request_id,str) and re.fullmatch(r'[A-Za-z0-9_-]{8,100}',request_id):failure['provider_request_id']=request_id
+                except (ValueError,TypeError,AttributeError):pass
+                if on_response is not None:on_response(failure)
+                hint='；参数：'+failure['provider_error_parameter'] if failure.get('provider_error_parameter') else ''
+                raise ValidationHarnessError(f"视觉检查请求失败（HTTP {response.status_code}{hint}）；未自动重试", details=failure)
             data=response.json()
             if provider == "hunyuan":
                 choices=data.get("choices",[])
@@ -226,7 +251,10 @@ class VisionReviewer:
             fields=sorted({part for item in errors for part in item["loc"] if part in known})
             if schema_name == "open_motion_plan":
                 fields = sorted({".".join(str(part) for part in item["loc"]) + ": " + item["msg"] for item in errors})
-            raise ValidationHarnessError("视觉检查未取得有效结论；结构化字段无效（"+", ".join(categories+fields)+"），未自动重试") from None
+            if schema_name == 'motion_adjustment':
+                fields=sorted({str(item['loc'][0]) for item in errors if item['loc'] and item['loc'][0] in {'goal','preserve','method','provider_prompt','conflict'}})
+            raise ValidationHarnessError("视觉检查未取得有效结论；结构化字段无效（"+", ".join(categories+fields)+"），未自动重试",
+                details={'validation_fields':fields} if schema_name=='motion_adjustment' else {}) from None
         except Exception:
             raise ValidationHarnessError("视觉检查未取得有效结论；请人工检查，不会自动重新生成") from None
 

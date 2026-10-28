@@ -31,7 +31,7 @@ class ExpertRegistry:
         if self.after_send:self.after_send(len(self.calls))
         if schema is Observations:
             value={'reference_equipment':'一件原有物品','frames':[{'frame':i,'pose':'可见姿势逐渐变化','equipment':'同一件物品','change':'前后帧连续'} for i in range(1,count+1)]}
-        elif schema is Resolution:
+        elif issubclass(schema,Resolution):
             value={'summary':'复核区分明确问题和可选优化','checks':[{
                 'dimension':d,'classification':'preference' if d=='rhythm' else 'satisfied',
                 'confidence':.95,'frames':[1,2,count],'evidence':'按实际帧核对任务及局部连续性',
@@ -42,6 +42,9 @@ class ExpertRegistry:
                 'dimension':d,'status':'fail' if baseline and d!='equipment' else 'pass',
                 'confidence':.95,'frames':[1,2,count],'evidence':'原序列中可核对的实际首中末姿势与运动'} for d in ('completeness','equipment','rhythm')]}
             if not baseline:assert 'INDEPENDENT_PRIVATE_NOTE' not in text
+        if 'change' in schema.model_fields:
+            value.update(change={'status':'pass','confidence':.95,'frames':[2],'evidence':'诊断模拟：目标变化单独检查'},
+                         preservation={'status':'pass','confidence':.95,'frames':[1,count],'evidence':'诊断模拟：原版与备选保持内容单独检查'})
         return schema.model_validate(value),{'requested_model':'fixture-visual-model','usage':{'total_tokens':10}}
 
 

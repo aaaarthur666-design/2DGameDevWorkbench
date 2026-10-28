@@ -13,14 +13,171 @@ from sprite_pipeline.collaboration.checkpoints import Checkpoints, review_call_c
 from sprite_pipeline.errors import ConflictError, ValidationHarnessError
 
 
+def test_unlocked_tail_edits_only_selection_and_becomes_next_input_after_acceptance(setup):
+    s,ws,p,w=stage_work(setup);m=Adjustments(s)
+    before=Checkpoints(s).view(w.job_id,1,0);context=m.context(w.id,1,1,0)
+    assert context['editable_stage_end'] and context['locked_frames']==[0]
+    t=m.create(w.id,request(m,w,start=2,end=3));assert t['range_policy']=='unlocked_stage_tail_v2'
+    t=m.advance(w.id,t['id'],p);assert t['state']=='ready',t
+    directory=s.store.job_dir(w.job_id)
+    preceding=(directory/before['frames'][1]['path']).read_bytes()
+    assert p.requests[-1].edit_frames[-1]==preceding
+    assert all(t['source_frames'][i]['sha256']==t['proposed_frames'][i]['sha256'] for i in (0,1))
+    assert Checkpoints(s).view(w.job_id,1,0)['token']==before['token']
+    m.decide(w.id,t['id'],token=t['preview_token'],decision='accept',note='检查完整片段与前侧接缝后采用末帧修改',acknowledge=True)
+    changed=Checkpoints(s).view(w.job_id,1,0)
+    assert changed['state']=='awaiting_review' and changed['accepted'] is None
+    assert changed['frames'][-1]['sha256']==t['proposed_frames'][-1]['sha256']
+    calls=len(p.requests);PlanGeneration(s).advance(w.job_id,p,wait=True);assert len(p.requests)==calls
+    accept(s,w,0);PlanGeneration(s).advance(w.job_id,p,wait=True)
+    assert p.requests[-1].reference_image==(m.folder(t)/t['proposed_frames'][-1]['file']).read_bytes()
+
+
+def long_stage_work(setup):
+    from sprite_pipeline.providers.base import PollResult,PollStatus
+    s,ws,_,p,fixture=setup
+    class LongerPlanner(CheckpointPlanner):
+        def __call__(self,*args,**kwargs):
+            turn,receipt=super().__call__(*args,**kwargs)
+            if turn['action']=='finalize':turn['plan']['stages'][0]['frame_count']=16
+            return turn,receipt
+    ws.model=LongerPlanner()
+    def poll(job_id):
+        req=p.requests[int(job_id.rsplit('-',1)[1])-1]
+        paths=fixture.write_sequence(fixture.root/job_id,shifts=tuple(i%4 for i in range(req.frame_count)))
+        images=[x.read_bytes() for x in paths]
+        if not req.edit_frames:images=[req.reference_image,*images]
+        return PollResult(provider='fixture',provider_job_id=job_id,status=PollStatus.completed,provider_status='completed',images=images,diagnostic_only=True)
+    p.poll=poll;p.wait=poll
+    w=ready(ws,spec());w=ws.start(w.id,1,w.plan_sha256);PlanGeneration(s).advance(w.job_id,p,wait=True)
+    return s,ws,p,w
+
+
+def test_tail_transition_uses_unchanged_preceding_frame_and_no_bad_end_target(setup):
+    s,ws,p,w=long_stage_work(setup)
+    class TransitionRegistry(IntentRegistry):
+        def send(self,*args,**kwargs):
+            result,receipt=super().send(*args,**kwargs)
+            if isinstance(result,AdjustmentIntent):result.method='transition'
+            return result,receipt
+    s.open_motion_review_registry=TransitionRegistry();s.adjustment_test_reviews=True;m=Adjustments(s)
+    t=m.create(w.id,request(m,w,start=12,end=15,preserve_motion=False));t=m.advance(w.id,t['id'],p)
+    assert t['state']=='ready',t
+    assert p.requests[-1].reference_image==(m.folder(t)/'source/011.png').read_bytes()
+    assert p.requests[-1].last_frame is None and p.requests[-1].frame_count==4
+    assert len(t['proposed_frames'])==16
+    assert all(t['proposed_frames'][i]['sha256']==t['source_frames'][i]['sha256'] for i in range(12))
+    text=s.open_motion_review_registry.inputs[0][1][0]['text']
+    data=json.loads(text.split('boundary:\n',1)[1])
+    assert data['preserved_join_frames_1based']==[12]
+    assert data['selected_source_frames_1based']==[13,14,15,16]
+    assert 'editable_unlocked_stage_ending' not in data and 'source_goal' not in data
+    assert 'NEVER substitute transition for an appearance-only request' in text
+
+
+def test_appearance_scope_rejects_four_frame_tail_before_any_paid_call(setup,monkeypatch):
+    # Reuse small fixture art while imposing the real 128px edit capacity.
+    monkeypatch.setattr('sprite_pipeline.collaboration.adjustments.edit_window_limit',lambda *_:2)
+    s,ws,p,w=long_stage_work(setup);m=Adjustments(s)
+    assert m.context(w.id,1,1,0)['appearance_max']==2
+    with pytest.raises(ValidationHarnessError,match='不会改用动作重生成'):
+        m.create(w.id,request(m,w,start=12,end=15,preserve_motion=True,user='保持物品轮廓，只移除碎片'))
+    assert m.listing(w.id)==[] and len(p.requests)==1
+
+
+def test_appearance_intent_never_falls_back_to_transition_for_a_larger_range(setup,monkeypatch):
+    monkeypatch.setattr('sprite_pipeline.collaboration.adjustments.edit_window_limit',lambda *_:2)
+    s,ws,p,w=long_stage_work(setup);s.adjustment_test_reviews=True
+    class AppearanceRegistry(IntentRegistry):
+        def send(self,*args,**kwargs):
+            result,receipt=super().send(*args,**kwargs)
+            if isinstance(result,AdjustmentIntent):result.method='appearance'
+            return result,receipt
+    s.open_motion_review_registry=AppearanceRegistry();m=Adjustments(s)
+    t=m.create(w.id,request(m,w,start=12,end=15));t=m.advance(w.id,t['id'],p)
+    assert t['state']=='failed' and '建议方法不支持' in t['message']
+    assert len(t['planning_calls'])==1 and not t['generation_calls'] and len(p.requests)==1
+    m.advance(w.id,t['id'],p);assert len(s.open_motion_review_registry.calls)==1
+
+
+def test_appearance_preserves_source_poses_in_intent_drawing_and_review_context(setup):
+    from sprite_pipeline.collaboration.adjustment_review import context_for
+    s,ws,p,w=stage_work(setup);s.adjustment_test_reviews=True
+    registry=IntentRegistry();s.open_motion_review_registry=registry;m=Adjustments(s)
+    t=m.create(w.id,request(m,w,start=2,end=3,preserve_motion=True,user='保持物品轮廓，只移除碎片'))
+    t=m.advance(w.id,t['id'],p);assert t['state']=='ready',t
+    assert t['methods']==['appearance'] and t['preserve_motion'] is True
+    text=registry.inputs[0][1][0]['text'];data=json.loads(text.split('boundary:\n',1)[1])
+    assert data['preserve_motion'] is True
+    assert 'source_goal' not in data and 'editable_unlocked_stage_ending' not in data
+    assert 'Do not complete or improve an old planned checkpoint' in text
+    assert p.requests[-1].edit_frames[1:3]==tuple((m.folder(t)/'source'/f'{i:03d}.png').read_bytes() for i in (2,3))
+    assert 'Keep each middle-slot original pose' in p.requests[-1].prompt
+    context=context_for(t)
+    assert 'definition' not in context['segment'] and 'APPEARANCE ONLY' in context['user_request']
+    assert 'NOT an ideal planner endpoint' in context['user_request']
+    assert all(t['source_frames'][i]['sha256']==t['proposed_frames'][i]['sha256'] for i in (0,1))
+
+
+def test_completed_clip_keeps_locked_endpoints_and_new_intent_keeps_legacy_digest(setup):
+    from sprite_pipeline.collaboration.adjustments import frozen_inputs,FROZEN
+    from sprite_pipeline.collaboration.contracts import digest
+    s,ws,p,w=completed(setup);m=Adjustments(s);context=m.context(w.id,1,1)
+    assert not context['editable_stage_end'] and context['locked_frames']==[0,3,4,7]
+    with pytest.raises(ValidationHarnessError):m.create(w.id,request(m,w,stage=None,start=6,end=7))
+    t=m.create(w.id,request(m,w,stage=None));assert t['intent_format_version']==4
+    old=copy.deepcopy(t);old.pop('intent_format_version');old.pop('comparison_protocol')
+    assert digest(frozen_inputs(old))==digest({k:old[k] for k in FROZEN})
+
+
+def test_omitted_scope_keeps_legacy_receipt_and_v2_prompt(setup):
+    from sprite_pipeline.collaboration.contracts import digest
+    from sprite_pipeline.collaboration.adjustments import frozen_inputs
+    s,ws,p,w=stage_work(setup);s.adjustment_test_reviews=True
+    registry=IntentRegistry();s.open_motion_review_registry=registry;m=Adjustments(s)
+    body=request(m,w,start=2,end=3);task=m.create(w.id,body)
+    raw=body.model_dump(mode='json');raw.pop('preserve_motion');raw.pop('edit_regions')
+    assert task['request_identity']==digest(raw) and 'preserve_motion' not in task
+    task['intent_format_version']=2;task.pop('comparison_protocol');task['frozen_digest']=digest(frozen_inputs(task));m.save(task)
+    assert m.create(w.id,body)['id']==task['id']
+    m.advance(w.id,task['id'],p)
+    text=registry.inputs[0][1][0]['text'];data=json.loads(text.split('boundary:\n',1)[1])
+    assert 'Choose an allowed method:' in text and 'NEVER substitute transition' not in text
+    assert 'editable_unlocked_stage_ending' in data and 'source_goal' in data
+
+
+def test_intent_strict_transport_is_new_task_only_and_errors_stop_before_drawing(setup):
+    from sprite_pipeline.collaboration.model_config import ModelProfile
+    from sprite_pipeline.collaboration.contracts import digest
+    from sprite_pipeline.collaboration.adjustments import frozen_inputs
+    s,ws,p,w=stage_work(setup);s.adjustment_test_reviews=True
+    class Registry(IntentRegistry):
+        def profile(self,*_):return ModelProfile(model='kimi-k3.1-pro')
+        def send(self,role,content,schema,count,**kwargs):
+            if issubclass(schema,AdjustmentIntent):
+                self.options=kwargs
+                if kwargs.get('on_response'):kwargs['on_response']({'response_id':'fixture-invalid','output_sha256':'a'*64})
+                raise ValidationHarnessError('视觉检查未取得有效结论；结构化字段无效（string_too_long, provider_prompt），未自动重试',details={'validation_fields':['provider_prompt']})
+            return super().send(role,content,schema,count,**kwargs)
+    registry=Registry();s.open_motion_review_registry=registry;m=Adjustments(s)
+    task=m.create(w.id,request(m,w));task=m.advance(w.id,task['id'],p)
+    assert registry.options['output_format']=='json_schema'
+    assert task['state']=='failed' and task['message'].startswith('修改要求理解')
+    assert task['planning_calls'][0]['state']=='invalid_response' and task['planning_calls'][0]['validation_fields']==['provider_prompt']
+    assert not task['generation_calls'] and len(p.requests)==1
+    m.advance(w.id,task['id'],p);assert len(task['planning_calls'])==1
+    old=m.create(w.id,request(m,w));old.pop('intent_format_version');old['frozen_digest']=digest(frozen_inputs(old));m.save(old)
+    m.advance(w.id,old['id'],p);assert 'output_format' not in registry.options
+
+
 class IntentRegistry(ExpertRegistry):
     def send(self,role,content,schema,count,**kw):
         if not hasattr(self,'inputs'):self.inputs=[]
         self.inputs.append((schema.__name__,copy.deepcopy(content)))
-        if schema is AdjustmentIntent:
+        if issubclass(schema,AdjustmentIntent):
             self.calls.append(('AdjustmentIntent',content[0]['text']))
             data=json.loads(content[0]['text'].split('boundary:\n',1)[1])
-            return AdjustmentIntent(goal=data['user_request'] or data['expert_suggestions'][0]['text'],
+            return schema(goal=data['user_request'] or data['expert_suggestions'][0]['text'],
                 preserve='保留未选帧、FPS与原有物品，检查两侧衔接',method=data['methods'][0],
                 provider_prompt=data['user_request'] or data['expert_suggestions'][0]['text']),{'usage':{'total_tokens':10}}
         return super().send(role,content,schema,count,**kw)
@@ -122,7 +279,7 @@ def test_explicit_new_request_and_full_pre_adoption_review_are_bounded(setup):
     assert 'start' not in planning_data and 'end' not in planning_data
     assert 'Never put global source frame numbers in provider_prompt' in planning_text
     for schema,content in s.open_motion_review_registry.inputs:
-        if schema in {'Audit','Resolution'}:
+        if schema in {'Audit','Resolution','AdjustmentAudit','AdjustmentResolution'}:
             comparison=[p for p in content if p.get('type')=='input_text' and p.get('text','').startswith('BEFORE / ORIGINAL')]
             assert len(comparison)==1
             assert 'Only source frames 2 through 3 may change' in comparison[0]['text']

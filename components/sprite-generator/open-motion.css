@@ -453,6 +453,16 @@
   align-items: center;
   color: var(--theme-muted);
 }
+.motion-experts small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+.motion-experts [data-state='failed'],
+.motion-experts [data-state='blocked'],
+.motion-experts [data-state='unknown'] {
+  color: var(--theme-text);
+}
 .motion-expert-record article {
   border-bottom: 1px solid var(--theme-border);
   padding: 16px 0;
@@ -685,4 +695,22 @@
 .motion-adjustment-compare figure {margin:0;min-width:0;}
 .motion-adjustment-compare figcaption {margin-bottom:8px;text-align:center;}
 .motion-adjustment-compare img {max-width:100%;width:256px;image-rendering:pixelated;}
+.motion-region-editor {display:grid;gap:10px;min-width:0;padding:12px;border:1px solid var(--motion-border);border-radius:10px;}
+.motion-region-controls {display:flex;gap:8px;align-items:end;flex-wrap:wrap;}
+.motion-region-controls label {width:auto;min-width:80px;}
+.motion-region-controls button {min-height:36px;}
+.motion-region-canvas {position:relative;width:min(100%,320px);background-color:#18202c;background-image:conic-gradient(#222e3b 25%,transparent 0 50%,#222e3b 0 75%,transparent 0);background-size:16px 16px;}
+.motion-region-canvas img,.motion-region-canvas canvas {position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;}
+.motion-region-canvas canvas {touch-action:none;cursor:crosshair;}
+.motion-region-editor > button {justify-self:start;}
+.motion-comparison-results {display:grid;gap:8px;}
+.motion-detail-panel.motion-studio {width:min(920px,calc(100vw - 32px));max-width:920px;height:auto;max-height:88vh;padding:24px;display:flex;gap:16px;overflow:hidden;background:var(--theme-panel);color:var(--theme-text);}
+.motion-panel-body {overflow-y:auto;overscroll-behavior:contain;display:grid;gap:16px;padding:0 4px 8px;min-height:0;}
+.motion-panel-body section {display:grid;gap:8px;}
+.motion-secondary-actions {display:flex;gap:12px;flex-wrap:wrap;}
+.motion-checkpoint > label:has(> input[type=checkbox]),.motion-card-title > label:has(> input[type=checkbox]),.motion-panel-body label:has(> input[type=checkbox]) {display:flex;flex-direction:row;align-items:flex-start;gap:8px;}
+.motion-checkpoint > label > input[type=checkbox],.motion-card-title > label > input[type=checkbox],.motion-panel-body label > input[type=checkbox] {width:16px;height:16px;flex:0 0 16px;margin:2px 0;padding:0;}
+.motion-studio .motion-secondary {background:transparent;color:var(--theme-muted);font-size:13px;}
+.motion-review-grid.motion-adjusting {grid-template-columns:1fr;}
+.motion-review-grid.motion-adjusting > .motion-source-preview {display:none;}
 @media(max-width:540px){.motion-adjustment-compare {gap:6px;}.motion-adjustment-body {gap:10px;}}

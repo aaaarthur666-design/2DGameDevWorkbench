@@ -12,6 +12,8 @@ from ..errors import ConflictError, NotFoundError, ValidationHarnessError
 from ..jsonio import atomic_write_json, read_json
 from .contracts import ExpertTurn, OpenWork, PlanBinding, TaskSpec, digest, bind_original_requirements, default_new_review, review_calls_per_check
 from .planning import PlanningModel
+from .generation_conditions import DEFAULT_GENERATION_POLICY
+from .visibility_review import DEFAULT_VISIBILITY_REVIEW
 
 
 def now():
@@ -35,13 +37,17 @@ class OpenMotionWorkspace:
         if not path.is_file():
             raise NotFoundError("未找到此作品")
         current = OpenWork.model_validate(read_json(path))
+        from .structure_control import verify_structure
+        verify_structure(current.visual_structure,current.reference_sha256)
         if revision is not None and revision != current.revision:
             if not isinstance(revision, int) or revision < 1:
                 raise ValidationHarnessError("版本号无效")
             path = self.directory(work_id) / f"version-{revision}.json"
             if not path.is_file():
                 raise NotFoundError("未找到此版本")
-            return OpenWork.model_validate(read_json(path))
+            historical = OpenWork.model_validate(read_json(path))
+            verify_structure(historical.visual_structure,historical.reference_sha256)
+            return historical
         return current
 
     def save(self, work):
@@ -97,10 +103,14 @@ class OpenMotionWorkspace:
             source = preset_path.parent / character.reference_frame
             self.service._validate_reference_image(source, character.cell_width, character.cell_height)
             data = source.read_bytes()
+            from .structure_control import freeze_structure
+            structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest())
             work = OpenWork(id=uuid.uuid4().hex, request_key=request_key, request_sha256=fingerprint,
                             spec=spec, character=character.model_dump(mode="json"), reference_sha256=hashlib.sha256(data).hexdigest(),
                             created_at=now(), updated_at=now(), planning_authorized=True, auto_execute=auto_execute,
-                            planning_config=self.model.configuration)
+                            planning_config=self.model.configuration,planning_format_version=3,visual_structure=structure,
+                            generation_policy_version=DEFAULT_GENERATION_POLICY if spec.provider != 'fixture' else None,
+                            visibility_review_version=DEFAULT_VISIBILITY_REVIEW if spec.provider != 'fixture' and spec.review_protocol=='experts_v1' else None)
             directory = self.directory(work.id); directory.mkdir(parents=True)
             self.service._atomic_write_bytes(directory / "reference-1.png", data)
             self.save(work)
@@ -130,6 +140,12 @@ class OpenMotionWorkspace:
                 raise ValidationHarnessError(f'所选复核协议至少需要 {minimum} 次视觉额度；未创建新版本或调用规划模型')
             if work.status == "planning":
                 raise ConflictError("规划尚在执行，请等待结果后修改")
+            character, preset_path = self.service.presets.load_character(spec.character_id)
+            source = preset_path.parent / character.reference_frame
+            self.service._validate_reference_image(source, character.cell_width, character.cell_height)
+            data = source.read_bytes()
+            from .structure_control import freeze_structure
+            structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest())
             if work.job_id:
                 job = self.store.load(work.job_id)
                 if any(c.status.value in {"submitting", "submission_unknown", "provider_pending", "saving"} for c in job.candidates):
@@ -140,10 +156,6 @@ class OpenMotionWorkspace:
                         current.touch("open_plan_superseded")
             if len(work.history) >= 50:
                 raise ValidationHarnessError("当前作品版本过多，请另建作品；历史版本保留")
-            character, preset_path = self.service.presets.load_character(spec.character_id)
-            source = preset_path.parent / character.reference_frame
-            self.service._validate_reference_image(source, character.cell_width, character.cell_height)
-            data = source.read_bytes()
             snapshot = work.model_dump(mode="json"); snapshot.pop("history")
             atomic_write_json(self.directory(work.id) / f"version-{work.revision}.json", snapshot)
             work.history.append({"revision": work.revision, "title": work.plan.title if work.plan else work.spec.description[:60], "job_id": work.job_id})
@@ -155,6 +167,10 @@ class OpenMotionWorkspace:
             work.planning_calls = []; work.messages = []; work.status = "planning"
             work.message = "正在按新要求制定方案"; work.auto_execute = False
             work.planning_config = self.model.configuration
+            work.planning_format_version = 3
+            work.generation_policy_version = DEFAULT_GENERATION_POLICY if spec.provider != 'fixture' else None
+            work.visibility_review_version = DEFAULT_VISIBILITY_REVIEW if spec.provider != 'fixture' and spec.review_protocol=='experts_v1' else None
+            work.visual_structure=structure
             self.service._atomic_write_bytes(self.directory(work.id) / f"reference-{work.revision}.png", data)
             self.save(work)
             return work
@@ -181,15 +197,28 @@ class OpenMotionWorkspace:
                     if len(work.planning_calls) >= work.spec.budget.max_planning_calls:
                         work.status = "budget_exhausted"; work.message = "规划调用已到上限；原要求和已有提案均已保留"
                         self.save(work); return work
+                    from .structure_control import require_current_structure
+                    require_current_structure(self.service,work.visual_structure,work.reference_sha256)
                     role, question, crop = queue.pop(0)
                     work.message = {"appearance": "正在核对角色特征", "motion": "正在安排动作与衔接", "strategy": "正在制定生成策略", "coordinator": "正在协调并校验方案"}[role]
                     work.planning_calls.append({"role": role, "state": "submitting", "started_at": now(), "request_id": uuid.uuid4().hex,
                                                 "reference_sha256": work.reference_sha256, "crop": crop})
+                    if work.visual_structure:work.planning_calls[-1]['visual_structure_sha256']=work.visual_structure['sha256']
                     self.save(work)
                     turn, receipt = self.model(role, work, reference, question=question, crop=crop)
-                    turn = ExpertTurn.model_validate(turn)
+                    if role=='strategy' and work.generation_policy_version in (4,5):
+                        from .planning_draft import DraftInternalTurn
+                        turn=DraftInternalTurn.model_validate(turn)
+                    else:
+                        turn = ExpertTurn.model_validate(turn)
                     work.planning_calls[-1].update(state="completed", finished_at=now(), **receipt)
                     work.messages.append({"role": role, "question": question, "response": turn.model_dump(mode="json"), "call": len(work.planning_calls)})
+                    if work.generation_policy_version==5:
+                        from .planning_budget import defer
+                        if defer(work,role,turn,queue):
+                            if turn.findings or turn.proposal:contributed.add(role)
+                            self.save(work)
+                            continue
                     if turn.action == "inspect_reference":
                         # Validate locally before scheduling a further paid call.
                         if turn.crop:
@@ -212,11 +241,14 @@ class OpenMotionWorkspace:
                         elif not plan.questions:
                             try:
                                 PlanBinding(work_id=work.id, revision=work.revision, plan_sha256=digest(plan.model_dump(mode="json")),
-                                            reference_sha256=work.reference_sha256, spec=work.spec, plan=plan)
+                                            reference_sha256=work.reference_sha256, spec=work.spec, plan=plan,visual_structure=work.visual_structure,
+                                            generation_policy_version=work.generation_policy_version,
+                                            visibility_review_version=work.visibility_review_version)
                                 if work.version >= 2 and work.spec.provider != 'fixture':
                                     from .quality import validate_quality_plan
                                     from ..models import CharacterPreset
-                                    validate_quality_plan(plan, work.spec, CharacterPreset.model_validate(work.character), require_checkpoints=work.version >= 3)
+                                    validate_quality_plan(plan, work.spec, CharacterPreset.model_validate(work.character), require_checkpoints=work.version >= 3,
+                                                          policy_version=work.generation_policy_version)
                             except ValidationHarnessError as exc:
                                 problem = str(exc)
                             except ValidationError as exc:
@@ -289,12 +321,18 @@ class OpenMotionWorkspace:
                 return work  # An ambiguous client response never submits twice.
             if work.status != "ready" or work.plan is None:
                 raise ConflictError("方案尚未就绪")
+            from .structure_control import require_current_structure
+            require_current_structure(self.service,work.visual_structure,work.reference_sha256)
             from .quality import compiled_prompt
             binding = PlanBinding(work_id=work.id, revision=work.revision, plan_sha256=work.plan_sha256,
                                   reference_sha256=work.reference_sha256, spec=work.spec, plan=work.plan,
                                   model_snapshot=work.planning_config,
+                                  visual_structure=work.visual_structure,
+                                  generation_policy_version=work.generation_policy_version,
+                                  visibility_review_version=work.visibility_review_version,
                                   end_targets=work.end_targets,
-                                  compiled_prompts=[compiled_prompt(work.plan, self.service.presets.load_character(work.spec.character_id)[0], i) for i in range(len(work.plan.stages))])
+                                  compiled_prompts=[compiled_prompt(work.plan, self.service.presets.load_character(work.spec.character_id)[0], i,
+                                                                   policy_version=work.generation_policy_version) for i in range(len(work.plan.stages))])
             request = GenerationRequest(character_id=work.spec.character_id, action_id="motion_" + work.id[:12],
                                         provider=work.spec.provider, candidate_count=work.spec.candidate_count,
                                         seed=work.spec.seed, request_key=f"open-motion-{work.id}-{work.revision}", open_plan=binding)

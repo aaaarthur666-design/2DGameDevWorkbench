@@ -3,6 +3,10 @@ import manifest from '@/workbench/manifest.json';
 // Deliberately bounded proxy: no arbitrary URL, path, header or method passthrough.
 const work = '[0-9a-f]{32}';
 const job = '[a-zA-Z0-9_]{1,200}';
+const structureRead = new RegExp(`^open-motion/(?:structure-runtime|references/[a-z0-9_]+/structure|structures/${work}(?:/source|/masks/[a-z][a-z0-9_-]{0,63})?)$`);
+const structureWrite = new RegExp(`^open-motion/structures(?:/${work}/corrections)?$`);
+const temporalRead = new RegExp(`^open-motion/(?:${work}/temporal|temporal-structures/${work}(?:/frames/[0-9]{1,3}(?:/parts/[a-z][a-z0-9_-]{0,63})?)?)$`);
+const temporalWrite = new RegExp(`^open-motion/(?:${work}/temporal|temporal-structures/${work}/(?:corrections|review))$`);
 const read = new RegExp(
   `^(?:open-motion(?:/(?:settings|references(?:/[a-z0-9_]+)?|${work}(?:/reference|/targets/[0-3]|/progress-image|/adjustments(?:/${work}(?:/(?:source|proposed)/[0-9]{1,2})?)?|/candidates/[1-8]/stages/[0-3](?:/frames/[0-9]{1,2}|/repairs/[0-1]/frames/[0-9]{1,2})?)?))?|jobs/${job}(?:/candidates/[1-8]/frames/[0-9]{1,2}/image|/exports/(?:sheet|preview|godot))?)$`,
 );
@@ -13,7 +17,7 @@ const write = new RegExp(
 async function proxy(request: Request) {
   const url = new URL(request.url);
   const path = url.searchParams.get('path') || 'open-motion';
-  if (!(request.method === 'GET' ? read : write).test(path))
+  if (!(request.method === 'GET' ? read.test(path) || structureRead.test(path) || temporalRead.test(path) : write.test(path) || structureWrite.test(path) || temporalWrite.test(path)))
     return Response.json({ error: '不支持的工作区操作' }, { status: 400 });
   if (
     request.method !== 'GET' &&

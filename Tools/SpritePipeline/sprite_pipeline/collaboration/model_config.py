@@ -45,7 +45,7 @@ class ModelProfile(Contract):
 class ModelConfiguration(Contract):
     version: Literal[1] = 1
     default: ModelProfile = Field(default_factory=ModelProfile)
-    roles: dict[Literal['appearance', 'motion', 'strategy', 'coordinator', 'reviewer'], ModelProfile] = Field(default_factory=dict)
+    roles: dict[Literal['appearance', 'motion', 'strategy', 'coordinator', 'reviewer', 'structure'], ModelProfile] = Field(default_factory=dict)
     saved_models: list[ModelProfile] = Field(default_factory=list, max_length=24)
 
 
@@ -97,15 +97,16 @@ class ModelRegistry:
                 'services': [{'id': p, 'label': label, 'endpoint': PROVIDERS[legacy]['endpoint'], 'configured': ready[p],
                               'credential_source': 'environment' if os.environ.get(PROVIDERS[legacy]['key_env'],'').strip() else 'protected_local' if ready[p] else 'missing'}
                              for p, label, legacy in [('tokenhub', '腾讯云 TokenHub', 'hunyuan'), ('openai', 'OpenAI', 'openai')]],
-                'effective_roles': {role: {**self.profile(role).model_dump(mode='json'), 'configured': ready[self.profile(role).provider]} for role in ROLES},
+                'effective_roles': {role: {**self.profile(role).model_dump(mode='json'), 'configured': ready[self.profile(role).provider]} for role in (*ROLES, 'structure')},
                 'planning_configured': all(ready[self.profile(role).provider] for role in ROLES),
                 'provider': 'hunyuan' if config.default.provider == 'tokenhub' else 'openai', 'model': config.default.model}
 
-    def send(self, role, content, schema, frame_count, *, snapshot=None, on_request=None, on_response=None, schema_name='open_motion_plan'):
+    def send(self, role, content, schema, frame_count, *, snapshot=None, on_request=None, on_response=None, schema_name='open_motion_plan', output_format=None):
         profile = self.profile(role, snapshot)
         key = self.key(profile.provider)
         if not key:
             raise ValidationHarnessError(f'{role} 的 API Key 尚未配置；未发送请求')
         provider = 'hunyuan' if profile.provider == 'tokenhub' else 'openai'
         return VisionReviewer(self.settings)._send(content, schema, provider, key, frame_count, on_request,
-            schema_name=schema_name, on_response=on_response, model_options=profile.model_dump(mode='json'))
+            schema_name=schema_name, on_response=on_response, model_options=profile.model_dump(mode='json'),
+            **({'output_format':output_format} if output_format is not None else {}))

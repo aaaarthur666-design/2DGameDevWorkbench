@@ -8,8 +8,8 @@ import json
 from PIL import Image
 
 from ..errors import ValidationHarnessError
-from .model_config import ModelRegistry
-from .contracts import ExpertTurn, CoordinatorTurn, ObservationTurn
+from .model_config import ModelRegistry, ModelConfiguration
+from .contracts import ExpertTurn, CoordinatorTurn, ObservationTurn, StrategyTurn
 
 
 ROLES = {
@@ -110,6 +110,22 @@ return a critical question rather than silently omitting checks or increasing th
 """
 
 
+FORMAT_INSTRUCTIONS = '''
+OUTPUT FORMAT version 1: Follow the provided role-specific JSON schema exactly.
+summary is a short human-facing conclusion, one to three sentences, at most 600
+characters (the validator's absolute ceiling is 1500). Put detailed reasoning in
+the allowed findings and plan fields, never concatenate the whole plan into summary.
+For strategy action=propose, proposal IS the PlanProposal object directly: its keys
+include title, animation_name, summary, requirements, stages and quality. Do NOT
+wrap it in {"plan": ...} or {"proposal": ...}; top-level plan must be null.
+Only coordinator action=finalize publishes top-level plan=PlanProposal. Appearance
+and motion return ObservationTurn: concise findings, no proposal or plan fields.
+Do not emit extra keys, markdown fences or an alternative nested wrapper. All
+field length, enum and numeric limits in the schema still apply. This format
+instruction changes no action requirement, budget, or generation strategy.
+'''
+
+
 class PlanningModel:
     def __init__(self, settings):
         self.registry = ModelRegistry(settings)
@@ -128,15 +144,62 @@ class PlanningModel:
         # consultations receive the actual peer proposals and supplied evidence.
         first = not any(m.get("role") == role for m in work.messages)
         messages = [] if first and role in {"appearance", "motion"} else work.messages
+        if work.planning_format_version in (2,3):
+            # The shared internal ExpertTurn adds null slots that do not belong
+            # to the role's transport schema. Do not teach peers those wrappers.
+            # Saved transcripts remain untouched; non-null evidence is retained.
+            messages=[{**m,'response':{k:v for k,v in m.get('response',{}).items()
+                if not (v is None and ((m.get('role') in {'appearance','motion'} and k in {'proposal','plan'})
+                    or (m.get('role')=='strategy' and k=='plan')))}} for m in messages]
         data = {"original_request": work.spec.model_dump(mode="json"),
                 "reference": work.character, "question": question,
                 "peer_messages": messages, "calls_remaining": work.spec.budget.max_planning_calls - len(work.planning_calls)}
         instructions = INSTRUCTIONS
+        if work.generation_policy_version in (1,2,3,4,5):
+            from .generation_conditions import planning_instructions
+            if work.generation_policy_version in (4,5):
+                from .planning_draft import instructions as draft_instructions, draft_budget
+                instructions=draft_instructions(instructions,role)
+                data['strategy_draft_budget']=draft_budget(messages)
+                if work.generation_policy_version==5:
+                    from .planning_budget import context as budget_context
+                    data['planning_call_allocation']=budget_context(work,role)
+                    instructions=instructions.replace('EXECUTABLE DRAWING BRIEF policy 4','EXECUTABLE DRAWING BRIEF policy 5')
+                    instructions+='\nReserve the scheduled generation-strategy and final coordinator turns. Noncritical questions about unseen parts can remain uncertain in findings and be resolved by the coordinator from available evidence; do not spend their reserved calls on repeated observations. Deferred requests remain unfulfilled unless the coordinator actually resolves them; critical ambiguity must remain in plan.questions.\n'
+            else:
+                instructions = planning_instructions(instructions, policy_version=work.generation_policy_version)
+            data['drawing_condition_policy'] = {
+                'version': work.generation_policy_version, 'prompt_limit': 1000, 'truncate': False,
+                'image_targets': 'Only separately bound, checked PNGs; text endpoints are not images',
+                **({'motion_condition_sections':['camera','orientation','drive','support','trajectory','appearance'],
+                    'provider_text':'stage.prompt unchanged'} if work.generation_policy_version in (3,4,5) else
+                   {'motion_fields_sent_directly':['camera','orientation','drive','support','trajectory','appearance']}),
+            }
+        role_instructions = ROLES[role]
+        if work.planning_format_version in (1, 2, 3):
+            instructions = instructions.replace('Return only the ExpertTurn JSON requested by the transport.',
+                'Return only the role-specific JSON object requested by the transport schema.')
+            role_instructions = role_instructions.replace('leave proposal/plan null.', 'omit proposal and plan fields.')
+            formatting = FORMAT_INSTRUCTIONS
+            if work.planning_format_version in (2,3):
+                formatting = formatting.replace('OUTPUT FORMAT version 1', f'OUTPUT FORMAT version {work.planning_format_version}').replace(
+                    'top-level plan must be null.', 'omit top-level plan entirely; StrategyTurn has only proposal.')
+            instructions += '\n' + formatting
+        if work.visual_structure:
+            from .structure_control import INSTRUCTIONS as STRUCTURE_INSTRUCTIONS,planning_structure
+            data['checked_visual_structure']=planning_structure(work.visual_structure,version=2 if work.planning_format_version in (2,3) else 1)
+            instructions+='\n'+STRUCTURE_INSTRUCTIONS
+            if work.generation_policy_version in (1,2):
+                instructions+='\nStructure relations use their own generation_hint slot. Do not replace motion.drive/support/trajectory with structure prose: those fields are sent directly. Cite only task-relevant visible relations; distinguish their observed geometry from proposed future motion.'
+            elif work.generation_policy_version in (3,4,5):
+                instructions+='\nFor executable brief policy 3, also translate the relevant generation_hint into its Relations section. Detailed motion and key-pose fields are review context, not automatically appended to the drawing prompt. Preserve the visible-reference citations and their uncertainty.'
+            if work.planning_format_version in (2,3):
+                instructions+='\nUse ONLY allowed_structure_usage IDs for structure_usage. not_control_evidence preserves uncertainties, not selectable facts. Do not copy its relations into control or repeatedly inspect an invisible detail merely to fill an optional label. Keep uncertainty when a feasible motion can be planned without it.'
         if work.spec.review_protocol == 'experts_v1':
             instructions = instructions.replace(
                 'Review allowance = candidate_count * (2*stage_count + 2).\nThe two final calls inspect the WHOLE clip, including seams.',
                 'Review allowance = candidate_count * 5 * (stage_count + 1). Each segment and the final WHOLE clip reserve two baseline calls, two independent opinions and at most one dispute call.\nDo not remove a useful segment or weaken the motion merely to fit the review allowance; ask a critical budget question if the required checks do not fit.')
-        content = [{"type": "input_text", "text": instructions + "\nROLE: " + ROLES[role] + "\nTASK DATA:\n" + json.dumps(data, ensure_ascii=False)},
+        content = [{"type": "input_text", "text": instructions + "\nROLE: " + role_instructions + "\nTASK DATA:\n" + json.dumps(data, ensure_ascii=False)},
                    {"type": "input_image", "image_url": "data:image/png;base64," + base64.b64encode(reference).decode(), "detail": "high"}]
         if crop is not None:
             with Image.open(io.BytesIO(reference)) as source:
@@ -148,11 +211,29 @@ class PlanningModel:
                 stream = io.BytesIO(); target.save(stream, format="PNG")
             content += [{"type": "input_text", "text": "Requested reference crop (nearest-neighbour enlargement): " + json.dumps(crop)},
                         {"type": "input_image", "image_url": "data:image/png;base64," + base64.b64encode(stream.getvalue()).decode(), "detail": "high"}]
-        receipt = {}
+        output_format=None
+        if work.planning_format_version==3 and 'default' in work.planning_config:
+            config=ModelConfiguration.model_validate(work.planning_config);profile=config.roles.get(role,config.default)
+            # Validated against one actual StrategyTurn request on 2026-10-27.
+            # Do not infer support for other models or change saved v1/v2 tasks.
+            if profile.provider=='tokenhub' and profile.model=='kimi-k3.1-pro':output_format='json_schema'
+        receipt = {'requested_output_format':output_format} if output_format else {}
         try:
             schema = CoordinatorTurn if role == "coordinator" else ObservationTurn if role in {'appearance','motion'} else ExpertTurn
+            if role=='strategy' and work.planning_format_version in (2,3):schema=StrategyTurn
+            if role=='strategy' and work.generation_policy_version in (4,5):
+                from .planning_draft import DraftStrategyTurn
+                schema=DraftStrategyTurn
+            if work.planning_format_version==3 and work.visual_structure and role in {'strategy','coordinator'}:
+                from .structure_control import bind_planning_schema
+                schema=bind_planning_schema(schema,work.visual_structure,
+                    stage_type='StrategyDraftStage' if role=='strategy' and work.generation_policy_version in (4,5) else 'PlanStage')
+            if work.generation_policy_version==2 and role in {'strategy','coordinator'}:
+                from .generation_conditions import bind_text_budget
+                schema=bind_text_budget(schema)
             turn, metadata = self.registry.send(role, content, schema, 64, snapshot=work.planning_config,
-                schema_name="open_motion_plan", on_response=receipt.update)
+                schema_name="open_motion_plan", on_response=receipt.update,
+                **({'output_format':output_format} if output_format else {}))
             return turn.model_dump(mode="json"), {**receipt, **metadata}
         except ValidationHarnessError as exc:
             raise ValidationHarnessError(str(exc).replace("视觉检查", "动作规划"), details={"model_receipt": {**receipt, **exc.details}}) from None

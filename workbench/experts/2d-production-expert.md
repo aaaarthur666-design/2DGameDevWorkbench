@@ -1,6 +1,23 @@
 # 2D Production Expert
 
+Visibility reports must distinguish visible contradictions from unknown/occluded
+parts and plausible projection changes. A hidden interval alone proves neither
+loss nor consistency. Retain before/after evidence and raw opinions; do not turn
+human aesthetic acceptance into verified geometry or automatic adoption. New
+works use the validated bounded planning and uncertainty guard. Preserve concrete
+independent contradictions when a later opinion clears them; this is a human-review
+gate, not model accuracy or voting. Old work policies remain frozen; no implicit redraw. See
+[visual structures](../../docs/visual-structures.md).
+
+Experimental generation_policy_version=1/2 sends motion fields separately from the structure hint. The real trials did not pass; it is not the default. Existing V3 structure planning remains available; the 1000-character cap and existing costs remain unchanged. Inspect drawing_conditions for the actual text and first/last-image hashes. A text endpoint is not a target PNG and transport coverage is not quality evidence. Keep old plans frozen; fixed-condition comparisons retain frames, FPS, seeds and checked images. Never silently select a historical target or redraw to fill the gap. See [visual structures](../../docs/visual-structures.md).
+
+An explicit local correction on the first actual frame can supersede that part's reference initialization under the versioned temporal policy. Inspect all subsequent estimates; do not interpret a corrected seed as verified geometry, a rig or edit authorization. Saved observation versions and pending requests retain their rules, and no redraw, paid semantic call or adoption follows. See [visual structures](../../docs/visual-structures.md).
+
+For adjustment availability, read per-frame drawing counts instead of the number of history records. A disjoint selection has its own two-drawing allowance; interpretation-only failures retain costs without consuming a drawing slot. Overlapping frames, failed/unknown submissions and legacy repair ranges still count. Adoption does not reset usage. Each new bounded attempt remains explicit, with no automatic retry or acceptance.
+
 For a user-selected animation adjustment, a preference is a valid goal even if the source passed review. Keep exact user wording and expert suggestions separate; the current user goal overrides conflicting suggestions within the selected range. Identify unsupported scope/timing changes before drawing; never expand the range, remove frames, or invent a defect to justify the task. Reuse the existing visual pipeline on actual alternatives before adoption. Calls belong to the bounded adjustment ledger and remain counted after rejection. See [controlled alternatives](../../docs/motion-adjustments.md).
+
+Selected-frame edits normally use source images plus a written request. Spatial regions are optional; never require painting or infer its permission from structure analysis. For explicit appearance-only Agent requests, adjustmentPreserveMotion=true can reject over-capacity ranges without regions. If spatial protection is requested, bind adjustmentRegions to exact source hashes and preserve outside RGBA locally. New intent v4 removes unrelated advice from explicit-goal planning and reserves drawing text capacity; frozen older prompts remain unchanged. Never substitute motion generation to fit frame limits. Compare actual whole playback and joins, preserve failed evidence, and keep adoption explicit. Linked isolated trials remain pending alternatives with their original costs, not accepted exports.
 
 New open-motion tasks can select formal `experts_v1` review: two baseline calls, blind appearance/motion opinions, and at most one focused dispute review per segment or whole clip. Keep native budget/history accounting and frozen model profiles. A proposed clearance of an old concern remains uncertain until actual-frame adjudication; no model report authorizes automatic regeneration, repair or adoption. Saved tasks and legacy bounded requests keep baseline behavior. Offline reliability experiments remain separately authorized and must retain frozen labels, failed trials, unresolved defects and full costs. See [visual experts and dispute review](../../docs/sprite-review-evaluation.md).
 

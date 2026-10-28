@@ -10,15 +10,16 @@ function Evidence({opinion}: {opinion?: MotionReviewOpinion}) {
   </p>)}</>;
 }
 
-export function MotionVisualReview({report}: {report: MotionReview}) {
+export function MotionVisualReview({report,compact=false}: {report: MotionReview;compact?:boolean}) {
   const extra=report.expert_review;
   const busy=['pending','running'].includes(report.state);
   const failed=['failed','unknown','stale'].includes(report.state);
-  const title=busy?'正在检查实际帧':failed?'检查未完成或证据已过期':
+  const title=busy?'正在检查实际帧':report.state==='failed'?'检查请求失败，已有动画仍保留':report.state==='unknown'?'检查结果尚未确认':report.state==='stale'?'画面已变更，旧检查已过期':
     ({pass:'模型建议通过',fail:'模型报告问题',uncertain:'待实际画面确认'}[report.verdict]||'待实际画面确认');
   const classifications=extra?.resolution?.checks;
   return <div className={`motion-visual-review ${report.verdict==='fail'&&!busy?'motion-error':'motion-notice'}`}>
     <b>视觉验收：{title}</b>
+    {compact?<p>{busy?'正在核对这组动画，请稍候。':failed?'检查未完成，动画仍可播放；详情中保留了失败记录。':report.verdict==='pass'?'请实际播放后决定是否采用。':'请结合实际播放决定；需要时可查看具体帧与专家依据。'}</p>:<>
     {extra?.simulated&&<p>模拟专家报告，仅用于隔离流程验收，没有调用真实模型。</p>}
     {report.protocol==='experts_v1'&&<p className="motion-review-progress">
       独立专家与争议复核 · {phases[extra?.phase||''] || (report.state==='diagnostic'?'诊断流程，未调用视觉模型':'基础观察与审核')}
@@ -39,5 +40,6 @@ export function MotionVisualReview({report}: {report: MotionReview}) {
       {!!extra.requires_human_adjudication?.length&&<p><b>需要实际画面裁决</b>：{extra.requires_human_adjudication.map(c=>dimensions[c.dimension]||c.dimension).join('、')}。复核建议取消原有问题，尚未自动变为通过。</p>}
       {failed&&<p>{extra.summary || '已保存已有意见和请求，未自动重发。'}</p>}
     </details>}
+    </>}
   </div>;
 }

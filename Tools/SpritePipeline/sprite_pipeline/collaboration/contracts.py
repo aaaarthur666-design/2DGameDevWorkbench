@@ -18,6 +18,11 @@ class Budget(Contract):
     max_review_calls: int = Field(default=10, ge=2, le=200)
 
 
+class VisualStructureSelection(Contract):
+    analysis_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    token: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
 class TaskSpec(Contract):
     character_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$", max_length=100)
     description: str = Field(min_length=4, max_length=2000)
@@ -32,12 +37,14 @@ class TaskSpec(Contract):
     provider: Literal["pixellab", "fixture"] = "pixellab"
     # Missing on historical records: preserve their hash and two-call behavior.
     review_protocol: Literal['baseline', 'experts_v1'] | None = None
+    visual_structure: VisualStructureSelection | None = None
 
     @model_serializer(mode='wrap')
     def preserve_legacy_spec(self, handler):
         data = handler(self)
         if self.review_protocol is None:
             data.pop('review_protocol', None)
+        if self.visual_structure is None:data.pop('visual_structure',None)
         return data
 
 
@@ -124,6 +131,13 @@ class MotionConstraints(Contract):
     generation_hint: str = Field(min_length=4,max_length=140)
 
 
+class StructureUsage(Contract):
+    part_ids: list[str] = Field(min_length=1,max_length=12)
+    anchor_ids: list[str] = Field(default_factory=list,max_length=12)
+    relation_ids: list[str] = Field(default_factory=list,max_length=12)
+    effect: str = Field(min_length=4,max_length=240)
+
+
 class PlanStage(Contract):
     name: str = Field(min_length=1, max_length=80)
     goal: str = Field(min_length=1, max_length=500)
@@ -134,12 +148,14 @@ class PlanStage(Contract):
     acceptance: list[str] = Field(min_length=1, max_length=8)
     checkpoint: PoseCheckpoint | None = None
     motion: MotionConstraints | None = None
+    structure_usage: StructureUsage | None = None
 
     @model_serializer(mode='wrap')
     def preserve_legacy_stage_hash(self, handler):
         data = handler(self)
         if self.checkpoint is None: data.pop('checkpoint', None)
         if self.motion is None: data.pop('motion', None)
+        if self.structure_usage is None:data.pop('structure_usage',None)
         return data
 
     @model_validator(mode="after")
@@ -228,6 +244,25 @@ class ExpertTurn(Contract):
         return self
 
 
+class StrategyTurn(Contract):
+    """One proposal slot; strategy cannot publish the coordinator's final plan."""
+    action: Literal['propose', 'inspect_reference', 'consult']
+    summary: str = Field(min_length=1, max_length=1500)
+    findings: list[Requirement] = Field(default_factory=list, max_length=16)
+    target: Role | None = None
+    question: str = Field(default='', max_length=800)
+    crop: list[int] | None = Field(default=None, min_length=4, max_length=4)
+    proposal: PlanProposal | None = None
+
+    @model_validator(mode='after')
+    def valid_action(self):
+        if self.action == 'propose' and self.proposal is None:
+            raise ValueError('strategy propose requires the proposal field')
+        if self.action == 'consult' and (self.target is None or not self.question.strip()):
+            raise ValueError('consult requires target and question')
+        return self
+
+
 class CoordinatorTurn(Contract):
     action: Literal["inspect_reference", "consult", "finalize"]
     summary: str = Field(min_length=1, max_length=1500)
@@ -287,15 +322,23 @@ class PlanBinding(Contract):
     model_snapshot: dict[str, Any] = Field(default_factory=dict)
     compiled_prompts: list[str] = Field(default_factory=list, max_length=4)
     end_targets: list[TargetImage] = Field(default_factory=list, max_length=4)
+    visual_structure: dict[str,Any] | None = None
+    generation_policy_version: Literal[1, 2, 3, 4, 5] | None = None
+    visibility_review_version: Literal[1, 2, 3, 4] | None = None
 
     @model_serializer(mode='wrap')
     def preserve_binding(self, handler):
         data = handler(self)
         if not self.end_targets: data.pop('end_targets', None)
+        if self.visual_structure is None:data.pop('visual_structure',None)
+        if self.generation_policy_version is None:data.pop('generation_policy_version',None)
+        if self.visibility_review_version is None:data.pop('visibility_review_version',None)
         return data
 
     @model_validator(mode="after")
     def validate_budget_and_identity(self):
+        from .structure_control import validate_structure_binding
+        validate_structure_binding(self.spec,self.visual_structure,self.reference_sha256,self.plan)
         stages = [t.stage for t in self.end_targets]
         if len(stages) != len(set(stages)) or any(s >= len(self.plan.stages) for s in stages):
             raise ValueError('Target images must identify unique existing segments')
@@ -308,6 +351,13 @@ class PlanBinding(Contract):
             raise ValueError("Plan hash does not match the approved plan")
         if self.compiled_prompts and (len(self.compiled_prompts)!=len(self.plan.stages) or any(not p or len(p)>1000 for p in self.compiled_prompts)):
             raise ValueError('Frozen provider prompts must match all stages and their size limit')
+        if self.generation_policy_version in (1,2,3,4,5):
+            from .generation_conditions import compile_conditions
+            if not self.plan.quality or self.plan.quality.version != 4:
+                raise ValueError('Drawing conditions policy 1 requires the complete version 4 motion contract')
+            expected = [compile_conditions(self.plan, i, policy_version=self.generation_policy_version) for i in range(len(self.plan.stages))]
+            if self.compiled_prompts and self.compiled_prompts != expected:
+                raise ValueError('Frozen drawing conditions differ from the approved plan')
         if self.plan.questions:
             raise ValueError("Unanswered questions must be resolved before execution")
         if self.plan.stages[-1].last_frame == "original" and not self.spec.return_to_reference:
@@ -384,4 +434,17 @@ class OpenWork(Contract):
     planning_authorized: bool = False
     auto_execute: bool = False
     planning_config: dict[str, Any] = Field(default_factory=dict)
+    planning_format_version: Literal[1, 2, 3] | None = None
     end_targets: list[TargetImage] = Field(default_factory=list, max_length=4)
+    visual_structure: dict[str,Any] | None = None
+    generation_policy_version: Literal[1, 2, 3, 4, 5] | None = None
+    visibility_review_version: Literal[1, 2, 3, 4] | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_structure_free_work(self,handler):
+        data=handler(self)
+        if self.visual_structure is None:data.pop('visual_structure',None)
+        if self.planning_format_version is None:data.pop('planning_format_version',None)
+        if self.generation_policy_version is None:data.pop('generation_policy_version',None)
+        if self.visibility_review_version is None:data.pop('visibility_review_version',None)
+        return data

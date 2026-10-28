@@ -151,6 +151,9 @@ class ReviewExperiment:
             raise ConflictError('争议来源与当前证据不一致')
         if digest(augmented['model_snapshot']) != digest(self.snapshot):
             raise ConflictError('本轮复核模型配置必须与比较快照一致')
+        binding=getattr(self.evidence,'structure_binding',None)
+        if augmented.get('structure_binding')!=binding:
+            raise ConflictError('争议所依据的结构版本与当前观察不一致')
         self.evidence.verify()
         self.directory.mkdir(parents=True,exist_ok=True)
         with JobStore._file_lock(None,self.directory/'.lock',timeout_seconds=.1,operation='dispute review'):
@@ -166,6 +169,7 @@ class ReviewExperiment:
             self.record={'version':1,'mode':'dispute','state':'running','advisory_only':True,
                 'evidence_token':self.evidence.token,'model_snapshot':self.snapshot,'parent_digest':parent,
                 'max_calls':1,'requests':[],'prior_requests':copy.deepcopy(augmented['requests'])}
+            if binding:self.record['structure_binding']=copy.deepcopy(binding)
             self.save()
             try:
                 from .dispute_review import Resolution,resolution_content,apply_resolution
@@ -174,8 +178,14 @@ class ReviewExperiment:
                 else:
                     content,selection=resolution_content(self.evidence,augmented)
                     self.record['focus']=selection
-                    result=self.call('resolve',content,Resolution)
-                    self.record.update(state='complete',**apply_resolution(augmented,result,len(self.evidence.paths)))
+                    if binding:
+                        from .structure_judgment import StructureResolution,apply_structure_resolution
+                        result=self.call('resolve',content,StructureResolution)
+                        applied=apply_structure_resolution(augmented,result,self.evidence)
+                    else:
+                        result=self.call('resolve',content,Resolution)
+                        applied=apply_resolution(augmented,result,len(self.evidence.paths))
+                    self.record.update(state='complete',**applied)
             except Exception as exc:
                 self.record.update(state='failed',verdict='uncertain',summary=str(exc) if isinstance(exc,(ValidationHarnessError,ConflictError)) else '争议复核未完成；旧结论仍保留，未重试')
             self.save()
@@ -186,6 +196,9 @@ class ReviewExperiment:
             raise ValidationHarnessError('旁路视觉检查需要明确授权；未调用模型')
         if mode not in ('baseline', 'independent') or self.max_calls != 2:
             raise ValidationHarnessError('不支持的旁路检查配置')
+        binding=getattr(self.evidence,'structure_binding',None)
+        if mode=='baseline' and binding:
+            raise ValidationHarnessError('结构补充不得改变冻结的两次基础检查')
         self.directory.mkdir(parents=True, exist_ok=True)
         # The existing crash-safe OS lock is reused, but lives outside every job.
         with JobStore._file_lock(None, self.directory / '.lock', timeout_seconds=.1, operation='shadow review'):
@@ -194,6 +207,8 @@ class ReviewExperiment:
                 self.record = read_json(saved)
                 if self.record['evidence_token'] != self.evidence.token or self.record['mode'] != mode:
                     raise ConflictError('请求身份已用于另一组评估输入')
+                if self.record.get('structure_binding')!=binding:
+                    raise ConflictError('复核所依据的结构版本已改变')
                 if self.record['state'] == 'running':
                     self.record.update(state='unknown', summary='上次检查被中断；不会自动重发')
                     self.save()
@@ -202,6 +217,7 @@ class ReviewExperiment:
             self.record = {'version': 1, 'mode': mode, 'state': 'running', 'advisory_only': True,
                            'evidence_token': self.evidence.token, 'model_snapshot': self.snapshot,
                            'max_calls': self.max_calls, 'requests': []}
+            if binding:self.record['structure_binding']=copy.deepcopy(binding)
             self.save()
             try:
                 if mode == 'baseline':

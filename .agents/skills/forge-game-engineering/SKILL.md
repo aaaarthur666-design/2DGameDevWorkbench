@@ -5,6 +5,32 @@ description: Design and implement Godot 4.7 game projects from ready Forge asset
 
 # Forge game engineering
 
+New planning policy 5 and visibility guard 4 do not change engine contracts or authorize asset adoption. Visibility evidence and unresolved expert contradictions are not verified geometry, rigging, a collision shape or a contact trigger. Consume only the exact approved export; preserve other clips and gameplay contracts. See [visual structures](../../../docs/visual-structures.md).
+
+A drawing_conditions receipt records production inputs, not a rig or accepted game motion. Experimental generation_policy_version=1/2, whose planning reliability and general quality benefit remain unproven despite positive human visual feedback, does not authorize timing changes or replacement of exported clips; actual first/last-image conditions and structure hints remain production evidence. Continue to consume only the exact approved animation and preserve frame/controller contracts. See [visual structures](../../../docs/visual-structures.md).
+
+Versioned temporal initialization and manual first-frame observation corrections do not change animation pixels or engine contracts. Even improved tracking masks are estimates, not a rig, collision shape or contact trigger; use the exact adopted art and verified game behavior. See [visual structures](../../../docs/visual-structures.md).
+
+Selected-frame drawing counts are tracked per frame; additional edits in another window are separate authorized work. A remaining slot or a history-count change is not asset approval. Keep integrating only the explicitly selected, adopted export and preserve other animations.
+
+Optional spatial painting and normal source-image edits share the same explicit adoption/export gate. A completed isolated trial linked into an original task is only a pending alternative, never a newly accepted game asset. Failed interpretations without generated frames cannot be integrated. Preserve the current game animation until a verified new export is explicitly selected.
+
+A spatially protected alternative contains both raw provider output and a delivered composite. Consume only the explicitly adopted composite through its verified normal export. Neither outside-region RGBA equality nor a model comparison pass authorizes importing the raw alternative or replacing other clips. Preserve unresolved comparison findings and the human decision.
+
+A proposed edit to an unlocked animation segment's ending is not a confirmed game animation or trigger. Only after explicit adoption, checkpoint confirmation and completed export may its new real endpoint enter downstream frames. Keep consuming approved complete clips; never import an in-progress or failed adjustment as a replacement actor animation.
+
+An appearance-only request uses actual original poses as its baseline; it does not authorize redrawing motion to fit provider frame limits or a planner's earlier ideal ending. A positive model report does not override an actual-playback rejection. Keep the accepted original in the game until a new exact candidate is explicitly adopted and exported.
+
+Expert progress badges describe planning activity, not delivered art. A received proposal or local validation pass never replaces the approved candidate and verified export required for game integration. Failed planning creates no usable animation; do not substitute an older clip without explicit selection.
+
+Structure planning views may separate available control evidence from unknown observations. This is still image-analysis provenance: neither a planning-format pass nor a visible relation label establishes a game collision, interaction trigger, or accepted animation. Keep consuming exact approved exports and the target project's actual contracts.
+
+V3 structure-assisted planning may record which checked parts informed a generated animation, but these provenance records are not a rig, collision definition or proven actor/prop interaction. Continue to use the adopted exact clip and existing frame/controller contracts; no extra structure parsing or redraw is implied by engineering integration.
+
+Character visual structures are versioned image observations, not SpriteFrames, an engine rig, collision shapes or validated game interactions. Do not import their masks/anchors as authoritative gameplay code or alter animation timing on their basis. Continue to consume approved artwork exports. See [visual structures](../../../docs/visual-structures.md).
+
+Temporal structure observations retain original frame indices, FPS and source versions; reference-context frames are excluded from playback. Region centers/axes are not joints, facing or contact truth, and sparse anchors do not define a dense rig. Structural review is advisory and does not modify accepted clips or exports. Use only verified actor/prop contacts and explicit game contracts for integration; an unknown region cannot establish collision, grip, release or a gameplay event.
+
 Controlled animation alternatives are not delivered art until explicitly adopted. For a completed motion, adoption creates a new work version and native job, with the selected candidate normalized to candidate 1. Resolve the returned exact identity and approved export; do not reuse the old job or silently replace another candidate. Preserve frame order/FPS, unselected source frames, actor settings and other clips. A preview or expert report does not authorize game integration. See [controlled alternatives](../../../docs/motion-adjustments.md).
 
 Formal expert opinions, dispute reports and offline evaluation reports are evidence, not asset approval or engine acceptance. A suggestion to clear an old concern does not authorize replacing frames, changing playback timing or importing another candidate. Continue to consume the exact approved export and preserve its frame mapping. Saved tasks are not automatically re-reviewed. See [visual review boundaries](../../../docs/sprite-review-evaluation.md).

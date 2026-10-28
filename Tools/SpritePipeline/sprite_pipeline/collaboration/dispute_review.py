@@ -94,6 +94,15 @@ def resolution_content(evidence, augmented):
     context={'scope':evidence.manifest['scope'],'fps':evidence.manifest['fps'],
         'frame_count':len(evidence.paths),'task':evidence.context(),
         'disagreements':augmented['disputes'],'baseline':augmented['checks']}
+    from .tracking_review import structure_context
+    structure=structure_context(evidence)
+    if structure is not None:
+        from .tracking_review import STRUCTURE_REVIEW_RULES
+        from .structure_judgment import JUDGMENT_RULES
+        prompt+='Structural regions and sparse points are estimates, not verdicts. Resolve image/structure conflicts from actual pixels and preserve unknowns; an inaccurate tracker is not a defect in the artwork.\n'
+        prompt+=STRUCTURE_REVIEW_RULES+'\n'
+        prompt+=JUDGMENT_RULES+'\n'
+        context['visual_structure']=structure
     return [{'type':'input_text','text':prompt+json.dumps(context,ensure_ascii=False)},*evidence.pictures(),*focus],selection
 
 

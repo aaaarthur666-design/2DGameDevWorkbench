@@ -82,29 +82,38 @@ try {
   await page.getByRole('button',{name:'确认方案，开始制作',exact:true}).waitFor({state:'visible'});
   await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('确认方案，开始制作'));return b&&!b.disabled;});
   const workUrl=page.url();assert.ok(workUrl.includes('?work='));
+  assert.match(await page.getByTestId('motion-target-status').innerText(),/当前仅使用文字要求/);
   await page.getByText('用已有图片约束段末姿势（可选）',{exact:true}).click();
   await page.getByLabel('段末目标图片',{exact:true}).setInputFiles(path.join(root,'target-fixture/frame_002.png'));
   await page.getByLabel('目标图检查依据',{exact:true}).fill('已检查诊断图的姿势与物品，仅验收输入冻结流程。');
   await page.getByRole('button',{name:'确认并绑定目标图',exact:true}).click();
   await page.getByAltText('第 1 段目标图片',{exact:true}).waitFor();
+  assert.match(await page.getByTestId('motion-target-status').innerText(),/1\/2 段/);
   await page.screenshot({path:path.join(root,'plan.png'),fullPage:true});
   await page.getByRole('button',{name:'确认方案，开始制作',exact:true}).click();
   for(let stage=0;stage<2;stage++) {
     await page.getByRole('heading',{name:new RegExp(`确认第 ${stage+1} 段`)}).waitFor({timeout:30000});
     const acceptStage=page.getByRole('button',{name:'确认此段，继续制作',exact:true});
     assert.equal(await acceptStage.isDisabled(),true);
+    assert.equal(await page.getByText('中断后的恢复',{exact:true}).count(),0);
+    assert.equal(await page.locator('.motion-checkpoint > details').count(),0);
+    await page.getByRole('button',{name:'检查详情',exact:true}).click();
     await page.getByText('查看独立专家与争议复核过程',{exact:true}).click();
     await page.getByRole('heading',{name:'外观专家 · 独立意见',exact:true}).waitFor();
     await page.getByRole('heading',{name:'争议复核',exact:true}).waitFor();
     assert.equal(await page.getByText('需要实际画面裁决',{exact:true}).isVisible(),true);
     await page.screenshot({path:path.join(root,`expert-review-stage-${stage+1}.png`),fullPage:true});
     await page.getByText('查看独立专家与争议复核过程',{exact:true}).click();
+    await page.keyboard.press('Escape');
     if(stage===0){await page.reload();await page.getByRole('heading',{name:/确认第 1 段/}).waitFor();}
     if(stage===0){
       await page.getByText('调整部分帧',{exact:true}).click();
       await page.getByLabel('修改开始帧',{exact:true}).fill('2');
       await page.getByLabel('修改结束帧',{exact:true}).fill('3');
       await page.getByLabel('修改要求（选填）',{exact:true}).fill('我希望这里抬手幅度更小，即便原版已经可用；仅验收流程。');
+      assert.equal(await page.getByLabel('精确限定修改区域（可选）',{exact:true}).isChecked(),false);
+      assert.equal(await page.getByLabel('区域编辑帧',{exact:true}).count(),0);
+      assert.equal(await page.getByRole('button',{name:'保留原版',exact:true}).count(),0);
       const wid=new URL(workUrl).searchParams.get('work');
       assert.equal((await (await fetch(`${base}/v1/open-motion/${wid}/adjustments?revision=1&candidate=1&stage=0`)).json()).tasks.length,0);
       await page.getByRole('button',{name:'生成一个备选',exact:true}).click();
@@ -121,14 +130,58 @@ try {
       for(let i=0;i<100;i++){const v=await (await fetch(`${base}/v1/open-motion/${wid}`)).json();const r=v.job.candidates[0].plan_execution.stages[0];if(r.state==='awaiting_review'&&r.active_frames)break;assert.ok(i<99);await delay(100);}
       await page.getByRole('heading',{name:/确认第 1 段/}).waitFor();
     }
+    if(stage===1){
+      await page.getByText('调整部分帧',{exact:true}).click();
+      await page.getByLabel('修改开始帧',{exact:true}).fill('3');
+      await page.getByLabel('修改结束帧',{exact:true}).fill('4');
+      assert.equal(await page.getByLabel('精确限定修改区域（可选）',{exact:true}).isChecked(),false);
+      await page.getByLabel('修改要求（选填）',{exact:true}).fill('仅调整所选段尾的物品外观，其余帧不变。');
+      assert.equal(await page.getByLabel('选择第 4 帧',{exact:true}).isEnabled(),true);
+      await page.getByText(/本段末帧尚未锁定，可以一起调整/).waitFor();
+      assert.equal(await page.getByRole('button',{name:'生成一个备选',exact:true}).isEnabled(),true);
+      await page.getByLabel('精确限定修改区域（可选）',{exact:true}).check();
+      assert.equal(await page.getByRole('button',{name:'生成一个备选',exact:true}).isDisabled(),true);
+      await page.getByText(/先为每个选中帧涂选局部区域/).waitFor();
+      await page.getByLabel('修改开始帧',{exact:true}).fill('2');
+      assert.equal(await page.getByRole('button',{name:'生成一个备选',exact:true}).isDisabled(),true);
+      await page.getByText(/当前选择了 3 帧；提供方要求偶数帧/).waitFor();
+      await page.screenshot({path:path.join(root,'odd-frame-selection.png'),fullPage:true});
+      await page.getByLabel('修改开始帧',{exact:true}).fill('3');
+      for(const n of [3,4]){
+        await page.getByLabel('区域编辑帧',{exact:true}).selectOption(String(n-1));
+        const source=page.getByRole('img',{name:`区域编辑原版第 ${n} 帧`,exact:true});
+        await source.evaluate(img=>img.complete&&img.naturalWidth?Promise.resolve():new Promise(resolve=>img.addEventListener('load',resolve,{once:true})));
+        const paint=page.getByLabel(`第 ${n} 帧允许修改区域`,{exact:true});await paint.scrollIntoViewIfNeeded();
+        const box=await paint.boundingBox();assert.ok(box);
+        await page.mouse.move(box.x+box.width*.45,box.y+box.height*.5);await page.mouse.down();
+        await page.mouse.move(box.x+box.width*.55,box.y+box.height*.55,{steps:6});await page.mouse.up();
+      }
+      assert.equal(await page.getByRole('button',{name:'生成一个备选',exact:true}).isEnabled(),true);
+      await page.screenshot({path:path.join(root,'unlocked-tail-selection.png'),fullPage:true});
+      await page.getByRole('button',{name:'生成一个备选',exact:true}).click();
+      await page.getByRole('button',{name:'同步播放完整对比',exact:true}).waitFor();
+      await page.getByText(/未涂选区域已逐像素核验/).waitFor();
+      await page.getByRole('button',{name:'备选检查详情',exact:true}).click();
+      await page.getByText('修改目标：模型判断通过',{exact:true}).waitFor();
+      await page.keyboard.press('Escape');
+      const wid=new URL(workUrl).searchParams.get('work');
+      const saved=await (await fetch(`${base}/v1/open-motion/${wid}/adjustments?revision=1&candidate=1&stage=1`)).json();
+      assert.equal(saved.tasks[0].edit_regions.length,2);
+      assert.ok(saved.tasks[0].spatial_protection.frames.every(f=>f.protected_changed_pixels===0));
+      assert.ok(saved.tasks[0].spatial_protection.frames.some(f=>f.changed_inside_pixels>0));
+      await page.screenshot({path:path.join(root,'spatial-adjustment-result.png'),fullPage:true});
+      await page.getByRole('button',{name:'保留原版',exact:true}).click();
+    }
     const playSegment=page.getByRole('button',{name:'播放当前完整片段',exact:true});
     await playSegment.click();
     const watchedSegment=page.getByLabel('我已播放此段并检查实际末姿势、装备和节奏');
     if(stage===0){
+      await page.getByRole('button',{name:'高级工具',exact:true}).click();
       await page.getByText('目标姿势提前到达时，选择实际锚点',{exact:true}).click();
       await page.getByLabel('本段结束锚点',{exact:true}).selectOption('2');
-      assert.equal(await acceptStage.isDisabled(),true);
+      assert.equal(await page.getByRole('button',{name:'确认此段，继续制作',exact:true,includeHidden:true}).isDisabled(),true);
       await page.getByLabel('确认采用第 1–3 帧，其余原始帧保留在记录中').check();
+      await page.keyboard.press('Escape');
     }
     await watchedSegment.check();
     await page.getByLabel('本段检查结论',{exact:true}).fill('已检查诊断片段、末姿势和帧序，仅验收工具流程。');
@@ -141,7 +194,7 @@ try {
   assert.equal(await adopt.isDisabled(),true);
   await page.waitForFunction(()=>document.querySelector('#motion-action-status')?.textContent.includes('先播放检查'));
   assert.match(await page.locator('#motion-action-status').innerText(),/先播放检查/);
-  await page.getByText('其他调整工具',{exact:true}).click();
+  await page.getByRole('button',{name:'高级工具',exact:true}).click();
   await page.getByRole('link',{name:'打开逐帧编辑工作区',exact:true}).click();
   const returnLink=page.getByRole('link',{name:'返回当前作品',exact:true});
   await returnLink.waitFor();
@@ -193,6 +246,7 @@ try {
     await page.getByLabel('修改开始帧',{exact:true}).fill('5');
     await page.getByLabel('修改结束帧',{exact:true}).fill('6');
     await page.getByLabel('修改要求（选填）',{exact:true}).fill('个人偏好：让这两帧的抬手幅度更小，其他帧保持原样。');
+    assert.equal(await page.getByLabel('精确限定修改区域（可选）',{exact:true}).isChecked(),false);
     assert.equal(await page.getByRole('button',{name:'进入导出',exact:true}).count(),0,'old adoption action is hidden while adjusting');
     await page.getByRole('button',{name:'生成一个备选',exact:true}).click();
     if(attempt===0){await page.reload();await page.getByRole('heading',{name:'检查与调整',exact:true}).waitFor();}
@@ -221,8 +275,121 @@ try {
   await page.locator('.motion-content').hover();await page.mouse.wheel(0,850);
   assert.ok(await page.locator('.motion-content').evaluate(el=>el.scrollTop)>0);
   await page.screenshot({path:path.join(root,'mobile.png'),fullPage:true});
+  // Real page rendering of rejected/interrupted planning. These responses are
+  // browser-only fixtures; no production work or paid retry is created.
+  const failed = { ...original, id: 'f'.repeat(32), revision: 1, latest_revision: 1,
+    plan: null, plan_sha256: null, job: null, history: [], status: 'planning_failed',
+    message: '动作规划未取得有效结论；结构化字段无效，未自动重试',
+    planning_calls: [
+      { role: 'appearance', state: 'completed' }, { role: 'motion', state: 'completed' },
+      { role: 'strategy', state: 'completed' }, { role: 'coordinator', state: 'completed' },
+      { role: 'coordinator', state: 'invalid_response' },
+    ], messages: [
+      ...['appearance','motion','strategy'].map((role,i)=>({role,call:i+1,response:{action:'propose',summary:'已提出建议'}})),
+      {role:'coordinator',call:4,response:{action:'finalize',summary:'已提交方案'}},
+      {role:'validator',call:4,response:{action:'validation_feedback',summary:'不能引用未知关系'}},
+    ] };
+  let recovered = null, recoveryConfirmed = false;
+  const recoveryRequests = [];
+  await page.route('**/api/workbench/open-motion?**', async route => {
+    const routePath = new URL(route.request().url()).searchParams.get('path');
+    if(routePath === `open-motion/${failed.id}`)
+      return route.fulfill({json:recoveryConfirmed ? recovered : failed});
+    if(routePath === `open-motion/${failed.id}/revise`) {
+      const body = route.request().postDataJSON();
+      assert.equal(body.planning_authorized, true);
+      assert.equal(body.expected_revision, 1);
+      assert.deepEqual(body.spec, failed.spec, 'recovery preserves the unchanged original requirements');
+      assert.notEqual(body.request_key, failed.request_key, 'recovery cannot reuse the failed request');
+      recoveryRequests.push(body);
+      if(!recovered) recovered = {...failed, request_key:body.request_key, revision:2, latest_revision:2,
+        status:'ready', message:'方案已就绪，等待制作授权', plan:original.plan, plan_sha256:original.plan_sha256,
+        history:[{revision:1,title:failed.spec.description}], planning_calls:original.planning_calls, messages:original.messages};
+      assert.equal(body.request_key, recovered.request_key, 'ambiguous response recovery must not create another paid plan');
+      if(recoveryRequests.length === 1) return route.abort('connectionreset');
+      recoveryConfirmed = true;
+      return route.fulfill({json:recovered});
+    }
+    if(routePath === `open-motion/${failed.id}/reference`) {
+      const response = await fetch(`${base}/v1/open-motion/${wid}/reference`);
+      return route.fulfill({status:response.status,contentType:'image/png',body:Buffer.from(await response.arrayBuffer())});
+    }
+    return route.fallback();
+  });
+  await page.setViewportSize({width:1440,height:1000});
+  await page.goto((process.env.FORGE_TEST_WEB_URL||'http://localhost:3000')+`/tools/sprite-generator?work=${failed.id}`);
+  await page.getByRole('heading',{name:'制作方案未完成',exact:true}).waitFor();
+  assert.equal(await page.locator('[data-planning-role=validator]').getAttribute('data-state'),'blocked');
+  assert.equal(await page.locator('[data-planning-role=coordinator]').getAttribute('data-state'),'failed');
+  assert.equal(await page.locator('.motion-experts .animate-spin').count(),0);
+  assert.equal(await page.getByRole('button',{name:/开始制作/}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'重新制定方案',exact:true}).isEnabled(),true);
+  await page.screenshot({path:path.join(root,'planning-rejected.png'),fullPage:true});
+  failed.planning_calls[4].state='submitting';
+  await page.reload();
+  await page.locator('[data-planning-role=coordinator][data-state=unknown]').waitFor();
+  assert.equal(await page.locator('.motion-experts .animate-spin').count(),0);
+  failed.planning_calls=failed.planning_calls.slice(0,3);failed.planning_calls[2].state='invalid_response';
+  failed.messages=failed.messages.slice(0,2);
+  await page.reload();
+  await page.locator('[data-planning-role=strategy][data-state=failed]').waitFor();
+  assert.equal(await page.locator('.motion-experts .animate-spin').count(),0);
+  await page.screenshot({path:path.join(root,'planning-strategy-failed.png'),fullPage:true});
+  // Reproduce a persisted old request key with unchanged input. Explicit retry
+  // starts a new version; a lost reply then reuses that new request on reload.
+  await page.evaluate(({id,spec,key})=>localStorage.setItem(`forge.motion.draft.${id}`,
+    JSON.stringify({spec,requestKey:key,revision:1})),{id:failed.id,spec:failed.spec,key:failed.request_key});
+  await page.reload();
+  await page.getByRole('button',{name:'重新制定方案',exact:true}).click();
+  await page.getByRole('button',{name:'重新制定方案',exact:true}).waitFor({state:'visible'});
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.includes('重新制定方案')&&!b.disabled));
+  assert.equal(recoveryRequests.length,1);
+  await page.reload();
+  await page.getByRole('heading',{name:'制作方案未完成',exact:true}).waitFor();
+  assert.equal(recoveryRequests.length,1,'refresh never retries a paid request');
+  await page.getByRole('button',{name:'重新制定方案',exact:true}).click();
+  await page.getByText('版本 2 · 已保存本机',{exact:true}).waitFor();
+  assert.equal(recoveryRequests.length,2);
+  assert.equal(recoveryRequests[0].request_key,recoveryRequests[1].request_key);
+  assert.equal(failed.revision,1);assert.equal(failed.status,'planning_failed');
+  assert.equal(await page.getByRole('button',{name:'确认方案，开始制作',exact:true}).isEnabled(),true);
+  await page.screenshot({path:path.join(root,'planning-recovered.png'),fullPage:true});
+  // An interpretation-only failure is a record, never an unseen alternative.
+  const failedEditContext=await (await fetch(`${base}/v1/open-motion/${wid}/adjustments?revision=2&candidate=1`)).json();
+  failedEditContext.tasks=[{id:'a'.repeat(32),state:'failed',message:'修改要求理解未取得有效结果，未自动重试',
+    start:4,end:5,user_request:'只修正细节',source_token:failedEditContext.token,planning_calls:[{state:'invalid_response'}],generation_calls:[],review_calls:[],fps:12}];
+  failedEditContext.tasks.unshift({...failedEditContext.tasks[0],id:'b'.repeat(32),state:'adopted',start:1,end:2,
+    message:'已采用之前选区的备选',generation_calls:[{state:'submitted'}]});
+  await page.route('**/api/workbench/open-motion?**',async route=>{
+    if(new URL(route.request().url()).searchParams.get('path')===`open-motion/${wid}/adjustments`&&route.request().method()==='GET')
+      return route.fulfill({json:failedEditContext});
+    return route.fallback();
+  });
+  await page.goto((process.env.FORGE_TEST_WEB_URL||'http://localhost:3000')+`/tools/sprite-generator?work=${wid}&candidate=1`);
+  await page.getByText('版本 2 · 已保存本机',{exact:true}).waitFor();
+  await page.getByRole('button',{name:/检查与调整/}).first().click();
+  await page.getByRole('button',{name:'调整部分帧',exact:true}).click();
+  await page.getByText(/尚未绘图，没有生成备选/).waitFor();
+  assert.equal(await page.getByRole('button',{name:'保留原版',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'采用新版',exact:true}).count(),0);
+  assert.equal(await page.getByLabel('精确限定修改区域（可选）',{exact:true}).isChecked(),false);
+  await page.getByLabel('修改开始帧',{exact:true}).fill('6');
+  await page.getByLabel('修改结束帧',{exact:true}).fill('5');
+  await page.getByText('开始帧不能大于结束帧。',{exact:true}).waitFor();
+  await page.getByLabel('修改开始帧',{exact:true}).fill('5');
+  await page.getByText(/当前只选了 1 帧/).waitFor();
+  await page.getByRole('button',{name:'修改记录 · 2',exact:true}).click();
+  await page.getByText(/第 5–6 帧 · 未生成备选/).waitFor();
+  await page.keyboard.press('Escape');
+  await page.screenshot({path:path.join(root,'failed-edit-no-alternative.png'),fullPage:true});
+  await page.getByLabel('修改结束帧',{exact:true}).fill('6');
+  await page.getByLabel('修改要求（选填）',{exact:true}).fill('只修正当前选区的物品细节，其他帧保持。');
+  await page.getByText(/当前选区还可试做 2 次/).waitFor();
+  assert.equal(await page.getByRole('button',{name:'生成一个备选',exact:true}).isEnabled(),true,
+    'two historical records in other ranges or without drawing must not disable a fresh selection');
+  await page.screenshot({path:path.join(root,'fresh-range-enabled.png'),fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({browserAcceptance:'passed',evidence:root,checks:['manual-model-addition','role-model-persistence','no-empty-task','draft-reload','planning','generation','review-blocker-explanation','exact-work-editor-return','actual-frame-playback','review','Godot-dialog','real-ZIP-download','repeat-export','modified-draft-reload','narrow-scroll'],paidCalls:0}));
+  console.log(JSON.stringify({browserAcceptance:'passed',evidence:root,checks:['manual-model-addition','role-model-persistence','no-empty-task','draft-reload','planning','generation','review-blocker-explanation','exact-work-editor-return','actual-frame-playback','review','Godot-dialog','real-ZIP-download','repeat-export','modified-draft-reload','narrow-scroll','planning-failure-states','unchanged-input-replan','lost-reply-idempotency','refresh-without-resubmission','old-version-preserved'],paidCalls:0}));
 } catch(error) {
   if(page) {await page.screenshot({path:path.join(root,'failure.png'),fullPage:true});console.log('Failure evidence',root,(await page.locator('body').innerText()).slice(0,2400));}
   throw error;
