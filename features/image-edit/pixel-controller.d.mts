@@ -11,13 +11,15 @@ export class PixelController {
   readonly maskStrokeActive: boolean;
   takeDirtyBounds(): PixelBounds | null;
   takeMaskDirtyBounds(): PixelBounds | null;
-  beginMaskStroke(): void; maskStroke(point: PixelPoint, mode: 'add' | 'erase', size?: number): void; endMaskStroke(): void; cancelMaskStroke(): void;
+  setBase(base: RgbaPixels): void;
+  beginMaskStroke(mode?: 'add' | 'replace'): void; maskStroke(point: PixelPoint, mode: 'add' | 'erase', size?: number): void; endMaskStroke(): void; cancelMaskStroke(): void;
   beginStroke(): void;
   stroke(point: PixelPoint, tool: 'pencil' | 'eraser', rgba: number[], size?: number): void;
   endStroke(): void; cancelStroke(): void;
   undoPixels(): void; redoPixels(): void; undoMask(): void; redoMask(): void;
   selectRegion(spec: RegionSpec | null, remember?: boolean): void;
-  selectRectangle(from: PixelPoint, to: PixelPoint): void;
+  combineRegion(spec: RegionSpec, mode?: 'replace' | 'add' | 'subtract'): void;
+  selectRectangle(from: PixelPoint, to: PixelPoint, mode?: 'replace' | 'add' | 'subtract'): void;
   patch(): PixelSpan[];
   restorePatch(spans: PixelSpan[]): void;
   discardPixels(): void;

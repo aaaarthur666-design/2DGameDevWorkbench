@@ -77,7 +77,7 @@ try {
   const previewSource = () => document.querySelector<HTMLImageElement>('[data-fixture-preview]')?.getAttribute('src');
   await until(() => previewSource() === candidateUrl);
   check(blobCalls === 0, 'Saved candidate appears without Canvas.toBlob');
-  await click('采用当前候选'); await until(() => document.body.innerText.includes('已采用到指定目标'));
+  await click('采用此候选'); await until(() => document.body.innerText.includes('已采用到指定目标'));
   await click('恢复会话原图'); await until(() => document.body.innerText.includes('原始图片已恢复为新的目标版本'));
   check(previewSource() === originalUrl, 'Restore success and original preview are committed in the same render');
   check(blobCalls === 0, 'Restoration does not wait for a delayed Canvas encoding');
@@ -95,10 +95,11 @@ try {
   await until(() => !!checkbox('保留原图透明度'));
   check(checkbox('保留原图透明度')!.checked, 'AI defaults to preserving base Alpha');
   checkbox('保留原图透明度')!.click();
+  await click('选整图');
   const prompt = document.querySelector('textarea')!;
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(prompt, 'Fixture-only recolor'); prompt.dispatchEvent(new Event('input', { bubbles: true }));
   await click('生成 AI 候选（调用模型）');
-  await until(() => editPayloads.length === 1 && document.body.innerText.includes('候选已保存并通过像素检查'));
+  await until(() => editPayloads.length === 1 && document.body.innerText.includes('候选已保存，请对比效果'));
   check(editPayloads[0].constraints.preserveAlpha === false, 'Turning off Alpha preservation reaches the frozen request');
   await until(() => readImageEditNavigation()?.candidateVersion === 'candidate-ui-1');
   check(readImageEditNavigation()?.editId === 'edit-created-1', 'Completed candidate URL remains in the new session');

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { screenToPixel } from '@/features/image-edit/core.mjs';
-import type { PixelPoint } from '@/features/image-edit/core.mjs';
+import type { PixelPoint, PixelBounds } from '@/features/image-edit/core.mjs';
 import type { PixelController } from '@/features/image-edit/pixel-controller.mjs';
 import type { ImageEditContextLayer } from '@/features/image-edit/client';
 
@@ -13,16 +13,19 @@ export type ImageViewMode = 'candidate' | 'source' | 'diff';
 interface Props {
   controller: PixelController; version: number; tool: ImagePixelTool; color: string; alpha: number; brushSize: number;
   display: ImageViewMode; disabled: boolean; tolerance: number; contextLayers: ImageEditContextLayer[]; showContext: boolean;
+  viewPixels?: Uint8Array; beforePixels?: Uint8Array; selectionMode: 'replace' | 'add' | 'subtract';
+  selectionVisible: boolean; onSelectionVisible: (value: boolean) => void;
   onChange: () => void; onColor: (color: string, alpha: number) => void; onError: (message: string) => void;
 }
-type Gesture = { kind: 'pan'; x: number; y: number; panX: number; panY: number } | { kind: 'rectangle'; start: PixelPoint; last: PixelPoint } | { kind: 'paint' } | { kind: 'mask' };
+type Gesture = { kind: 'pan'; x: number; y: number; panX: number; panY: number } | { kind: 'rectangle'; start: PixelPoint; last: PixelPoint; mode: 'replace' | 'add' | 'subtract' } | { kind: 'transform'; start: PixelPoint; rectangle: PixelBounds; handle: string; next: PixelBounds } | { kind: 'paint' } | { kind: 'mask'; mode: 'add' | 'erase' };
 
-export function ImageEditCanvas({ controller, version, tool, color, alpha, brushSize, display, disabled, tolerance, contextLayers, showContext, onChange, onColor, onError }: Props) {
+export function ImageEditCanvas({ controller, version, tool, color, alpha, brushSize, display, disabled, tolerance, contextLayers, showContext, onChange, onColor, onError, viewPixels, beforePixels, selectionMode, selectionVisible, onSelectionVisible }: Props) {
   const viewport = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null), selectionCanvas = useRef<HTMLCanvasElement>(null);
   const frame = useRef<ImageData | null>(null), gesture = useRef<Gesture | null>(null);
   const maskFrame = useRef<ImageData | null>(null);
   const [view, setView] = useState({ zoom: 1, panX: 24, panY: 24 });
-  const [grid, setGrid] = useState(false), [selectionVisible, setSelectionVisible] = useState(true), [background, setBackground] = useState('checker');
+  const space = useRef(false);
+  const [grid, setGrid] = useState(false), [background, setBackground] = useState('checker');
   const [selectionPreview, setSelectionPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const imageWidth = controller.width, imageHeight = controller.height;
   const fit = useCallback(() => {
@@ -63,42 +66,42 @@ export function ImageEditCanvas({ controller, version, tool, color, alpha, brush
   }, []);
   useEffect(() => {
     const element = canvas.current, context = element?.getContext('2d'); if (!element || !context) return;
+    if (display !== 'candidate' && !beforePixels) return;
     element.width = controller.width; element.height = controller.height;
-    const data = new ImageData(new Uint8ClampedArray(display === 'source' ? controller.sourcePixels : controller.pixels), controller.width, controller.height);
-    if (display === 'diff') paintDiff(data, controller, 0, 0, controller.width, controller.height);
+    const data = new ImageData(new Uint8ClampedArray(display === 'source' ? beforePixels! : viewPixels || controller.pixels), controller.width, controller.height);
+    if (display === 'diff') paintDiff(data, viewPixels || controller.pixels, beforePixels || controller.sourcePixels, controller.width, 0, 0, controller.width, controller.height);
     frame.current = data; context.putImageData(data, 0, 0); controller.takeDirtyBounds();
-  }, [controller, display]);
+  }, [controller, display, viewPixels, beforePixels]);
   useEffect(() => {
     const data = frame.current, context = canvas.current?.getContext('2d'), dirty = controller.takeDirtyBounds();
-    if (!data || !context || !dirty || display === 'source') return;
-    if (display === 'diff') paintDiff(data, controller, dirty.x, dirty.y, dirty.width, dirty.height);
+    if (!data || !context || !dirty || display === 'source' || viewPixels) return;
+    if (display === 'diff') paintDiff(data, viewPixels || controller.pixels, beforePixels || controller.sourcePixels, controller.width, dirty.x, dirty.y, dirty.width, dirty.height);
     else for (let y = dirty.y; y < dirty.y + dirty.height; y++) {
       const start = (y * controller.width + dirty.x) * 4;
       data.data.set(controller.pixels.subarray(start, start + dirty.width * 4), start);
     }
     context.putImageData(data, 0, 0, dirty.x, dirty.y, dirty.width, dirty.height);
-  }, [controller, version, display]);
+  }, [controller, version, display, viewPixels, beforePixels]);
   useEffect(() => {
     const element = selectionCanvas.current, context = element?.getContext('2d'); if (!element || !context) return;
     element.width = controller.width; element.height = controller.height;
     const data = new ImageData(controller.width, controller.height); maskFrame.current = data;
-    for (let index = 0; index < controller.mask.length; index++) data.data[index * 4 + 3] = controller.mask[index] ? 0 : 112;
+    paintSelection(data, controller, { x: 0, y: 0, width: controller.width, height: controller.height });
     context.putImageData(data, 0, 0); controller.takeMaskDirtyBounds();
   }, [controller, showContext]);
   useEffect(() => {
     const data = maskFrame.current, context = selectionCanvas.current?.getContext('2d'), dirty = controller.takeMaskDirtyBounds();
     if (!data || !context || !dirty) return;
-    for (let y = dirty.y; y < dirty.y + dirty.height; y++) for (let x = dirty.x; x < dirty.x + dirty.width; x++) {
-      const index = y * controller.width + x; data.data[index * 4 + 3] = controller.mask[index] ? 0 : 112;
-    }
-    context.putImageData(data, 0, 0, dirty.x, dirty.y, dirty.width, dirty.height);
+    const bounds = { x: Math.max(0, dirty.x - 1), y: Math.max(0, dirty.y - 1), width: Math.min(controller.width, dirty.x + dirty.width + 1) - Math.max(0, dirty.x - 1), height: Math.min(controller.height, dirty.y + dirty.height + 1) - Math.max(0, dirty.y - 1) };
+    paintSelection(data, controller, bounds);
+    context.putImageData(data, 0, 0, bounds.x, bounds.y, bounds.width, bounds.height);
   }, [controller, controller.maskRevision, version]);
-  const pixel = (event: React.PointerEvent) => {
+  const pixel = (event: React.PointerEvent, clamp = false) => {
     const box = viewport.current?.getBoundingClientRect(); if (!box) return null;
-    return screenToPixel({ screenX: event.clientX, screenY: event.clientY, originX: box.left + view.panX, originY: box.top + view.panY, zoom: view.zoom, width: controller.width, height: controller.height });
+    return screenToPixel({ screenX: clamp ? Math.max(box.left + view.panX, Math.min(box.left + view.panX + controller.width * view.zoom - .001, event.clientX)) : event.clientX, screenY: clamp ? Math.max(box.top + view.panY, Math.min(box.top + view.panY + controller.height * view.zoom - .001, event.clientY)) : event.clientY, originX: box.left + view.panX, originY: box.top + view.panY, zoom: view.zoom, width: controller.width, height: controller.height });
   };
   const paint = (point: PixelPoint) => {
-    if (tool === 'mask-add' || tool === 'mask-erase') { controller.maskStroke(point, tool === 'mask-add' ? 'add' : 'erase', brushSize); onChange(); return; }
+    if (tool === 'mask-add' || tool === 'mask-erase') { controller.maskStroke(point, gesture.current?.kind === 'mask' ? gesture.current.mode : 'add', brushSize); onChange(); return; }
     const rgba = [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16), alpha];
     controller.stroke(point, tool === 'eraser' ? 'eraser' : 'pencil', rgba, brushSize); onChange();
   };
@@ -106,7 +109,7 @@ export function ImageEditCanvas({ controller, version, tool, color, alpha, brush
     if (event.button !== 0 && event.button !== 1) return;
     event.preventDefault(); canvas.current?.focus();
     const point = pixel(event);
-    if (tool === 'pan' || event.button === 1) gesture.current = { kind: 'pan', x: event.clientX, y: event.clientY, panX: view.panX, panY: view.panY };
+    if (tool === 'pan' || event.button === 1 || space.current) gesture.current = { kind: 'pan', x: event.clientX, y: event.clientY, panX: view.panX, panY: view.panY };
     else {
       if (disabled || display !== 'candidate' || showContext || !point) return;
       try {
@@ -114,9 +117,16 @@ export function ImageEditCanvas({ controller, version, tool, color, alpha, brush
           const offset = (point.y * controller.width + point.x) * 4;
           onColor(`#${Array.from(controller.pixels.subarray(offset, offset + 3), byte => byte.toString(16).padStart(2, '0')).join('')}`, controller.pixels[offset + 3]); return;
         }
-        if (tool === 'connected') { controller.selectRegion({ type: 'connected-color', ...point, tolerance }); onChange(); return; }
-        if (tool === 'rectangle') { gesture.current = { kind: 'rectangle', start: point, last: point }; setSelectionPreview({ ...point, width: 1, height: 1 }); }
-        else if (tool === 'mask-add' || tool === 'mask-erase') { controller.beginMaskStroke(); gesture.current = { kind: 'mask' }; paint(point); }
+        const combination = event.altKey ? 'subtract' : event.shiftKey ? 'add' : selectionMode;
+        onSelectionVisible(true);
+        if (tool === 'connected') { controller.combineRegion({ type: 'connected-color', ...point, tolerance }, combination); onChange(); return; }
+        if (tool === 'rectangle') {
+          const rect = controller.region?.type === 'rectangle' ? controller.region : null;
+          const handle = rect && selectionVisible && combination === 'replace' ? rectangleHandle(point, rect, 8 / view.zoom) : null;
+          if (rect && handle) { gesture.current = { kind: 'transform', start: point, rectangle: rect, handle, next: rect }; setSelectionPreview(rect); }
+          else { gesture.current = { kind: 'rectangle', start: point, last: point, mode: combination }; setSelectionPreview({ ...point, width: 1, height: 1 }); }
+        }
+        else if (tool === 'mask-add' || tool === 'mask-erase') { controller.beginMaskStroke(combination === 'replace' ? 'replace' : 'add'); gesture.current = { kind: 'mask', mode: combination === 'subtract' ? 'erase' : 'add' }; paint(point); }
         else { controller.beginStroke(); gesture.current = { kind: 'paint' }; paint(point); }
       } catch (error) { gesture.current = null; controller.cancelStroke(); controller.cancelMaskStroke(); onChange(); onError(error instanceof Error ? error.message : '画布操作失败。'); return; }
     }
@@ -125,9 +135,10 @@ export function ImageEditCanvas({ controller, version, tool, color, alpha, brush
   const pointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const active = gesture.current; if (!active) return;
     if (active.kind === 'pan') { setView(old => ({ ...old, panX: active.panX + event.clientX - active.x, panY: active.panY + event.clientY - active.y })); return; }
-    const point = pixel(event); if (!point) return;
+    const point = pixel(event, true); if (!point) return;
     try {
       if (active.kind === 'paint' || active.kind === 'mask') paint(point);
+      else if (active.kind === 'transform') { active.next = transformRectangle(active.rectangle, active.handle, active.start, point, controller.width, controller.height); setSelectionPreview(active.next); }
       else { active.last = point; setSelectionPreview({ x: Math.min(active.start.x, point.x), y: Math.min(active.start.y, point.y), width: Math.abs(point.x - active.start.x) + 1, height: Math.abs(point.y - active.start.y) + 1 }); }
     } catch (error) { gesture.current = null; controller.cancelStroke(); controller.cancelMaskStroke(); onChange(); onError(error instanceof Error ? error.message : '这一笔未写入。'); }
   };
@@ -136,10 +147,20 @@ export function ImageEditCanvas({ controller, version, tool, color, alpha, brush
     try {
       if (active?.kind === 'paint') { if (cancel) controller.cancelStroke(); else controller.endStroke(); onChange(); }
       if (active?.kind === 'mask') { if (cancel) controller.cancelMaskStroke(); else controller.endMaskStroke(); onChange(); }
-      if (active?.kind === 'rectangle' && !cancel) { controller.selectRectangle(active.start, active.last); onChange(); }
+      if (active?.kind === 'transform' && !cancel) { controller.selectRegion({ type: 'rectangle', ...active.next }); onChange(); }
+      if (active?.kind === 'rectangle' && !cancel) { controller.selectRectangle(active.start, active.last, active.mode); onChange(); }
     } catch (error) { onChange(); onError(error instanceof Error ? error.message : '选区未改变。'); }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
+  useEffect(() => () => { controller.cancelStroke(); controller.cancelMaskStroke(); gesture.current = null; }, [controller]);
+  const rectangle = controller.region?.type === 'rectangle' ? controller.region : null;
+  useEffect(() => {
+    const element = canvas.current;
+    const down = (event: KeyboardEvent) => { if (event.code === 'Space') { event.preventDefault(); space.current = true; } };
+    const up = () => { space.current = false; };
+    element?.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('blur', up);
+    return () => { element?.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', up); };
+  }, []);
   return <div className="ie-canvas-area">
     <div className="ie-viewbar">
       <Button size="sm" variant="outline" onClick={fit}>适配</Button>
@@ -148,27 +169,47 @@ export function ImageEditCanvas({ controller, version, tool, color, alpha, brush
       <output aria-label="当前缩放">{Math.round(view.zoom * 100)}%</output>
       <Button size="sm" variant="ghost" aria-label="放大" onClick={() => zoomTo(view.zoom * 1.5)}>+</Button>
       <label><input type="checkbox" checked={grid} onChange={event => setGrid(event.target.checked)} />网格</label>
-      <label><input type="checkbox" checked={selectionVisible} onChange={event => setSelectionVisible(event.target.checked)} />选区</label>
+      <label><input type="checkbox" checked={selectionVisible} onChange={event => onSelectionVisible(event.target.checked)} />显示修改范围</label>
       <select aria-label="画布底色" value={background} onChange={event => setBackground(event.target.value)}><option value="checker">棋盘格</option><option value="dark">深色</option><option value="light">浅色</option></select>
     </div>
     <div ref={viewport} className={`ie-viewport ie-bg-${background} ${tool === 'pan' ? 'ie-pan' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event => finishPointer(event)} onPointerCancel={event => finishPointer(event, true)}>
       <div className="ie-world" style={{ width: controller.width, height: controller.height, transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}>
         {showContext && contextLayers.map((layer, index) => !layer.target && <img key={layer.id || index} src={layer.url} alt="只读上下文图层" width={layer.width} height={layer.height} draggable={false} style={{ position: 'absolute', left: layer.x || 0, top: layer.y || 0, width: layer.width, height: layer.height, opacity: layer.opacity ?? 1, zIndex: index }} />)}
         <canvas ref={canvas} className="ie-image" tabIndex={0} aria-label="图片像素画布" style={showContext ? { left: contextLayers.find(layer => layer.target)?.x || 0, top: contextLayers.find(layer => layer.target)?.y || 0, width: contextLayers.find(layer => layer.target)?.width || controller.width, height: contextLayers.find(layer => layer.target)?.height || controller.height, zIndex: Math.max(0, contextLayers.findIndex(layer => layer.target)) } : undefined} />
-        <canvas ref={selectionCanvas} className="ie-selection" aria-label="可编辑区域显示层" style={{ visibility: !showContext && selectionVisible ? 'visible' : 'hidden' }} />
+        <canvas ref={selectionCanvas} className="ie-selection" aria-label="可编辑区域显示层" style={{ visibility: !showContext && selectionVisible && display === 'candidate' && !viewPixels ? 'visible' : 'hidden' }} />
         {grid && view.zoom >= 8 && !showContext && <div className="ie-grid" />}
+        {rectangle && selectionVisible && display === 'candidate' && !viewPixels && !showContext && !selectionPreview && <div className="ie-rectangle-outline" style={{ left: rectangle.x, top: rectangle.y, width: rectangle.width, height: rectangle.height, borderWidth: 1 / view.zoom }}>{['nw', 'ne', 'sw', 'se'].map(handle => <i key={handle} className={`ie-handle ie-handle-${handle}`} style={{ width: 8 / view.zoom, height: 8 / view.zoom }} />)}</div>}
         {selectionPreview && <div className="ie-drag-selection" style={{ left: selectionPreview.x, top: selectionPreview.y, width: selectionPreview.width, height: selectionPreview.height, borderWidth: 1 / view.zoom }} />}
       </div>
     </div>
-    <p className="ie-hint">滚轮缩放 · 平移工具或中键拖动 · {showContext ? '上下文只读，不进入图片输出' : display === 'candidate' ? '暗色区域受保护；坐标对应原图像素' : '对比只读'} · {controller.width} × {controller.height}</p>
+    <p className="ie-hint">滚轮缩放 · 平移工具或中键拖动 · {showContext ? '上下文只读，不进入图片输出' : display === 'candidate' ? '蓝色范围可修改 · Shift 添加 · Alt 减去 · 拖动矩形内部移动、角点调整' : '对比只读'} · {controller.width} × {controller.height}</p>
   </div>;
 }
 
-function paintDiff(data: ImageData, controller: PixelController, x: number, y: number, width: number, height: number) {
+function paintDiff(data: ImageData, pixels: Uint8Array | Uint8ClampedArray, before: Uint8Array | Uint8ClampedArray, imageWidth: number, x: number, y: number, width: number, height: number) {
   for (let row = y; row < y + height; row++) for (let column = x; column < x + width; column++) {
-    const offset = (row * controller.width + column) * 4;
-    const changed = [0, 1, 2, 3].some(channel => controller.pixels[offset + channel] !== controller.sourcePixels[offset + channel]);
-    if (changed) data.data.set([255, 60, 155, 255], offset);
-    else { data.data.set(controller.sourcePixels.subarray(offset, offset + 4), offset); data.data[offset + 3] = Math.round(controller.sourcePixels[offset + 3] * 0.3); }
+    const offset = (row * imageWidth + column) * 4;
+    const changed = pixels[offset] !== before[offset] || pixels[offset + 1] !== before[offset + 1] || pixels[offset + 2] !== before[offset + 2] || pixels[offset + 3] !== before[offset + 3];
+    if (changed) { data.data[offset] = 255; data.data[offset + 1] = 60; data.data[offset + 2] = 155; data.data[offset + 3] = 255; }
+    else { data.data.set(before.subarray(offset, offset + 4), offset); data.data[offset + 3] = Math.round(before[offset + 3] * 0.3); }
   }
+}
+function paintSelection(data: ImageData, controller: PixelController, bounds: PixelBounds) {
+  const { width, height, mask } = controller;
+  for (let y = bounds.y; y < bounds.y + bounds.height; y++) for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+    const index = y * width + x, offset = index * 4;
+    const edge = mask[index] && (!x || !y || x === width - 1 || y === height - 1 || !mask[index - 1] || !mask[index + 1] || !mask[index - width] || !mask[index + width]);
+    data.data[offset] = 14; data.data[offset + 1] = 165; data.data[offset + 2] = 233;
+    data.data[offset + 3] = mask[index] ? edge ? 230 : 24 : 0;
+  }
+}
+function rectangleHandle(point: PixelPoint, rect: PixelBounds, radius: number) {
+  for (const [handle, x, y] of [['nw', rect.x, rect.y], ['ne', rect.x + rect.width - 1, rect.y], ['sw', rect.x, rect.y + rect.height - 1], ['se', rect.x + rect.width - 1, rect.y + rect.height - 1]] as const) if (Math.abs(point.x - x) <= radius && Math.abs(point.y - y) <= radius) return handle;
+  return point.x >= rect.x && point.x < rect.x + rect.width && point.y >= rect.y && point.y < rect.y + rect.height ? 'move' : null;
+}
+function transformRectangle(rect: PixelBounds, handle: string, start: PixelPoint, point: PixelPoint, width: number, height: number): PixelBounds {
+  if (handle === 'move') return { ...rect, x: Math.max(0, Math.min(width - rect.width, rect.x + point.x - start.x)), y: Math.max(0, Math.min(height - rect.height, rect.y + point.y - start.y)) };
+  const x1 = handle.includes('w') ? point.x : rect.x, x2 = handle.includes('e') ? point.x : rect.x + rect.width - 1;
+  const y1 = handle.includes('n') ? point.y : rect.y, y2 = handle.includes('s') ? point.y : rect.y + rect.height - 1;
+  return { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1) + 1, height: Math.abs(y2 - y1) + 1 };
 }

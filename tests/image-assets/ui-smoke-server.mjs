@@ -144,10 +144,11 @@ const vite = await createTestViteServer({
   // Scan this fixture's complete static graph before the first browser navigation.
   // The repository has other test HTML entries; cold discovery can otherwise replace
   // optimized React chunks while the initial page is still loading.
-  optimizeDeps: { entries: ['tests/image-assets/ui-smoke.html'] },
+  optimizeDeps: { noDiscovery: false, entries: ['tests/image-assets/ui-smoke.html', ...(process.env.WORKBENCH_UI_IMAGE_EDIT === '1' ? ['tests/image-edit/workspace-regression.html', 'tests/image-edit/workspace-interaction.html'] : [])] },
   plugins: [react(), { name: 'isolated-image-document-smoke', configureServer(server) {
     server.middlewares.use(async (request, response, next) => {
       const url = new URL(request.url, 'http://localhost');
+      if (url.pathname === '/__smoke/reload' && request.method === 'POST') { server.moduleGraph.invalidateAll(); return json(response, { reloaded: true }); }
       if (url.pathname === '/__smoke/status') return json(response, { run, providerCalls, clientErrors });
       if (url.pathname === '/__smoke/client-error') { try { clientErrors.push(JSON.parse(await readBody(request))); } catch {} return json(response, { ok: true }); }
       if (url.pathname === '/__smoke/stop' && request.method === 'POST') { json(response, { stopping: true }); setTimeout(() => void stop(), 50); return; }

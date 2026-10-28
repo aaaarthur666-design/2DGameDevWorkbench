@@ -42,6 +42,14 @@ export class PixelController {
   get canUndoMask() { return this.maskUndo.length > 0; }
   get canRedoMask() { return this.maskRedo.length > 0; }
   get maskStrokeActive() { return this.maskStrokeBefore !== null; }
+  /** Explicit editing-base change; browsing versions never calls this. */
+  setBase(base) {
+    if (this.dirty || this.strokeChanges || this.maskStrokeActive) throw new Error('请先保存或舍弃当前笔划。');
+    if (base.length !== this.pixels.length) throw new Error('候选尺寸与当前图片不一致。');
+    this.basePixels = new Uint8ClampedArray(base); this.pixels = new Uint8ClampedArray(base);
+    this.pixelUndo = []; this.pixelRedo = [];
+    this.dirtyBounds = { x: 0, y: 0, width: this.width, height: this.height };
+  }
   mark(offset) {
     const x = (offset / 4) % this.width, y = Math.floor(offset / 4 / this.width), old = this.dirtyBounds;
     this.dirtyBounds = old ? { x: Math.min(old.x, x), y: Math.min(old.y, y), width: Math.max(old.x + old.width, x + 1) - Math.min(old.x, x), height: Math.max(old.y + old.height, y + 1) - Math.min(old.y, y) } : { x, y, width: 1, height: 1 };
@@ -54,12 +62,17 @@ export class PixelController {
     const x = index % this.width, y = Math.floor(index / this.width), old = this.maskDirtyBounds;
     this.maskDirtyBounds = old ? { x: Math.min(old.x, x), y: Math.min(old.y, y), width: Math.max(old.x + old.width, x + 1) - Math.min(old.x, x), height: Math.max(old.y + old.height, y + 1) - Math.min(old.y, y) } : { x, y, width: 1, height: 1 };
   }
-  beginMaskStroke() {
+  beginMaskStroke(mode = 'add') {
     if (this.maskStrokeBefore) throw new Error('上一笔选区尚未结束。');
     this.maskStrokeBefore = new Uint8Array(this.mask); this.maskStrokeSpec = structuredClone(this.region); this.maskStrokeCount = this.selectionCount; this.maskLastPoint = null; this.maskStrokeChanged = false;
+    if (mode === 'replace') {
+      if (this.dirty) { this.cancelMaskStroke(); throw new Error('请先保存笔划，再重新选择区域。'); }
+      this.mask.fill(0); this.selectionCount = 0; this.maskStrokeChanged = true; this.maskRevision++;
+      this.maskDirtyBounds = { x: 0, y: 0, width: this.width, height: this.height };
+    }
   }
   maskStroke(point, mode, size = 1) {
-    if (!Number.isInteger(size) || size < 1 || size > 32 || !Number.isInteger(point.x) || !Number.isInteger(point.y) || point.x < 0 || point.y < 0 || point.x >= this.width || point.y >= this.height) throw new Error('选区笔刷坐标或大小无效。');
+    if (!Number.isInteger(size) || size < 1 || size > 256 || !Number.isInteger(point.x) || !Number.isInteger(point.y) || point.x < 0 || point.y < 0 || point.x >= this.width || point.y >= this.height) throw new Error('选区笔刷坐标或大小无效。');
     if (!this.maskStrokeBefore) this.beginMaskStroke();
     const value = mode === 'add' ? 1 : 0, start = -Math.floor((size - 1) / 2);
     const points = this.maskLastPoint ? rasterIntegerLine(this.maskLastPoint, point) : [point];
@@ -158,7 +171,22 @@ export class PixelController {
     this.region = spec ? structuredClone(spec) : null; this.mask = next.mask; this.selectionCount = next.count; this.maskRevision++;
     this.maskDirtyBounds = { x: 0, y: 0, width: this.width, height: this.height };
   }
-  selectRectangle(from, to) { const rect = normalizeSelection(from, to, this.width, this.height); if (rect) this.selectRegion({ type: 'rectangle', ...rect }); }
+  combineRegion(spec, mode = 'replace') {
+    if (mode === 'replace') { this.selectRegion(spec); return; }
+    const incoming = resolveRegion(this.sourcePixels, this.width, this.height, spec).mask;
+    this.beginMaskStroke();
+    try {
+      for (let index = 0; index < incoming.length; index++) if (incoming[index]) {
+        const value = mode === 'subtract' ? 0 : 1;
+        if (value === this.mask[index]) continue;
+        if (!value && this.dirtyOffsets.has(index * 4)) throw new Error('新选区会排除未保存笔划；请先保存笔划。');
+        this.mask[index] = value; this.selectionCount += value ? 1 : -1; this.maskStrokeChanged = true;
+      }
+      this.maskRevision++; this.maskDirtyBounds = { x: 0, y: 0, width: this.width, height: this.height };
+      this.endMaskStroke();
+    } catch (error) { this.cancelMaskStroke(); throw error; }
+  }
+  selectRectangle(from, to, mode = 'replace') { const rect = normalizeSelection(from, to, this.width, this.height); if (rect) this.combineRegion({ type: 'rectangle', ...rect }, mode); }
   undoMask() { if (!this.maskUndo.length) return; const previous = this.maskUndo.at(-1), next = structuredClone(this.region); this.selectRegion(previous, false); this.maskUndo.pop(); this.maskRedo.push(next); }
   redoMask() { if (!this.maskRedo.length) return; const next = this.maskRedo.at(-1), previous = structuredClone(this.region); this.selectRegion(next, false); this.maskRedo.pop(); this.maskUndo.push(previous); }
   patch() { return compactPixelChanges([...this.dirtyOffsets].map(offset => ({ offset, before: rgbaAt(this.basePixels, offset), after: rgbaAt(this.pixels, offset) }))); }
