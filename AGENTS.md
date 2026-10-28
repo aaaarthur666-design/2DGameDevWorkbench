@@ -19,3 +19,13 @@ Forge 是资产制作、共享编辑与 Godot 交付工作台。先按当前任�
 工作区中的 `work/`、`outputs/`、`games/` 是本地任务、素材或游戏数据。开发验证使用隔离目录；提交范围由任务决定，避免把私人数据或凭据带入源码。修改共享编辑与异步执行时，保留版本冲突检查、原请求身份及恢复记录。
 
 能力和参数从 `workbench/manifest.json` 及对应契约读取；按主题文档理解语义。若文档与代码不同，检查当前实现和相关测试，并在本次修改涉及的范围内修正文档。
+
+## Cursor Cloud specific instructions
+
+日常安装与启动仍按 [操作手册](docs/operations-manual.md)：在仓库根目录执行 `npm ci`、`npm run sprite-pipeline:setup`、`npm run dev`。Node.js 需 22.13+。
+
+Ubuntu 基础镜像里的 `python3` 没有 `ensurepip`。`python3 -c 'import ensurepip'` 失败时先安装 `python3-venv`，再跑 SpritePipeline setup。CI 与本机虚拟环境使用 Python 3.12。SpritePipeline 的 pytest 要在 `Tools/SpritePipeline` 目录用 `.venv/bin/python -m pytest -q` 运行。
+
+`npm run dev` 会拉起三个服务：前端 http://localhost:3000，Runtime Bridge http://127.0.0.1:8790/health，SpritePipeline http://127.0.0.1:7860。当前 Vite 开发服务器只监听 IPv6 `::1`，用 `http://127.0.0.1:3000` 会连接失败。
+
+`.env` 里的生图密钥可以留空。界面、`npm run workbench -- doctor --json` 和本地编辑器不依赖它们。`npm run test:engineering` 的 Godot 引擎检查只在 `GODOT_47_BIN` 指向 Godot 4.7.x 时执行，未配置时该部分会跳过。
