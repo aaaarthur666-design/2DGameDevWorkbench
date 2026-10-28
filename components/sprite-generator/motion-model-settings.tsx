@@ -65,6 +65,7 @@ const roles = {
   strategy: '生成策略专家',
   coordinator: '协调专家',
   reviewer: '视觉复核',
+  structure: '角色结构解析',
 };
 const identity = (p: ModelProfile) => `${p.provider}|${p.model}`;
 

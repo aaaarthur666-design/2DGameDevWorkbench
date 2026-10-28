@@ -186,7 +186,7 @@ class Checkpoints:
                 request['response'] = result.model_dump(mode='json')
             return result
         finally:
-            if request['state'] == 'submitting': request.update(state='failed_or_unknown',**receipt)
+            if request['state'] == 'submitting': request.update(state='failed_request' if receipt.get('http_status') else 'invalid_response' if receipt.get('response_id') or receipt.get('output_sha256') else 'failed_or_unknown',**receipt)
             with self.s.store.locked_job(job_id) as current:
                 self.run_record(current,index,stage).review['requests'][-1] = request
 

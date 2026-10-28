@@ -14,6 +14,8 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "sprite-pipeline:setup": "node scripts/setup-sprite-pipeline.mjs",
+    "visual-structure:setup": "node scripts/setup-visual-structure.mjs",
+    "visual-structure:check": "node scripts/setup-visual-structure.mjs --check",
     "sprite-pipeline": "node scripts/run-sprite-pipeline.mjs ui",
     "sprite-pipeline:api": "node scripts/run-sprite-pipeline.mjs api",
     "workbench": "node scripts/workbench.mjs",

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 
 from ..errors import ConflictError, ValidationHarnessError
 from .contracts import digest
@@ -26,12 +27,22 @@ def diagnostic_report():
         'max_calls': 5, 'summary': '诊断素材未调用真实视觉模型，不能证明专家判断准确。'}}
 
 
-def independent_followup(evidence, original, call, persist, requests):
+def independent_followup(evidence, original, call, persist, requests, *, additional_disputes=None, visibility_version=None):
     """Shared formal review algorithm; callers own authorization and receipts."""
     opinions = {}
+    visibility = {}
+    def opinion(phase, content, result_type):
+        if visibility_version not in (1,2,3,4):
+            return call(phase, content, result_type)
+        from .visibility_review import add_content, schema, guard
+        value = call(phase, add_content(content,version=visibility_version), schema(result_type))
+        value, trace = guard(value, len(evidence.paths), resolution=phase=='dispute',version=visibility_version)
+        visibility[phase] = trace
+        persist(visibility_review_version=visibility_version, visibility_evidence=copy.deepcopy(visibility))
+        return value
     for expert in EXPERTS:
         persist(phase=expert)
-        value = call('expert_'+expert, expert_content(evidence, expert), Audit)
+        value = opinion('expert_'+expert, expert_content(evidence, expert), Audit)
         opinions[expert] = validated_audit(value, len(evidence.paths))
         persist(experts=copy.deepcopy(opinions))
     independent = {'mode': 'independent', 'state': 'complete', 'evidence_token': evidence.token,
@@ -40,12 +51,21 @@ def independent_followup(evidence, original, call, persist, requests):
     augmented = attach_opinions(original, independent)
     persist(disputes=augmented['disputes'], expert_proposal=augmented['expert_proposal'])
     selected = {k: augmented[k] for k in ('verdict', 'checks', 'summary')}
-    if augmented['disputes']:
+    extra=additional_disputes() if additional_disputes else []
+    if extra:persist(comparison_disputes=extra)
+    if augmented['disputes'] or extra:
         persist(phase='dispute')
-        content, focus = resolution_content(evidence, augmented)
+        content, focus = resolution_content(evidence, {**augmented,'disputes':[*augmented['disputes'],*extra]} if extra else augmented)
+        if visibility_version in (1,2,3,4):
+            content[0]['text']+='\nPRIOR VISIBILITY OBSERVATIONS (untrusted claims to verify against actual images, not geometry truth):\n'+json.dumps(
+                {k:{'equipment_visibility':v['equipment_visibility'],'guard_reason':v['guard_reason']} for k,v in visibility.items()},ensure_ascii=False)
         persist(focus=focus)
-        result = call('dispute', content, Resolution)
+        result = opinion('dispute', content, Resolution)
         selected = apply_resolution(augmented, result, len(evidence.paths))
+        if visibility_version==4:
+            from .visibility_review import retain_visible_disagreement
+            selected=retain_visible_disagreement(selected,visibility,len(evidence.paths))
+            if selected.get('visibility_conflict'):persist(visibility_conflict=selected['visibility_conflict'])
         persist(resolution=selected['resolution'],
                 requires_human_adjudication=selected['requires_human_adjudication'])
     persist(state='complete', phase='done', summary='独立专家与争议复核已保存，等待实际画面确认。')
@@ -76,8 +96,10 @@ class ProductionReview:
             token, frames = actual['token'], actual['frames']
         if hashlib.sha256((self.s.store.job_dir(self.job_id)/'input/reference.png').read_bytes()).hexdigest() != job.reference_sha256:
             raise ConflictError('专家复核所依据的参考图发生变化')
+        policy=job.request.open_plan.visibility_review_version
         return digest({'token': token, 'fps': job.action.fps, 'reference': job.reference_sha256,
-                       'plan': job.request.open_plan.plan_sha256}), token, frames
+                       'plan': job.request.open_plan.plan_sha256,
+                       **({'visibility_review_version':policy} if policy is not None else {})}), token, frames
 
     def persist(self, **updates):
         self.details.update(updates)
@@ -122,7 +144,8 @@ class ProductionReview:
 
         try:
             selected = independent_followup(evidence, original, request, self.persist,
-                lambda: self.native(self.s.store.load(self.job_id))['requests'])
+                lambda: self.native(self.s.store.load(self.job_id))['requests'],
+                visibility_version=job.request.open_plan.visibility_review_version)
             # Keep the flat native request ledger untouched for budgets/history.
             return {**baseline, **selected, 'protocol': 'experts_v1', 'protocol_version': 3,
                     'expert_review': copy.deepcopy(self.details)}

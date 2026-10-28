@@ -8,6 +8,7 @@ import path from 'node:path';
 import { loadManifest, findCapability, validateInput, runConnector, refreshTask } from '../../lib/workbench/runtime.mjs';
 import { taskViewPath, taskPresentation } from '../../lib/workbench/presentation.mjs';
 import { createTestViteServer } from '../helpers/vite-server.mjs';
+import { verifyPlanningProgress } from './planning-progress.mjs';
 
 const root = path.resolve('work/test-runs', process.env.WORKBENCH_TEST_RUN, 'open-motion');
 await mkdir(root, { recursive: true });
@@ -35,6 +36,8 @@ try {
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,apiKey:'must-not-be-stored'}}).length);
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,budget:{max_generation_calls:99}}}).length);
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,review_protocol:'invented'}}).length);
+  assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,visual_structure:{analysis_id:'not-an-id',token:'0'.repeat(64)}}}).length);
+  assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,visual_structure:{analysis_id:'0'.repeat(32),token:'0'.repeat(64),sourcePath:'unexpected'}}}).length);
   let outcome = await runConnector(manifest,capability,input);
   const taskId = outcome.task.id;
   for (let n=0;n<100 && outcome.task.status==='running';n++) { await delay(100); outcome=await refreshTask(manifest,taskId); }
@@ -100,6 +103,24 @@ try {
   assert.deepEqual((await request(`/v1/open-motion/${workId}`)).job.candidates.map(c=>c.submission_attempts),attempts);
   // Real frontend proxy implementation, including refusal of arbitrary paths/origins.
   vite=await createTestViteServer({configFile:false,appType:'custom',logLevel:'error',resolve:{alias:{'@':process.cwd()}},server:{middlewareMode:true}});
+  const { motionPlanningProgress, motionPlanningRequestKey } = await vite.ssrLoadModule('/components/sprite-generator/open-motion-model.ts');
+  verifyPlanningProgress(motionPlanningProgress, motionPlanningRequestKey);
+  const {adjustmentRangeError,adjustmentAttemptBudget}=await vite.ssrLoadModule('/components/sprite-generator/motion-adjustment-range.ts');
+  assert.equal(adjustmentRangeError(14,15,16,[0],2,false),'','15–16 is a valid two-frame tail');
+  assert.equal(adjustmentRangeError(14,15,16,[0],2,true),'');
+  assert.match(adjustmentRangeError(15,15,16,[0],2,false),/只选了 1 帧/);
+  assert.match(adjustmentRangeError(15,14,16,[0],2,false),/开始帧不能大于/);
+  assert.match(adjustmentRangeError(12,14,16,[0],2,false),/要求偶数帧/);
+  assert.match(adjustmentRangeError(0,1,16,[0],2,false),/受保护/);
+  assert.match(adjustmentRangeError(12,15,16,[0],2,true),/选中数量，不是帧号/);
+  const attemptContext={attempt_scope:'selected_frames',attempt_limit:2,legacy_frame_attempts:Array(16).fill(0),tasks:[
+    {start:12,end:13,generation_calls:[]},{start:12,end:13,generation_calls:[{state:'submitted'}]},
+  ]};
+  assert.equal(adjustmentAttemptBudget(attemptContext,14,15).remaining,2);
+  assert.equal(adjustmentAttemptBudget(attemptContext,12,13).remaining,1);
+  attemptContext.tasks.push({start:12,end:13,generation_calls:[{state:'unknown'}]});
+  assert.deepEqual(adjustmentAttemptBudget(attemptContext,13,14).blocked,[14]);
+  assert.equal(adjustmentAttemptBudget(attemptContext,14,15).remaining,2);
   const proxy=await vite.ssrLoadModule('/app/api/workbench/open-motion/route.ts');
   assert.equal((await proxy.GET(new Request('http://localhost/api/workbench/open-motion?path=../secrets'))).status,400);
   assert.equal((await proxy.POST(new Request('http://localhost/api/workbench/open-motion',{method:'POST',headers:{origin:'https://foreign.example'},body:'{}'}))).status,403);
@@ -114,7 +135,9 @@ try {
   assert.equal(selection.orderedFrames.length,8);
   const altInput={operation:'create-motion-adjustment',openWorkId:workId,expectedRevision:1,candidateIndex:2,
     adjustmentStart:1,adjustmentEnd:2,adjustmentToken:selection.adjustmentContext.token,
-    adjustmentRequest:'我希望这一处抬手幅度更小，这是个人偏好，并非原版有错',generationAuthorized:true,requestKey:'isolated-adjustment-test'};
+    adjustmentRequest:'我希望涂选处颜色略亮，这是个人偏好，并非原版有错',adjustmentPreserveMotion:true,
+    adjustmentRegions:[1,2].map(frame=>({frame,source_sha256:selection.adjustmentContext.frames[frame].sha256,spans:[{start:1950,length:4}]})),
+    generationAuthorized:true,requestKey:'isolated-adjustment-test'};
   assert.deepEqual(validateInput(capability,altInput),[]);
   assert.ok(validateInput(capability,{...altInput,generationAuthorized:false}).length);
   let alt=await runConnector(manifest,capability,altInput);
@@ -122,6 +145,10 @@ try {
   assert.equal(alt.task.status,'attention_required');
   const alternative=JSON.parse(await readFile(alt.task.outputs.find(p=>p.endsWith('/result.json')),'utf8'));
   assert.equal(alternative.adjustment.state,'ready');
+  assert.equal(alternative.adjustment.preserve_motion,true);
+  assert.deepEqual(alternative.adjustment.edit_regions,altInput.adjustmentRegions);
+  assert.ok(alternative.adjustment.spatial_protection.frames.every(f=>f.protected_changed_pixels===0));
+  assert.equal(alternative.adjustment.review.comparison.state,'complete');
   assert.equal(alternative.adjustment.planning_calls.length,1);assert.equal(alternative.adjustment.review_calls.length,5);
   assert.equal(alternative.originalFrames.length,8);assert.equal(alternative.alternativeFrames.length,8);
   for(const i of [0,3,4,5,6,7])assert.deepEqual(await readFile(alternative.originalFrames[i]),await readFile(alternative.alternativeFrames[i]));

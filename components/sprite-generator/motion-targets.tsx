@@ -10,7 +10,13 @@ export function MotionTargets({work,onSaved}:{work:MotionWork;onSaved:(value:Mot
     try {onSaved(await motionRequest<MotionWork>(`open-motion/${work.id}/target`,{expected_revision:work.revision,stage_index:stage,png_base64:remove?null:png,note}));setPng('');}
     catch(e){setError((e as Error).message);} finally{setBusy(false);}
   }
-  return <details className="motion-card"><summary>用已有图片约束段末姿势（可选）</summary>
+  const stages=work.plan?.stages||[];
+  const imageCount=stages.filter((s,i)=>s.last_frame==='original'||work.end_targets?.some(t=>t.stage===i)).length;
+  return <section className="motion-card" aria-label="段末姿势引导">
+    <p className="motion-muted" data-testid="motion-target-status">{imageCount
+      ? `段末姿势图片：${imageCount}/${stages.length} 段${imageCount===stages.length?'，全部已绑定。':'；其他段仅使用文字姿势要求。'}`
+      : '段末姿势：当前仅使用文字要求，尚未绑定姿势图片。'}{' '}原图结构辅助不等于姿势图片约束。</p>
+    <details><summary>用已有图片约束段末姿势（可选）</summary>
     <p>先检查目标图的角色、朝向与装备，再绑定为本段结束参考。首图仍来自原图或前一段已确认末帧。生成结果需另行检查，不会被目标图硬替换。</p>
     {work.end_targets?.map(t=><div key={t.stage} className="motion-small-reference"><img src={motionUrl(`open-motion/${work.id}/targets/${t.stage}`,{revision:String(work.revision),v:t.sha256})} alt={`第 ${t.stage+1} 段目标图片`} /><p>第 {t.stage+1} 段：{t.note}</p></div>)}
     {!work.job&&work.status==='ready'&&work.latest_revision===work.revision&&<>
@@ -22,5 +28,6 @@ export function MotionTargets({work,onSaved}:{work:MotionWork;onSaved:(value:Mot
       {work.end_targets?.some(t=>t.stage===stage)&&<button disabled={busy||note.trim().length<4} onClick={()=>void save(true)}>取消本段图片约束</button>}
     </>}
     {error&&<p className="motion-danger">{error}</p>}
-  </details>;
+    </details>
+  </section>;
 }

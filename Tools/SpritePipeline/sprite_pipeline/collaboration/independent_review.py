@@ -34,6 +34,13 @@ def expert_content(evidence, expert):
     context = {'scope': evidence.manifest['scope'], 'frame_count': len(evidence.paths),
                'fps': evidence.manifest['fps'], 'duration_seconds': len(evidence.paths)/evidence.manifest['fps'],
                **evidence.context()}
+    from .tracking_review import structure_context
+    structure=structure_context(evidence)
+    if structure is not None:
+        from .tracking_review import STRUCTURE_REVIEW_RULES
+        prompt+='Supplementary structure estimates may be wrong. Compare them with actual pixels; never turn a tracking failure into an artwork defect. Mask centers are not joints; axes are undirected, not facing. Sparse contact observations cannot be extended across unobserved frames.\n'
+        prompt+=STRUCTURE_REVIEW_RULES+'\n'
+        context['visual_structure']=structure
     return [{'type': 'input_text', 'text': prompt + json.dumps(context, ensure_ascii=False)}, *evidence.pictures()]
 
 
@@ -90,4 +97,6 @@ def attach_opinions(baseline, independent):
         expert_proposal={'verdict':independent['verdict'],'checks':copy.deepcopy(independent['checks'])},
         requests=copy.deepcopy(baseline['requests']+independent['requests']),
         extra_calls=len(independent['requests']),summary='现有检查结论保留；独立专家仅补充意见和争议，不改写结论。')
+    if independent.get('structure_binding'):
+        result['structure_binding']=copy.deepcopy(independent['structure_binding'])
     return result

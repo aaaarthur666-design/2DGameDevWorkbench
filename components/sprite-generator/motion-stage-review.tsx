@@ -5,6 +5,9 @@ import { motionRequest, motionUrl, type MotionWork, type MotionStage, type Motio
 import { MotionLocalRepair, type RepairAttempt } from './motion-local-repair';
 import { MotionVisualReview } from './motion-visual-review';
 import { MotionAdjustment } from './motion-adjustment';
+import { MotionTemporalStructure } from './motion-temporal-structure';
+import { MotionPanel } from './motion-panel';
+import type { ReactNode } from 'react';
 
 type Evidence = {
   token: string;
@@ -16,8 +19,9 @@ type Evidence = {
   review: MotionReview;
 };
 
-export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
+export function MotionStageReview({work, candidate, stage, readOnly, onSaved, expertRecord}: {
   work: MotionWork; candidate: number; stage: number; readOnly: boolean; onSaved: (w: MotionWork) => void;
+  expertRecord?: ReactNode;
 }) {
   const [data,setData]=useState<Evidence|null>(null), [error,setError]=useState('');
   const [frame,setFrame]=useState(0), [playing,setPlaying]=useState(false), [loadedToken,setLoadedToken]=useState('');
@@ -70,6 +74,7 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
   const canAccept=!readOnly&&!busy&&!adjustmentPending&&loaded&&played&&watched&&note.trim().length>=4&&
     data.state==='awaiting_review'&&(data.review.verdict==='pass'||ack)&&(!trimmed||ackTrim)&&!data.repairs?.some(a=>['submitting','pending','unknown','awaiting_review'].includes(a.state));
   return <section className="motion-card motion-checkpoint">
+    {!adjustmentOpen&&<>
     <h2>确认第 {stage+1} 段 · {data.definition.name}</h2>
     <p>候选 {candidate} · 本段 {data.frames.length} 帧。检查完整片段后，末帧将锁定为下一段的实际姿势锚点。</p>
     <div className="motion-canvas motion-large">
@@ -81,6 +86,19 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
       <label><input type="checkbox" checked={slow} onChange={e=>setSlow(e.target.checked)} />半速查看</label>
     </div>
     <input aria-label="当前片段逐帧查看" type="range" min={0} max={data.frames.length-1} value={frame} disabled={playing} onChange={e=>setFrame(Number(e.target.value))} />
+    <MotionVisualReview report={data.review} compact />
+    <div className="motion-secondary-actions">
+    <MotionPanel title="检查详情">
+      <MotionVisualReview report={data.review} />
+      <h3>本段要求</h3><ul>{data.definition.acceptance.map(item=><li key={item}>{item}</li>)}</ul>
+      {expertRecord}
+    </MotionPanel>
+    <MotionPanel title="高级工具">
+    <MotionTemporalStructure work={work} candidate={candidate} stage={stage} frame={frame} frameSha={data.frames[frame]?.sha256||''}
+      playing={false} readOnly={readOnly} onFrame={value=>setFrame(Math.max(0,Math.min(data.frames.length-1,value)))} onStop={()=>setPlaying(false)}>
+      <img src={motionUrl(`${route}/frames/${frame}`,{...query,v:data.token})} alt={`结构观察第 ${frame+1} 帧`} />
+    </MotionTemporalStructure>
+    <input aria-label="工具逐帧查看" type="range" min={0} max={data.frames.length-1} value={frame} onChange={e=>{setPlaying(false);setFrame(Number(e.target.value));}} />
     <div className="motion-small-reference">
       <img src={motionUrl(`${route}/frames/${endpoint}`,{...query,v:data.token})} alt="待确认的实际末姿势" />
       <div><b>目标末姿势</b><p>{data.definition.checkpoint?.endpoint}</p><p>{data.definition.checkpoint?.rhythm}</p></div>
@@ -90,16 +108,19 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved}: {
       <label>本段结束锚点<select aria-label="本段结束锚点" value={endpoint} onChange={e=>{setAnchor(Number(e.target.value));setAckTrim(false);setWatched(false);}}>{data.frames.map((_,i)=><option key={i} value={i}>第 {i+1} 帧{i===data.frames.length-1?'（原始末帧）':''}</option>)}</select></label>
       {trimmed&&<label><input type="checkbox" checked={ackTrim} onChange={e=>setAckTrim(e.target.checked)} />确认采用第 1–{endpoint+1} 帧，其余原始帧保留在记录中</label>}
     </details>
-    {!adjustmentOpen&&<><ul>{data.definition.acceptance.map(item=><li key={item}>{item}</li>)}</ul>
-    <MotionVisualReview report={data.review} />
+    {!!data.repairs?.length&&<details><summary>旧版局部修复记录</summary><MotionLocalRepair work={work} candidate={candidate} stage={stage} token={data.token} count={data.frames.length} attempts={data.repairs} onSaved={onSaved} readOnly={readOnly}/></details>}
+    <h3>停止后续制作</h3><p>保留已确认片段和原始帧。返回描述修改方案时建立新版本，不会自动重新收费生成。</p>
+    <label>停止原因<textarea value={note} onChange={e=>setNote(e.target.value)} maxLength={2000}/></label>
+    <button disabled={readOnly||busy||note.trim().length<4||adjustmentPending} onClick={()=>void decide('reject')}>本段不合格，停止后续制作</button>
+    </MotionPanel>
+    </div>
+    {trimmed&&<p className="motion-notice">将以第 {endpoint+1} 帧结束本段。其余原始帧保留。</p>}
     <label><input type="checkbox" checked={watched} disabled={!played} onChange={e=>setWatched(e.target.checked)} />我已播放此段并检查实际末姿势、装备和节奏</label>
     <label>本段检查结论<textarea value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="记录实际看到的姿势、运动及衔接情况" /></label>
     {data.review.verdict!=='pass'&&<label><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)} />已核对模型的未通过或不确定意见，按实际画面确认接受</label>}
     {error&&<p className="motion-danger">{error}</p>}
     <button className="motion-primary" disabled={!canAccept} onClick={()=>void decide('accept')}>确认此段，继续制作</button>
-    <details><summary>本段未达到要求</summary><p>停止后续制作，保留已确认片段和原始帧。返回描述修改方案时，会建立新版本；不会自动重新收费生成。</p><button disabled={readOnly||busy||note.trim().length<4} onClick={()=>void decide('reject')}>本段不合格，停止后续制作</button></details>
     </>}
     <MotionAdjustment work={work} candidate={candidate} stage={stage} onSaved={onSaved} readOnly={readOnly} onPendingChange={setAdjustmentPending} onOpenChange={setAdjustmentOpen}/>
-    {!!data.repairs?.length&&<details><summary>旧版局部修复记录</summary><MotionLocalRepair work={work} candidate={candidate} stage={stage} token={data.token} count={data.frames.length} attempts={data.repairs} onSaved={onSaved} readOnly={readOnly}/></details>}
   </section>;
 }

@@ -4,7 +4,10 @@ from ..errors import ValidationHarnessError
 from ..attack_timeline import is_context_frame
 
 
-def compiled_prompt(plan, character, stage_index):
+def compiled_prompt(plan, character, stage_index, *, policy_version=None):
+    if policy_version in (1,2,3,4,5):
+        from .generation_conditions import compile_conditions
+        return compile_conditions(plan, stage_index, policy_version=policy_version)
     stage = plan.stages[stage_index]
     if not plan.quality:
         return stage.prompt  # Immutable v1 tasks retain their original execution.
@@ -38,7 +41,7 @@ def compiled_prompt(plan, character, stage_index):
     return result
 
 
-def validate_quality_plan(plan, spec, character, *, require_checkpoints=False):
+def validate_quality_plan(plan, spec, character, *, require_checkpoints=False, policy_version=None):
     if plan.quality is None:
         raise ValidationHarnessError('方案缺少通用动作质量合同：事件次数/方向、装备连续性、结束状态、节奏及三项验收标准')
     if len(plan.quality.key_poses)<3:
@@ -48,7 +51,7 @@ def validate_quality_plan(plan, spec, character, *, require_checkpoints=False):
     if require_checkpoints and plan.quality.version >= 4 and any(s.motion is None for s in plan.stages):
         raise ValidationHarnessError('新方案须补充通用运动与外观约束，包括朝向、支撑、发力、轨迹与边界节奏')
     for i in range(len(plan.stages)):
-        compiled_prompt(plan, character, i)
+        compiled_prompt(plan, character, i, policy_version=policy_version)
     if spec.timing_mode == 'fixed' and plan.quality.playback_fps != spec.fps:
         raise ValidationHarnessError('用户固定了播放 FPS，方案不得更改')
 

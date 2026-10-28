@@ -503,12 +503,14 @@ class SpritePipelineService:
             work = OpenMotionWorkspace(self).load(binding.work_id)
             if (work.revision != binding.revision or work.plan_sha256 != binding.plan_sha256
                     or work.spec != binding.spec or work.plan != binding.plan
+                    or work.generation_policy_version != binding.generation_policy_version
+                    or work.visibility_review_version != binding.visibility_review_version
                     or (binding.plan.quality is not None and work.planning_config != binding.model_snapshot)
                     or work.character != character.model_dump(mode="json")):
                 raise ConflictError("任务、角色或方案已改变，请查看最新版本")
             if binding.compiled_prompts:
                 from .collaboration.quality import compiled_prompt
-                if binding.compiled_prompts != [compiled_prompt(binding.plan,character,i) for i in range(len(binding.plan.stages))]:
+                if binding.compiled_prompts != [compiled_prompt(binding.plan,character,i,policy_version=binding.generation_policy_version) for i in range(len(binding.plan.stages))]:
                     raise ConflictError('实际生成提示词与方案合同不一致')
             base_action = ActionPreset(action_id=request.action_id, display_name=binding.plan.title,
                 frame_count=sum(stage.frame_count for stage in binding.plan.stages),
@@ -568,7 +570,8 @@ class SpritePipelineService:
                        motion_inputs[1] if motion_inputs else segment_inputs[2] if segment_inputs else compose_generation_prompt(character, action))
         if request.open_plan and request.open_plan.plan.quality:
             from .collaboration.quality import compiled_prompt
-            full_prompt = '\n\n'.join(request.open_plan.compiled_prompts or [compiled_prompt(request.open_plan.plan,character,i) for i in range(len(request.open_plan.plan.stages))])
+            full_prompt = '\n\n'.join(request.open_plan.compiled_prompts or [compiled_prompt(request.open_plan.plan,character,i,
+                policy_version=request.open_plan.generation_policy_version) for i in range(len(request.open_plan.plan.stages))])
         if request.provider == "pixellab" and request.open_plan is None and len(full_prompt) > 1000:
             raise ValidationHarnessError(
                 "composed PixelLab action prompt exceeds the 1000 character API limit",

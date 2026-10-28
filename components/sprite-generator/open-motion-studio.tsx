@@ -19,6 +19,7 @@ import {
   ArrowRight,
   LoaderCircle,
   Check,
+  CircleAlert,
   History,
   Settings2,
   Upload,
@@ -43,6 +44,8 @@ import {
   motionSteps,
   motionStep,
   motionSpecsEqual,
+  motionPlanningProgress,
+  motionPlanningRequestKey,
   motionRequest,
   motionUrl,
   type MotionSpec,
@@ -53,7 +56,10 @@ import {
 import './open-motion.css';
 import { MotionStageReview } from './motion-stage-review';
 import { MotionAdjustment } from './motion-adjustment';
+import { MotionPanel } from './motion-panel';
+import { MotionTemporalStructure } from './motion-temporal-structure';
 import { MotionVisualReview } from './motion-visual-review';
+import { MotionStructure } from './motion-structure';
 
 type Character = {
   id: string;
@@ -202,6 +208,8 @@ function OpenMotionStudio({
     [uploadFacing, setUploadFacing] = useState('right');
   const [remoteId, setRemoteId] = useState('');
   const [adjustmentOpen,setAdjustmentOpen]=useState(false);
+  const structureDraftSaver = useRef<(() => void) | null>(null);
+  const registerStructureDraftSaver = useCallback((save: (() => void) | null) => { structureDraftSaver.current = save; }, []);
   const settingsRef = useRef<HTMLDetailsElement>(null);
   const requestKey = useRef(''),
     lastStatus = useRef(-1),
@@ -254,8 +262,12 @@ function OpenMotionStudio({
     ),
   );
   const maxStep = motionStep(work);
+  const planningStopped = Boolean(work && !work.plan && !work.job &&
+    ['planning_failed', 'budget_exhausted'].includes(work.status));
   const checkpoint = work?.job?.candidates.flatMap(c=>c.plan_execution.stages.flatMap((s,i)=>
     s.state==='awaiting_review'?[{candidate:c.candidate_index,stage:i}]:[]))[0];
+  const recoverable=work?.job?.candidates.some(c=>c.plan_execution.stages.some(s=>
+    s.state==='unknown'||(!work.job?.plan_control.enabled&&['submitting','pending'].includes(s.state))));
 
   const applyWork = useCallback((value: MotionWork) => {
     setWork(value);
@@ -317,7 +329,9 @@ function OpenMotionStudio({
                 ...blankSpec,
                 ...saved.spec,
                 review_protocol: saved.spec.review_protocol,
-                ...(characterId ? { character_id: characterId } : {}),
+                ...(characterId ? { character_id: characterId,
+                  ...(characterId !== saved.spec.character_id ? { visual_structure: null } : {}),
+                } : {}),
               });
               requestKey.current = saved.requestKey || '';
               if (loaded && !motionSpecsEqual(saved.spec, loaded.spec))
@@ -415,6 +429,7 @@ function OpenMotionStudio({
         : [],
       save: async () => {
         await saveDraft();
+        structureDraftSaver.current?.();
         markEditorSaved('sprite-generator');
       },
     });
@@ -448,10 +463,11 @@ function OpenMotionStudio({
   };
   const edit = (value: Partial<MotionSpec>) => {
     requestKey.current = '';
-    setSpec((previous) => ({ ...previous, ...value }));
+    setSpec((previous) => ({ ...previous, ...('character_id' in value && value.character_id!==previous.character_id ? {visual_structure:null}:{}), ...value }));
   };
   const plan = () =>
     run(async () => {
+      if (readOnly || work?.status === 'planning') return;
       if (
         work &&
         ['ready', 'executing'].includes(work.status) &&
@@ -466,7 +482,7 @@ function OpenMotionStudio({
           '先配置规划模型，再制定方案。PixelLab 用于后续动画制作。',
         );
       }
-      if (!requestKey.current) requestKey.current = crypto.randomUUID();
+      requestKey.current = motionPlanningRequestKey(work, requestKey.current);
       await saveDraft();
       const value = await motionRequest<MotionWork>(
         work ? `open-motion/${work.id}/revise` : 'open-motion',
@@ -621,18 +637,7 @@ function OpenMotionStudio({
               <div className="motion-grid">
                 <section className="motion-card motion-reference">
                   <h2>使用哪个角色</h2>
-                  <div className="motion-canvas">
-                    {spec.character_id ? (
-                      <img
-                        src={motionUrl(
-                          `open-motion/references/${spec.character_id}`,
-                        )}
-                        alt="所选角色参考图"
-                      />
-                    ) : (
-                      <span>选择或上传角色</span>
-                    )}
-                  </div>
+                  <MotionStructure key={spec.character_id} characterId={spec.character_id} disabled={readOnly || busy} registerDraftSaver={registerStructureDraftSaver} modelConfiguration={JSON.stringify(configuration?.configuration || null)} generationStructure={spec.visual_structure} onGenerationStructure={(value)=>edit({visual_structure:value})} />
                   <label>
                     已有角色
                     <select
@@ -900,32 +905,27 @@ function OpenMotionStudio({
             {step === 1 && work && (
               <div className="motion-grid motion-plan-grid">
                 <section className="motion-card">
-                  <h2>{work.plan?.title || '正在形成制作方案'}</h2>
+                  <h2>{work.plan?.title || (work.status === 'planning' ? '正在形成制作方案' : '制作方案未完成')}</h2>
                   <p>{work.plan?.summary || work.message}</p>
+                  {work.visual_structure && <p className="motion-muted">已使用核对后的角色结构 · 版本 {work.visual_structure.revision}。各段采用的结构依据可在描述中展开查看。</p>}
                   {work.plan?.quality&&<p className="motion-muted">复核方式：{work.spec.review_protocol==='experts_v1'?'独立专家与争议复核':'基础视觉检查'}；
                     本方案最多预留 {(work.spec.review_protocol==='experts_v1'?5:2)*(work.plan.quality.version>=3?work.plan.stages.length+1:1)*work.spec.candidate_count} 次视觉请求，
                     已设总上限 {work.spec.budget.max_review_calls ?? 10} 次。按实际调用计费；确认片段和最终采用仍由你决定。</p>}
                   {!work.plan && (
                     <div className="motion-experts">
-                      {Object.entries(roles).map(([role, name]) => (
-                        <div key={role}>
-                          <span>
-                            {work.messages.some((m) => m.role === role) ? (
-                              <Check size={17} />
-                            ) : work.planning_calls.some(
-                                (c) => c.role === role,
-                              ) ? (
-                              <LoaderCircle
-                                size={17}
-                                className="animate-spin"
-                              />
-                            ) : (
-                              '·'
-                            )}
-                          </span>
-                          {name}
-                        </div>
-                      ))}
+                      {Object.entries(roles).map(([role, name]) => {
+                        const progress = motionPlanningProgress(work, role);
+                        return (
+                          <div key={role} data-planning-role={role} data-state={progress.state}>
+                            <span aria-hidden="true">
+                              {progress.state === 'complete' ? <Check size={17} />
+                                : progress.state === 'running' ? <LoaderCircle size={17} className="animate-spin" />
+                                : ['failed', 'unknown', 'blocked'].includes(progress.state) ? <CircleAlert size={17} /> : '·'}
+                            </span>
+                            <span>{name}<small>{progress.label}</small></span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   {work.plan?.questions.length ? (
@@ -962,6 +962,7 @@ function OpenMotionStudio({
                               ))}
                             </ul>
                             <p className="motion-prompt">{s.prompt}</p>
+                            {s.structure_usage && <p>结构依据：{s.structure_usage.effect}</p>}
                             {s.checkpoint&&<p>{s.checkpoint.rhythm} · {s.checkpoint.reason}</p>}
                             {s.motion&&<><p>视角与朝向：{s.motion.camera} · {s.motion.orientation}</p><p>支撑与发力：{s.motion.support} · {s.motion.drive}</p><p>物体与轨迹：{s.motion.appearance} · {s.motion.trajectory}</p><p>衔接：{s.motion.entry} → {s.motion.exit} · {({pass_through:'连续经过',settle:'逐渐收稳',intentional_hold:'有意停顿'} as Record<string,string>)[s.motion.boundary]}</p>{s.motion.holds.map((h,i)=><p key={i}>第 {h.start}–{h.end} 帧停顿：{h.reason}</p>)}</>}
                           </details>
@@ -969,11 +970,10 @@ function OpenMotionStudio({
                       </li>
                     ))}
                   </ol>
-                  <MotionTargets key={`${work.id}:${work.revision}`} work={work} onSaved={applyWork} />
+                  {work.plan && <MotionTargets key={`${work.id}:${work.revision}`} work={work} onSaved={applyWork} />}
                   {work.status !== 'planning' && !work.plan && (
                     <div className="motion-notice">
-                      {work.message}
-                      。可以返回描述，检查设置后明确发起新一轮规划。
+                      本轮规划已停止，未提交绘图。可直接重新制定方案，或返回修改要求；旧版本和调用记录保留。
                     </div>
                   )}
                 </section>
@@ -1049,7 +1049,7 @@ function OpenMotionStudio({
             )}
             {step === 2 && work && (
               <div className={`motion-grid${checkpoint?' motion-review-grid':''}`}>
-                {checkpoint ? <MotionStageReview key={`${work.id}:${work.revision}:${checkpoint.candidate}:${checkpoint.stage}`} work={work} candidate={checkpoint.candidate} stage={checkpoint.stage} readOnly={readOnly} onSaved={applyWork} /> : <section className="motion-card">
+                {checkpoint ? <MotionStageReview key={`${work.id}:${work.revision}:${checkpoint.candidate}:${checkpoint.stage}`} work={work} candidate={checkpoint.candidate} stage={checkpoint.stage} readOnly={readOnly} onSaved={applyWork} expertRecord={<ExpertRecord work={work}/>} /> : <section className="motion-card">
                   <h2>{work.job?.plan_control.message || work.message}</h2>
                   <div className="motion-canvas motion-large">
                     {work.job && (
@@ -1099,8 +1099,7 @@ function OpenMotionStudio({
                   <p>
                     刷新或关闭页面不会重发已提交的请求。暂停会阻止下一段提交，已发出的请求仍会取回。
                   </p>
-                  <details>
-                    <summary>中断后的恢复</summary>
+                  {recoverable&&<MotionPanel title="中断后的恢复">
                     <p>
                       查询只取回原请求。如果提交结果未知，需从 PixelLab
                       查到原请求编号后绑定；不会自动重做。
@@ -1143,14 +1142,14 @@ function OpenMotionStudio({
                     >
                       查询原请求
                     </button>
-                  </details>
-                  <ExpertRecord work={work} />
+                  </MotionPanel>}
+                  {!checkpoint&&<MotionPanel title="检查详情"><ExpertRecord work={work} /></MotionPanel>}
                 </aside>
               </div>
             )}
             {(step === 3 || step === 4) && work?.job && (
-              <div className="motion-grid motion-review-grid">
-                <section className="motion-card">
+              <div className={`motion-grid motion-review-grid${step===3&&adjustmentOpen?' motion-adjusting':''}`}>
+                <section className="motion-card motion-source-preview">
                   <div className="motion-card-title">
                     <h2>{work.plan?.title}</h2>
                     <label>
@@ -1185,6 +1184,8 @@ function OpenMotionStudio({
                       key={`${work.job.job_id}:${candidateIndex}`}
                       job={work.job}
                       candidate={candidate}
+                      work={work}
+                      readOnly={readOnly}
                     />
                   )}
                   {work.diagnostic_only && (
@@ -1204,8 +1205,10 @@ function OpenMotionStudio({
                           : '本任务仅有尺寸、透明度等技术检查；动作是否正确仍需人工确认。'}
                       </div>
                       {candidate?.quality_review && (
-                        <MotionVisualReview report={candidate.quality_review} />
+                        <MotionVisualReview report={candidate.quality_review} compact />
                       )}
+                      <MotionPanel title="检查详情">
+                      {candidate?.quality_review&&<MotionVisualReview report={candidate.quality_review}/>}
                       <ul className="motion-criteria">
                         {work.plan?.stages
                           .flatMap((s) => s.acceptance)
@@ -1213,6 +1216,8 @@ function OpenMotionStudio({
                             <li key={i}>{a}</li>
                           ))}
                       </ul>
+                      <ExpertRecord work={work}/>
+                      </MotionPanel>
                       {!!candidate?.hard_failures.length && (
                         <div className="motion-error">
                           {candidate.hard_failures.map((f, i) => (
@@ -1288,8 +1293,7 @@ function OpenMotionStudio({
                           void wb.navigate(`/tools/sprite-generator?work=${value.id}&version=${value.revision}&candidate=1`).catch(e=>setError(e.message));
                         }
                       }} />
-                      <details>
-                        <summary>其他调整工具</summary>
+                      {!adjustmentOpen&&<MotionPanel title="高级工具">
                         <p>
                           修改动作要求会保存旧版本，并重新规划。逐帧编辑沿用现有工具；修改后须重新检查和采用。
                         </p>
@@ -1304,7 +1308,7 @@ function OpenMotionStudio({
                         >
                           打开逐帧编辑工作区
                         </a>
-                      </details>
+                      </MotionPanel>}
                     </>
                   ) : (
                     <>
@@ -1392,6 +1396,8 @@ function OpenMotionStudio({
               : '检查确认已完成，可以采用当前候选。')
           ) : step === 4 && approved ? (
             '当前候选已采用，可以导出或再次交付。'
+          ) : step === 1 && planningStopped ? (
+            `重新制定会沿用当前要求并保存新版本，最多再次调用规划模型 ${spec.budget.max_planning_calls} 次；不会自动绘图。`
           ) : work?.job ? (
             work.job.plan_control.message
           ) : work ? (
@@ -1429,7 +1435,17 @@ function OpenMotionStudio({
               {work ? '按修改重新制定方案' : '制定方案'}
             </button>
           )}
-          {step === 1 && (
+          {step === 1 && planningStopped && (
+            <button
+              className="motion-primary"
+              disabled={busy || !ready || readOnly || !spec.character_id || spec.description.trim().length < 4}
+              onClick={plan}
+            >
+              <Sparkles size={16} />
+              重新制定方案
+            </button>
+          )}
+          {step === 1 && !planningStopped && (
             <button
               className="motion-primary"
               disabled={
@@ -1550,9 +1566,13 @@ function ExpertRecord({ work }: { work: MotionWork }) {
 function FramePlayer({
   job,
   candidate,
+  work,
+  readOnly,
 }: {
   job: MotionJob;
   candidate: MotionCandidate;
+  work: MotionWork;
+  readOnly: boolean;
 }) {
   const [frame, setFrame] = useState(0),
     [playing, setPlaying] = useState(false),
@@ -1588,7 +1608,8 @@ function FramePlayer({
   );
   return (
     <>
-      <div className="motion-canvas motion-large">
+      <MotionTemporalStructure work={work} candidate={candidate.candidate_index} frame={Math.min(frame,count-1)} frameSha={current.sha256}
+        playing={playing} readOnly={readOnly} onFrame={value=>setFrame(Math.max(0,Math.min(count-1,value)))} onStop={()=>setPlaying(false)}>
         <img
           src={url}
           alt={`候选 ${candidate.candidate_index} · 第 ${current.index + 1} 帧`}
@@ -1598,7 +1619,7 @@ function FramePlayer({
             setPlaying(false);
           }}
         />
-      </div>
+      </MotionTemporalStructure>
       {imageError && (
         <p role="alert" className="motion-danger">
           当前帧加载失败，请恢复服务后重新查询；此时不能确认画面。

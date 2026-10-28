@@ -15,6 +15,7 @@ export type MotionSpec = {
   provider: 'pixellab' | 'fixture';
   review_protocol?: 'baseline' | 'experts_v1';
   seed?: number | null;
+  visual_structure?: { analysis_id: string; token: string } | null;
 };
 export type MotionStage = {
   name: string;
@@ -24,6 +25,7 @@ export type MotionStage = {
   first_frame: string;
   last_frame: string;
   acceptance: string[];
+  structure_usage?: {part_ids:string[];anchor_ids:string[];relation_ids:string[];effect:string};
   checkpoint?: { endpoint: string; rhythm: string; reason: string };
   motion?: {camera:string;orientation:string;trajectory:string;support:string;drive:string;appearance:string;entry:string;exit:string;boundary:string;holds:{start:number;end:number;reason:string}[]};
 };
@@ -101,9 +103,11 @@ export type MotionJob = {
   request: { open_plan?: { work_id: string; revision: number } };
 };
 export type MotionWork = {
+  visual_structure?: {sha256:string;revision:number;selection:{analysis_id:string;token:string};data:{summary:string}} | null;
   adjustment_usage?: {planning:number;generation:number;review:number;tasks:{id:string;revision:number;candidate:number;stage:number|null;state:string}[]};
   end_targets?: {stage: number; sha256: string; note: string}[];
   id: string;
+  request_key?: string;
   revision: number;
   latest_revision: number;
   spec: MotionSpec;
@@ -118,10 +122,59 @@ export type MotionWork = {
   history: { revision: number; title: string }[];
   messages: {
     role: string;
+    call?: number;
     response: { action: string; summary: string; question?: string };
   }[];
   planning_calls: { role: string; state: string; requested_model?: string }[];
 };
+export type MotionPlanningProgress = {
+  state: 'pending' | 'running' | 'complete' | 'blocked' | 'failed' | 'unknown';
+  label: string;
+};
+export function motionPlanningRequestKey(
+  work: Pick<MotionWork, 'request_key'> | null,
+  pendingKey: string,
+  createKey: () => string = () => crypto.randomUUID(),
+): string {
+  // A returned work confirms this request was received. An explicit new plan
+  // needs a new identity, even with unchanged input. An unconfirmed POST keeps
+  // its pending identity so a lost response cannot create duplicate paid work.
+  return !pendingKey || pendingKey === work?.request_key ? createKey() : pendingKey;
+}
+export function motionPlanningProgress(
+  work: Pick<MotionWork, 'status' | 'plan' | 'messages' | 'planning_calls'>,
+  role: string,
+): MotionPlanningProgress {
+  const running = work.status === 'planning';
+  if (role === 'validator') {
+    // A validator message is rejection feedback, never a pass receipt. A plan
+    // with open questions also bypasses execution validation on the server.
+    if (work.plan?.questions.length) return { state: 'blocked', label: '等待补充要求' };
+    if (work.plan && ['ready', 'executing'].includes(work.status))
+      return { state: 'complete', label: '校验通过' };
+    if (work.messages.some(m => m.role === role && m.response.action === 'validation_feedback'))
+      return { state: 'blocked', label: running ? '等待修订后校验' : '校验未通过' };
+    return { state: 'pending', label: running ? '等待最终方案' : '未完成校验' };
+  }
+  const callIndex = work.planning_calls.findLastIndex(c => c.role === role);
+  if (callIndex < 0) return { state: 'pending', label: running ? '等待处理' : '未执行' };
+  const call = work.planning_calls[callIndex];
+  if (call.state === 'invalid_response') return { state: 'failed', label: '返回格式无效' };
+  if (['failed_request', 'failed'].includes(call.state)) return { state: 'failed', label: '请求失败' };
+  if (call.state === 'outcome_unknown') return { state: 'unknown', label: '结果待核对' };
+  if (call.state === 'submitting') return running
+    ? { state: 'running', label: '正在处理' }
+    : { state: 'unknown', label: '调用已中断' };
+  if (call.state !== 'completed') return { state: 'unknown', label: '状态待核对' };
+  const message = work.messages.findLast(m => m.role === role && (m.call === undefined || m.call === callIndex + 1));
+  const action = message?.response.action;
+  if (action === 'propose') return { state: 'complete', label: '已提出建议' };
+  if (action === 'finalize') return { state: 'complete', label: '已提交方案' };
+  if (action === 'consult' || action === 'inspect_reference') return running
+    ? { state: 'pending', label: action === 'consult' ? '等待协作回复' : '等待继续观察' }
+    : { state: 'blocked', label: '未完成意见' };
+  return { state: 'unknown', label: '结果待核对' };
+}
 export const motionSteps = [
   '准备与描述',
   '查看制作方案',
@@ -167,6 +220,7 @@ export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
         review_protocol: a.review_protocol ?? 'baseline',
         budget: { max_review_calls: 2, ...a.budget },
         seed: a.seed ?? null,
+        visual_structure: a.visual_structure ?? null,
       }),
     ) ===
     JSON.stringify(
@@ -176,6 +230,7 @@ export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
         review_protocol: b.review_protocol ?? 'baseline',
         budget: { max_review_calls: 2, ...b.budget },
         seed: b.seed ?? null,
+        visual_structure: b.visual_structure ?? null,
       }),
     )
   );

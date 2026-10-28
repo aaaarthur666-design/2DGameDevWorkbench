@@ -184,6 +184,26 @@ def test_kimi_transport_uses_its_parameter_contract(setup):
         body=client.post.call_args.kwargs['json']
         assert body['max_completion_tokens']==16000 and body['reasoning_effort']=='high'
         assert 'max_tokens' not in body and 'temperature' not in body and 'thinking' not in body
+        assert body['response_format']=={'type':'json_object'}
+
+
+def test_explicit_strict_tokenhub_contract_uses_native_schema_and_never_falls_back(setup):
+    s,_,_,_,_=setup;registry=ModelRegistry(s.settings)
+    registry.save(ModelConfiguration(default=ModelProfile(model='kimi-k3.1-pro')))
+    response={'summary':'模拟符合合同的响应','checks':[{'dimension':d,'status':'pass','confidence':.95,'frames':[1],'evidence':'离线合同验证，不代表模型质量'} for d in ['completeness','equipment','rhythm']]}
+    with patch.object(ModelRegistry,'key',return_value='isolated-test-key'),patch('sprite_pipeline.vision_review.httpx.Client') as factory:
+        client=factory.return_value.__enter__.return_value;client.post.return_value.status_code=200
+        client.post.return_value.json.return_value={'model':'kimi-k3.1-pro','choices':[{'finish_reason':'stop','message':{'content':json.dumps(response)}}]}
+        registry.send('strategy',[],Audit,1,output_format='json_schema')
+        body=client.post.call_args.kwargs['json'];fmt=body['response_format']
+        assert fmt['type']=='json_schema' and fmt['json_schema']['strict'] is True
+        assert fmt['json_schema']['schema']['additionalProperties'] is False
+        assert fmt['json_schema']['name']=='open_motion_plan'
+        client.post.reset_mock();client.post.return_value.status_code=400
+        with pytest.raises(ValidationHarnessError,match='HTTP 400'):
+            registry.send('strategy',[],Audit,1,output_format='json_schema')
+        assert client.post.call_count==1
+        assert client.post.call_args.kwargs['json']['response_format']['type']=='json_schema'
 
 
 @pytest.mark.parametrize('model', ['glm-5.3-flash', 'glm-5.3-flashx'])
@@ -202,8 +222,25 @@ def test_glm_multimodal_transport_and_profile_validation(setup, model):
         assert 'max_completion_tokens' not in body and 'thinking' not in body and 'temperature' not in body
         assert body['messages'][0]['content'][0]['image_url']['url']=='data:image/png;base64,test'
         assert factory.call_args.kwargs['timeout']==300
+        assert body['response_format']=={'type':'json_object'}
     with pytest.raises(ValidationError):ModelProfile(model=model,token_parameter='max_completion_tokens')
     with pytest.raises(ValidationError):ModelProfile(model=model,reasoning_effort='medium')
+
+
+def test_http_failure_preserves_safe_diagnostics_without_echoing_body_or_retry(setup):
+    s,_,_,_,_=setup;registry=ModelRegistry(s.settings)
+    registry.save(ModelConfiguration(default=ModelProfile(model='kimi-k3.1-pro')))
+    receipts=[]
+    with patch.object(ModelRegistry,'key',return_value='test-private-key'),patch('sprite_pipeline.vision_review.httpx.Client') as factory:
+        client=factory.return_value.__enter__.return_value;response=client.post.return_value
+        response.status_code=400;response.headers={'x-request-id':'test-request-0001'}
+        response.json.return_value={'error':{'code':'InvalidParameterValue','message':'max_tokens invalid; echoed secret test-private-key and private prompt'}}
+        with pytest.raises(ValidationHarnessError) as caught:
+            registry.send('reviewer',[],Audit,16,on_response=receipts.append)
+        assert client.post.call_count==1
+        assert receipts==[{'http_status':400,'provider_error_code':'InvalidParameterValue','provider_error_parameter':'max_tokens','provider_request_id':'test-request-0001'}]
+        assert caught.value.details==receipts[0]
+        assert 'test-private-key' not in str(caught.value) and 'private prompt' not in str(caught.value.details)
 
 
 @pytest.mark.parametrize('model', ['glm-5.2', 'glm-5.3'])

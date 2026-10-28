@@ -67,8 +67,11 @@ class PlanGeneration:
             if shutil.disk_usage(self.s.settings.jobs_dir).free < 64 * 1024 * 1024:
                 raise ValidationHarnessError("本机空间不足，尚未提交生成")
             definition = job.request.open_plan.plan.stages[stage]
+            from .structure_control import require_current_structure
+            require_current_structure(self.s,job.request.open_plan.visual_structure,job.reference_sha256)
             from .quality import compiled_prompt
-            prompt = job.request.open_plan.compiled_prompts[stage] if job.request.open_plan.compiled_prompts else compiled_prompt(job.request.open_plan.plan, job.character, stage)
+            prompt = job.request.open_plan.compiled_prompts[stage] if job.request.open_plan.compiled_prompts else compiled_prompt(
+                job.request.open_plan.plan, job.character, stage, policy_version=job.request.open_plan.generation_policy_version)
             reference = (self.store.job_dir(job_id) / "input/reference.png").read_bytes()
             if hashlib.sha256(reference).hexdigest() != job.reference_sha256:
                 raise ConflictError("角色参考图已改变")
@@ -82,13 +85,21 @@ class PlanGeneration:
                                       frame_count=definition.frame_count,
                                       seed=(candidate.seed + stage * 104729) % (2**31 - 1) if candidate.seed is not None else None,
                                       transparent_background=True)
+            from .generation_conditions import submission_conditions
+            conditions = submission_conditions(job.request.open_plan,stage,prompt,hashlib.sha256(first).hexdigest(),
+                                               hashlib.sha256(last).hexdigest() if last else None)
             self.s._check_submission_quota(job_id, index, provider, phase_frame_count=definition.frame_count)
             folder = self.directory(job_id, index, stage); folder.mkdir(parents=True, exist_ok=True)
             atomic_write_json(folder / "submit.intent.json", {"maximum_submission_attempts": 1,
                               "plan_sha256": job.request.open_plan.plan_sha256, "stage": stage,
                               "first_sha256": hashlib.sha256(first).hexdigest(),
                               "last_sha256": hashlib.sha256(last).hexdigest() if last else None,
-                              "prompt": request.prompt, "frame_count": request.frame_count, "seed": request.seed})
+                              "prompt": request.prompt, "frame_count": request.frame_count, "seed": request.seed,
+                               **({'drawing_conditions':conditions} if conditions else {}),
+                              **({'visual_structure_sha256':job.request.open_plan.visual_structure['sha256'],
+                                  'structure_usage':definition.structure_usage.model_dump(mode='json'),
+                                  'structure_drawing_hint':definition.motion.generation_hint}
+                                 if job.request.open_plan.visual_structure else {})})
             with self.store.locked_job(job_id) as current:
                 c = self.candidate(current, index); r = self.validate(current, c)[stage]
                 if not current.plan_control.enabled:

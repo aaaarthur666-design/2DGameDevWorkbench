@@ -18,6 +18,8 @@ from .contracts import Contract, TaskSpec, digest
 from .workspace import OpenMotionWorkspace
 from .model_config import ModelRegistry, ModelConfiguration
 from .adjustments import Adjustments, AdjustmentInput
+from .structure_contracts import StructureProposal
+from .tracking_corrections import TrackingCorrection
 
 
 class Create(Contract):
@@ -112,6 +114,45 @@ class Reference(Contract):
     identity_description: str = Field(default="", max_length=1000)
 
 
+class StructureCreate(Contract):
+    character_id: str = Field(pattern=r'^[a-z0-9][a-z0-9_]*$', max_length=100)
+    request_key: str = Field(min_length=8, max_length=128)
+    authorized: bool = False
+
+
+class StructureCorrection(Revision):
+    token: str = Field(pattern=r'^[0-9a-f]{64}$')
+    request_key: str = Field(min_length=8, max_length=128)
+    data: StructureProposal | None = None
+    restore_revision: int | None = Field(default=None, ge=1, le=100)
+    confirm: bool = False
+    note: str = Field(min_length=4, max_length=1000)
+
+
+class TemporalCreate(Revision):
+    candidate_index: int = Field(ge=1,le=8)
+    stage_index: int | None = Field(default=None,ge=0,le=3)
+    structure_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    structure_token: str = Field(pattern=r'^[0-9a-f]{64}$')
+    request_key: str = Field(min_length=8,max_length=128)
+    authorized: bool = False
+    use_semantic: bool = True
+
+
+class TemporalCorrection(Revision):
+    token: str = Field(pattern=r'^[0-9a-f]{64}$')
+    request_key: str = Field(min_length=8,max_length=128)
+    correction: TrackingCorrection | None = None
+    restore_revision: int | None = Field(default=None,ge=1,le=100)
+    confirm: bool = False
+    note: str = Field(min_length=4,max_length=1000)
+
+
+class TemporalReview(Contract):
+    token: str = Field(pattern=r'^[0-9a-f]{64}$')
+    authorized: bool = False
+
+
 def candidate_digest(candidate):
     return digest([{k: frame.model_dump(mode="json")[k] for k in ("index", "sha256", "active_path")} for frame in candidate.frames])
 
@@ -120,6 +161,10 @@ def create_router(service):
     router = APIRouter(prefix="/v1/open-motion", tags=["Open motion"])
     workspace = OpenMotionWorkspace(service)
     adjustments = Adjustments(service)
+    from .structures import VisualStructures
+    structures = VisualStructures(service)
+    from .tracking import TemporalStructures
+    tracks = TemporalStructures(service)
 
     def view(work_id, revision=None):
         result = workspace.view(work_id, revision)
@@ -178,6 +223,59 @@ def create_router(service):
         service._validate_reference_image(path.parent / character.reference_frame, character.cell_width, character.cell_height)
         return Response((path.parent / character.reference_frame).read_bytes(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
+    @router.get('/references/{character_id}/structure')
+    def structure_for_reference(character_id: str):
+        return structures.latest(character_id)
+
+    @router.get('/structure-runtime')
+    def structure_runtime():
+        return structures.describe()
+
+    @router.post('/structures', status_code=201)
+    def structure_create(body: StructureCreate):
+        return structures.create(body.character_id, body.request_key, authorized=body.authorized)
+
+    @router.get('/structures/{identity}')
+    def structure_get(identity: str, revision: int | None = None):
+        return structures.view(identity, revision)
+
+    @router.post('/structures/{identity}/corrections')
+    def structure_correct(identity: str, body: StructureCorrection):
+        return structures.correct(identity, body.expected_revision, body.token, body.request_key,
+            data=body.data.model_dump(mode='json') if body.data is not None else None,
+            restore_revision=body.restore_revision, confirm=body.confirm, note=body.note)
+
+    @router.get('/structures/{identity}/source')
+    def structure_source(identity: str):
+        return Response(structures.image(identity), media_type='image/png', headers={'Cache-Control':'no-store'})
+
+    @router.get('/structures/{identity}/masks/{part_id}')
+    def structure_mask(identity: str, part_id: str, revision: int | None = None):
+        return Response(structures.image(identity, part_id, revision), media_type='image/png', headers={'Cache-Control':'no-store'})
+
+    @router.get('/temporal-structures/{identity}')
+    def temporal_get(identity: str, revision: int | None = None):
+        return tracks.view(identity,revision)
+
+    @router.post('/temporal-structures/{identity}/corrections')
+    def temporal_correct(identity: str, body: TemporalCorrection):
+        return tracks.correct(identity,body.expected_revision,body.token,body.request_key,
+            correction=body.correction.model_dump(mode='json') if body.correction else None,
+            restore_revision=body.restore_revision,confirm=body.confirm,note=body.note)
+
+    @router.post('/temporal-structures/{identity}/review')
+    def temporal_review(identity: str, body: TemporalReview):
+        from .temporal_review_service import start_review
+        return start_review(tracks,identity,body.token,authorized=body.authorized)
+
+    @router.get('/temporal-structures/{identity}/frames/{frame_index}')
+    def temporal_frame(identity: str, frame_index: int):
+        return Response(tracks.image(identity,frame_index),media_type='image/png',headers={'Cache-Control':'no-store'})
+
+    @router.get('/temporal-structures/{identity}/frames/{frame_index}/parts/{part_id}')
+    def temporal_mask(identity: str, frame_index: int, part_id: str, revision: int | None = None):
+        return Response(tracks.image(identity,frame_index,part_id,revision),media_type='image/png',headers={'Cache-Control':'no-store'})
+
     @router.post("/references")
     def upload(body: Reference):
         try:
@@ -199,6 +297,19 @@ def create_router(service):
     @router.get("/{work_id}")
     def get(work_id: str, revision: int | None = None):
         return view(work_id, revision)
+
+    @router.get('/{work_id}/temporal')
+    def temporal_latest(work_id: str, candidate: int=1, stage: int | None=None, revision: int | None=None):
+        work=workspace.load(work_id,revision)
+        if not 1<=candidate<=8 or stage is not None and not 0<=stage<=3:
+            raise ValidationHarnessError('候选或片段编号无效')
+        return tracks.latest(work.job_id,candidate,stage) if work.job_id else {'analysis':None}
+
+    @router.post('/{work_id}/temporal')
+    def temporal_create(work_id: str, body: TemporalCreate):
+        work=current(work_id,body.expected_revision)
+        return tracks.create(work.job_id,body.candidate_index,body.structure_id,body.structure_token,body.request_key,
+            stage=body.stage_index,authorized=body.authorized,use_semantic=body.use_semantic)
 
     @router.get("/{work_id}/reference")
     def original(work_id: str, revision: int | None = None):
