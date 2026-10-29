@@ -263,6 +263,35 @@ export interface WorkflowResult {
   adoption?: WorkflowAdoption;
   replayed?: boolean;
 }
+export interface WorkflowHistoryPage {
+  works: SceneWorkflow[];
+  total: number;
+  offset: number;
+  limit: number;
+  snapshot: string;
+  nextOffset: number | null;
+}
+export function mergeWorkflowHistory(current: SceneWorkflow[], incoming: SceneWorkflow[]) {
+  const rows = new Map(current.map((work) => [work.id, work]));
+  for (const work of incoming) rows.set(work.id, newerWorkflow(rows.get(work.id) || null, work));
+  return [...rows.values()];
+}
+export function sceneWorkflowNavigation(value: string) {
+  const url = new URL(value, 'http://workbench.local');
+  const documentId = url.searchParams.get('document');
+  const workId = url.searchParams.get('sceneWorkflow');
+  const valid = (id: string | null) => !!id && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(id);
+  return valid(documentId) && valid(workId) ? { documentId: documentId!, workId: workId! } : null;
+}
+export function writeSceneWorkflowNavigation(documentId: string, workId: string | null) {
+  const url = new URL(window.location.href);
+  if (workId) {
+    url.searchParams.set('document', documentId);
+    url.searchParams.set('scene', documentId);
+    url.searchParams.set('sceneWorkflow', workId);
+  } else url.searchParams.delete('sceneWorkflow');
+  window.history.replaceState(null, '', url);
+}
 export function newerWorkflow(
   current: SceneWorkflow | null,
   incoming: SceneWorkflow,

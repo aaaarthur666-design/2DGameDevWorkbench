@@ -131,6 +131,12 @@ try {
     'an older poll never replaces a confirmed adoption',
   );
   assert.equal(client.newerWorkflow(work, result.work), result.work);
+  const merged = client.mergeWorkflowHistory([result.work], [work, { ...work, id: 'older-work' }]);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0], result.work, 'history loading cannot downgrade an adopted or newer task');
+  assert.deepEqual(client.sceneWorkflowNavigation('http://local/tools/scene-composer?document=scene-a&sceneWorkflow=old-task'), { documentId: 'scene-a', workId: 'old-task' });
+  assert.equal(client.sceneWorkflowNavigation('http://local/tools/scene-composer?sceneWorkflow=old-task'), null);
+  assert.equal(client.sceneWorkflowNavigation('http://local/tools/scene-composer?document=scene-a&sceneWorkflow=../invalid'), null);
   assert.throws(
     () =>
       client.validateAdoption(result.work, {

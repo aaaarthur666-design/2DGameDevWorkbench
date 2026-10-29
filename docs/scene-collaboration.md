@@ -13,6 +13,10 @@
 
 关闭窗口不会取消正在进行的后台任务。历史任务保存在当前场景的协作列表；需要停止后续步骤时点击「在安全步骤暂停」。已发送请求可能完成，恢复时继续使用原请求记录。页面网络响应丢失会保留原命令，点击「恢复原请求」核对结果。制作任务因生成结果待核对而停下时，可用「核对原制作请求」检查原任务；该操作不重新提交生成。
 
+历史每次显示 20 条，可点击「加载更早任务」继续查看全部记录；「刷新列表」读取最新排序。翻页期间若有任务新增或位置变化，会提示刷新，保留已加载内容，不把旧记录当成删除。任务链接使用 `?document=<sceneId>&sceneWorkflow=<workId>`，直接打开准确任务，即使它不在历史第一页。
+
+WorkBuddy 创建、执行、修订、继续或采用场景任务前沿用会话预览检查；尚未打开时返回 `preview_required`，不创建任务或提交模型。按返回的宿主动作连接后，使用相同参数继续。随后查询原任务会通过现有页面跟随通道展示该任务进度；暂停、关闭和未保存页面仍受保护。显式展示历史任务可用 `workbench_present({sceneWorkflowId})`。预览例外仍只用于用户明确拒绝／关闭或已核实的宿主不可用，且不参与生产命令的身份计算。
+
 ## 制作范围与地图策略
 
 | 支持 | 边界 |
@@ -84,7 +88,7 @@
 | MCP | CLI / Bridge 操作 | 用途 |
 | --- | --- | --- |
 | `workbench_get_scene_workflow_settings` | `scene-workflow-settings` | 只读专家模型与两条图像制作线的模型／可用性；网页负责配置 |
-| `workbench_list_scene_workflows` | `scene-workflow-list` | 列出持久任务，可按 documentId 过滤 |
+| `workbench_list_scene_workflows` | `scene-workflow-list` | 按 documentId 过滤，沿 nextOffset + snapshot 分页读取全部历史 |
 | `workbench_create_scene_workflow` | `scene-workflow-create` | 固定来源、保护范围、模型和预算，启动规划 |
 | `workbench_get_scene_workflow` | `scene-workflow-get` | 只读状态、讨论、方案、回执与检查 |
 | `workbench_execute_scene_workflow` | `scene-workflow-execute` | 执行确切 planHash 对应的方案 |
@@ -95,6 +99,8 @@
 | `workbench_adopt_scene_workflow` | `scene-workflow-adopt` | 核对原场景版本后采用确切候选 |
 
 CLI 使用 `node scripts/workbench.mjs agent <operation> --input request.json --json`。Bridge 使用 `POST /v1/agent/<operation>`；网页代理为 `POST /api/workbench/scene-workflow/<简名>`。修改任务时使用 `workId`、任务自身的 `expectedRevision` 和稳定 `commandId`；这里的任务版本与场景文档版本是两个不同计数器。创建时 `spec.expectedRevision` 则是来源场景版本。暂停是安全边界信号，不要求任务版本；GET、list、observe 和 settings 读取不提交模型请求。
+
+历史输入支持 `limit`（默认 20、最多 50）、`offset`（默认 0）与 `snapshot`。响应包含 `total`、`nextOffset` 和排序快照；继续查询时携带原快照，直到 `nextOffset=null`。顺序变化返回 `SCENE_HISTORY_CHANGED`，从第一页重读，不自动制作或删除任务。
 
 创建请求示例（ID 与 revision 替换为实际共享工程）：
 

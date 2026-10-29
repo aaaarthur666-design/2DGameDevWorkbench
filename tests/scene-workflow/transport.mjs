@@ -3,6 +3,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
@@ -23,6 +24,7 @@ import {
 import { expertTurnSchema } from '../../lib/workbench/scene-workflow-contract.mjs';
 import { SceneWorkflowService } from '../../lib/workbench/scene-workflows.mjs';
 import { hash } from '../../lib/workbench/scene-workflow-store.mjs';
+import { frontendHeartbeat } from '../../lib/workbench/preview-follow.mjs';
 
 const wire = [],
   receipts = [];
@@ -126,6 +128,7 @@ process.env.TOKENHUB_API_KEY = 'scene-fixture-token';
 let bridge,
   stderr = '';
 const client = new Client({ name: 'scene-workflow-transport', version: '1' });
+const workbuddy = new Client({ name: 'WorkBuddy', version: 'scene-workflow-test' });
 try {
   const settings = sceneModelSettings(manifest);
   assert.equal(settings.configuration, null);
@@ -310,6 +313,58 @@ try {
   });
   assert.equal(observed.isError, undefined);
   assert.equal(observed.content.filter((c) => c.type === 'image').length, 2);
+  const call = async (agent, name, args = {}) => {
+    const result = await agent.callTool({ name, arguments: args });
+    assert.ok(!result.isError, JSON.stringify(result));
+    return result;
+  };
+  const headless = await call(client, 'workbench_get_scene_workflow', { workId: finished.id });
+  assert.equal(headless.structuredContent.frontendPresentation, undefined);
+  assert.equal(JSON.parse(headless.content[0].text).work.id, finished.id, 'text-only clients retain guarded work identities');
+  await workbuddy.connect(new StdioClientTransport({ command: process.execPath, args: ['scripts/workbench-mcp.mjs'], cwd: root, env: { ...env, FORGE_MCP_HOST: 'workbuddy' }, stderr: 'pipe' }));
+  const mutation = { workId: finished.id, expectedRevision: finished.revision, commandId: 'preview-blocked' };
+  const mutations = [
+    ['workbench_create_scene_workflow', { ...input, commandId: 'preview-new-blocked' }],
+    ['workbench_execute_scene_workflow', { ...mutation, planHash: finished.plans.at(-1).hash }],
+    ['workbench_revise_scene_workflow', { ...mutation, clarification: '仅用于未连接预览门禁验证' }],
+    ['workbench_resume_scene_workflow', mutation],
+    ['workbench_adopt_scene_workflow', { ...mutation, candidateRevision: finished.candidateRevision, candidateHash: finished.candidateHash }],
+  ];
+  let sessionId;
+  for (const [name, args] of mutations) {
+    const blocked = (await call(workbuddy, name, args)).structuredContent;
+    assert.equal(blocked.status, 'preview_required');
+    assert.equal(blocked.providerCalled, false);
+    assert.equal(blocked.createsTask, false);
+    sessionId = blocked.preview.sessionId;
+  }
+  assert.equal((await post('list', { documentId: f.document.id })).body.total, 1, 'blocked create has not created a new task');
+  const page = { pageId: randomUUID(), sessionId, viewPath: '/tools/scene-composer', visible: true, focused: true, following: true, items: [], dirty: false, busy: false };
+  await frontendHeartbeat(root, manifest, page);
+  const replay = (await call(workbuddy, 'workbench_create_scene_workflow', input)).structuredContent;
+  const exact = `/tools/scene-composer?document=${f.document.id}&scene=${f.document.id}&sceneWorkflow=${finished.id}`;
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.presentation.viewPath, exact);
+  assert.equal(replay.frontendPresentation.sessionId, sessionId);
+  const polled = (await call(workbuddy, 'workbench_get_scene_workflow', { workId: finished.id })).structuredContent;
+  assert.equal(polled.frontendPresentation.requestId, replay.frontendPresentation.requestId);
+  await frontendHeartbeat(root, manifest, { ...page, viewPath: exact, ack: { requestId: polled.frontendPresentation.requestId, state: 'displayed', reason: 'page-arrived' } });
+  const arrived = (await call(workbuddy, 'workbench_get_frontend_context', { requestId: polled.frontendPresentation.requestId })).structuredContent;
+  assert.equal(arrived.presentation.displayed, true);
+  const selected = (await call(workbuddy, 'workbench_present', { sceneWorkflowId: finished.id })).structuredContent;
+  assert.equal(selected.viewPath, exact);
+  await frontendHeartbeat(root, manifest, { ...page, following: false });
+  const paused = (await call(workbuddy, 'workbench_get_scene_workflow', { workId: finished.id })).structuredContent;
+  assert.equal(paused.preview.state, 'paused');
+  await frontendHeartbeat(root, manifest, { ...page, visible: false });
+  const hidden = (await call(workbuddy, 'workbench_get_scene_workflow', { workId: finished.id })).structuredContent;
+  assert.equal(hidden.preview.state, 'hidden_or_closed');
+  assert.equal(hidden.preview.hostAction, undefined);
+  const dismissed = (await call(workbuddy, 'workbench_create_scene_workflow', { ...input, previewPolicy: 'user-dismissed' })).structuredContent;
+  assert.equal(dismissed.replayed, true, 'presentation preference is not part of the paid command fingerprint');
+  assert.equal(dismissed.frontendPresentation, undefined);
+  assert.equal(dismissed.preview.state, 'disabled');
+  await workbuddy.close();
   const runCli = async () => {
     const child = spawn(
       process.execPath,
@@ -371,6 +426,7 @@ try {
     else process.env[key] = value;
   }
   await client.close().catch(() => {});
+  await workbuddy.close().catch(() => {});
   if (bridge && bridge.exitCode === null && bridge.signalCode === null) {
     const exited = once(bridge, 'exit');
     bridge.kill('SIGTERM');

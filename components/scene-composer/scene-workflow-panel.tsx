@@ -21,6 +21,7 @@ import {
   canReviseWorkflow,
   mapModeNames,
   newerWorkflow,
+  mergeWorkflowHistory,
   validateMutationResult,
   workflowRequest,
   WorkflowClientError,
@@ -38,6 +39,7 @@ import type {
   WorkflowBudget,
   WorkflowMapMode,
   WorkflowResult,
+  WorkflowHistoryPage,
 } from '@/features/scene-workflow/client';
 import './scene-workflow.css';
 
@@ -112,6 +114,8 @@ const message = (error: unknown) =>
 type Pending = { operation: string; input: Record<string, unknown> };
 interface Props {
   document: SharedDocument<Scene>;
+  initialWorkId?: string;
+  onSelection?: (workId: string | null) => void;
   beforeAdopt: () => Promise<void>;
   onAdopt: (receipt: WorkflowAdoption) => Promise<void>;
   onClose: () => void;
@@ -517,6 +521,8 @@ export function WorkflowResumeAction({
 
 export function SceneWorkflowPanel({
   document,
+  initialWorkId,
+  onSelection,
   beforeAdopt,
   onAdopt,
   onClose,
@@ -530,6 +536,9 @@ export function SceneWorkflowPanel({
     [sources, setSources] = useState<Array<SharedDocument>>([]);
   const [works, setWorks] = useState<SceneWorkflow[]>([]),
     [work, setWork] = useState<SceneWorkflow | null>(null);
+  const [historyPage, setHistoryPage] = useState<WorkflowHistoryPage | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const historyRequest = useRef(0);
   const [description, setDescription] = useState(''),
     [selectedSources, setSelectedSources] = useState<string[]>([]),
     [protectedIds, setProtectedIds] = useState<string[]>([]),
@@ -550,6 +559,8 @@ export function SceneWorkflowPanel({
     [pending, setPending] = useState<Pending | null>(null);
   const mutation = useRef(false),
     selectedId = useRef<string | null>(null);
+  const selectionCallback = useRef(onSelection);
+  useEffect(() => { selectionCallback.current = onSelection; }, [onSelection]);
   const storageKey = `forge-scene-workflow-pending:${document.id}`;
   const select = (next: SceneWorkflow | null) => {
     selectedId.current = next?.id || null;
@@ -558,11 +569,15 @@ export function SceneWorkflowPanel({
     setReviewNote('');
     setDetail('');
     setError('');
+    onSelection?.(next?.id || null);
   };
   const refresh = async () => {
-    const result = await workflowRequest<{ works: SceneWorkflow[] }>('list', {
+    const request = ++historyRequest.current;
+    const result = await workflowRequest<WorkflowHistoryPage>('list', {
       documentId: document.id,
     });
+    if (request !== historyRequest.current) return;
+    setHistoryPage(result);
     setWorks((current) =>
       result.works.map((incoming) =>
         newerWorkflow(
@@ -572,17 +587,36 @@ export function SceneWorkflowPanel({
       ),
     );
   };
+  const loadMore = async () => {
+    if (historyLoading || !historyPage || historyPage.nextOffset === null) return;
+    const request = ++historyRequest.current;
+    setHistoryLoading(true);
+    setError('');
+    try {
+      const result = await workflowRequest<WorkflowHistoryPage>('list', {
+        documentId: document.id, offset: historyPage.nextOffset, snapshot: historyPage.snapshot,
+      });
+      if (request !== historyRequest.current) return;
+      setWorks((rows) => mergeWorkflowHistory(rows, result.works));
+      setHistoryPage(result);
+    } catch (cause) {
+      if (request === historyRequest.current) setError(message(cause));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
   useEffect(() => {
     let alive = true;
     const initialize = async () => {
       try {
         const saved = sessionStorage.getItem(storageKey);
         if (saved) setPending(JSON.parse(saved) as Pending);
-        const [models, history] = await Promise.allSettled([
+        const [models, history, requested] = await Promise.allSettled([
           workflowRequest<ModelSettings>('settings'),
-          workflowRequest<{ works: SceneWorkflow[] }>('list', {
+          workflowRequest<WorkflowHistoryPage>('list', {
             documentId: document.id,
           }),
+          initialWorkId ? workflowRequest<WorkflowResult>('get', { workId: initialWorkId }) : Promise.resolve(null),
         ]);
         if (!alive) return;
         if (models.status === 'fulfilled') {
@@ -591,11 +625,21 @@ export function SceneWorkflowPanel({
         } else setError(message(models.reason));
         if (history.status === 'fulfilled') {
           setWorks(history.value.works);
-          if (history.value.works[0]) {
+          setHistoryPage(history.value);
+          if (!initialWorkId && history.value.works[0]) {
             selectedId.current = history.value.works[0].id;
             setWork(history.value.works[0]);
+            selectionCallback.current?.(history.value.works[0].id);
           }
         } else setError(message(history.reason));
+        if (initialWorkId) {
+          if (requested.status === 'fulfilled' && requested.value) {
+            if (requested.value.work.id !== initialWorkId || requested.value.work.spec.documentId !== document.id)
+              throw new Error('场景任务与当前共享场景不匹配，未切换到其他任务。');
+            selectedId.current = initialWorkId;
+            setWork(requested.value.work);
+          } else if (requested.status === 'rejected') setError(message(requested.reason));
+        }
         const rows: Array<SharedDocument> = [];
         let offset: number | undefined = 0;
         do {
@@ -615,7 +659,7 @@ export function SceneWorkflowPanel({
     return () => {
       alive = false;
     };
-  }, [document.id, storageKey]);
+  }, [document.id, storageKey, initialWorkId]);
   const pollingId = work?.id,
     pollingRunning = work?.running;
   useEffect(() => {
@@ -755,6 +799,16 @@ export function SceneWorkflowPanel({
                 </button>
               ))}
             </nav>
+            {historyPage && <div className="sw-history-pages">
+              <small>已显示 {works.length} / {historyPage.total} 条</small>
+              {historyPage.nextOffset !== null && <Button size="sm" variant="outline" disabled={busy || historyLoading} onClick={() => void loadMore()}>
+                {historyLoading ? '正在加载…' : '加载更早任务'}
+              </Button>}
+              <Button size="sm" variant="ghost" disabled={busy || historyLoading} onClick={() => {
+                setError('');
+                void refresh().catch((cause) => setError(message(cause)));
+              }}>刷新列表</Button>
+            </div>}
             <details open={!settings?.configured}>
               <summary>
                 专家模型设置{settings?.configured ? ' · 已配置' : ' · 需要配置'}

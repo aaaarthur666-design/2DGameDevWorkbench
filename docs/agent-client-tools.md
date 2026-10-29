@@ -49,7 +49,7 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 | `workbench_apply_image_candidate` | 按目标版本、源哈希和锁采用确切候选 |
 | `workbench_get_image_edit` | 读取持久会话、候选及原任务身份 |
 | `workbench_get_scene_workflow_settings` | 读取场景专家模型与凭据是否可用，不返回 Key |
-| `workbench_list_scene_workflows` / `workbench_get_scene_workflow` | 只读有界协作历史、讨论、用量和检查 |
+| `workbench_list_scene_workflows` / `workbench_get_scene_workflow` | 用 nextOffset + snapshot 分页读取全部历史；读取准确任务的讨论、用量和检查，已启用跟随后展示其进度 |
 | `workbench_create_scene_workflow` | 在指定范围与额度内启动专家规划和可选候选制作 |
 | `workbench_execute_scene_workflow` / `workbench_revise_scene_workflow` | 执行确切方案或在原额度内请求局部修订 |
 | `workbench_pause_scene_workflow` / `workbench_resume_scene_workflow` | 安全边界暂停，或显式恢复已保存步骤 |

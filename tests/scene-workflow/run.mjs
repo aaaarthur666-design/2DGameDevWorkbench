@@ -723,6 +723,33 @@ test('tampered plans and rendered evidence cannot be adopted', async () => {
   );
 });
 
+test('all saved scene tasks are discoverable across stable history pages', async () => {
+  const service = make(planner(movePlan));
+  const { work } = await launch(service, 'history-seed');
+  const documentId = 'history-only-fixtures';
+  for (let i = 0; i < 55; i++) {
+    const row = { ...work, id: `history-${String(i).padStart(2, '0')}`, spec: { ...work.spec, documentId }, updatedAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString() };
+    await service.store.write(path.join(service.store.directory(row.id), 'task.json'), row);
+  }
+  const first = await service.request('scene-workflow-list', { documentId });
+  assert.equal(first.works.length, 20);
+  assert.equal(first.total, 55);
+  assert.equal(first.nextOffset, 20);
+  const second = await service.request('scene-workflow-list', { documentId, offset: first.nextOffset, snapshot: first.snapshot });
+  const third = await service.request('scene-workflow-list', { documentId, offset: second.nextOffset, snapshot: second.snapshot });
+  assert.equal(third.nextOffset, null);
+  assert.equal(new Set([...first.works, ...second.works, ...third.works].map((row) => row.id)).size, 55);
+  assert.equal(third.works.at(-1).id, 'history-00');
+  const beyond = await service.request('scene-workflow-list', { documentId, offset: 55, snapshot: first.snapshot });
+  assert.deepEqual(beyond.works, []);
+  const changed = await service.store.load('history-00');
+  await service.store.save(changed);
+  await assert.rejects(service.request('scene-workflow-list', { documentId, offset: 20, snapshot: first.snapshot }), (e) => e.code === 'SCENE_HISTORY_CHANGED');
+  const refreshed = await service.request('scene-workflow-list', { documentId });
+  assert.equal(refreshed.works[0].id, 'history-00');
+  assert.equal(refreshed.total, 55, 'a refresh never deletes the older records');
+});
+
 try {
   for (const [name, fn] of tests) {
     await fn();

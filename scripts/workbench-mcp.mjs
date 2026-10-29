@@ -7,6 +7,7 @@ import { assetInputs, assetTools } from '../lib/workbench/asset-contract.mjs';
 import { documentInputs, documentTools } from '../lib/workbench/document-contract.mjs';
 import { imageEditInputs, imageEditTools } from '../lib/workbench/image-edit-contract.mjs';
 import { sceneWorkflowInputs, sceneWorkflowTools } from '../lib/workbench/scene-workflow-contract.mjs';
+import { sceneWorkflowPath } from '../lib/workbench/scene-workflow-presentation.mjs';
 import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { previewInputs, previewTools } from '../lib/workbench/preview-follow-contract.mjs';
 import { WorkBuddyPreview } from '../lib/workbench/workbuddy-preview.mjs';
@@ -32,7 +33,7 @@ import {gameExportInputs,gameExportTools} from '../lib/workbench/game-export-con
 const server = new McpServer(
   {
     name: '2d-game-workbench',
-    version: '0.12.0',
+    version: '0.12.1',
   },
   {
     instructions: [
@@ -41,7 +42,7 @@ const server = new McpServer(
       'Continue within the user\'s existing scope and budget, including delegated inspection and selection. Ask for unresolved consequential choices or scope changes. Read-only discussion creates no production task; prepare_task optionally saves input validation for authorized work.',
       'Poll the original task/job. Resolve unknown paid submissions using their saved receipts and provider IDs before a new attempt. Shared editing uses current version/hash guards and stable commandId.',
       'On the first WorkBuddy user message, check workbench_get_environment; start offline frontend services once, poll readiness for at most 60 seconds and stop on conflicts. Follow guidance topic presentation for host opening. WorkBuddy requires a visible preview for this session before production: discover the host present_files schema, open preview.hostAction and confirm the session page. preview_required creates no task or provider call; continue with the same parameters after connecting. Use previewPolicy only for an explicit user refusal/dismissal or verified host-tool failure. Use workbench_present at step/selection changes and workbench_get_frontend_context to confirm arrival. Respect paused, closed and unsaved pages. Other clients remain headless unless they present. Page acknowledgement confirms arrival, not artwork quality.',
-      'The registered MCP surface excludes map production; explicit webpage requests can use available host browser tools. Report actual assets, checks and target-engine evidence with appropriate detail.',
+      'Direct map-stitcher adapter operations remain outside MCP. Scene-workflow tools support bounded map creation/extension only under their explicit frozen policy and quotas; read scene-collaboration guidance first. Explicit webpage requests can use available host browser tools. Report actual assets, checks and target-engine evidence with appropriate detail.',
     ].join(' '),
   },
 );
@@ -93,6 +94,10 @@ function failure(error) {
 }
 
 const workbuddyPreview = new WorkBuddyPreview(repositoryRoot, () => server.server.getClientVersion()?.name);
+const sceneOperations = new Map(sceneWorkflowTools.map(([name, operation]) => [name, operation]));
+const sceneProduction = new Set(['scene-workflow-create', 'scene-workflow-execute', 'scene-workflow-revise', 'scene-workflow-resume', 'scene-workflow-adopt']);
+const sceneFollowing = new Set([...sceneProduction, 'scene-workflow-get', 'scene-workflow-pause']);
+const previewPolicySchema = z.enum(['auto', 'user-declined', 'user-dismissed', 'host-unavailable']).optional().describe('WorkBuddy preview exception only for an explicit user choice or verified unavailable host tool. Omit normally. This does not change the production request identity.');
 let following = false;
 async function followResult(value) {
   if (!following || !value.presentation?.viewPath) return value;
@@ -106,6 +111,17 @@ async function followResult(value) {
 function registerTool(name, options, handler) {
   server.registerTool(name, options, async (input) => {
     try {
+      const sceneOperation = sceneOperations.get(name);
+      if (sceneProduction.has(sceneOperation) && workbuddyPreview.enabled) {
+        workbuddyPreview.configure(input.previewPolicy);
+        const manifest = await loadManifest();
+        const route = sceneOperation === 'scene-workflow-create'
+          ? sceneWorkflowPath(manifest, input.spec.documentId)
+          : (await agentRequest(manifest, 'scene-workflow-get', { workId: input.workId })).presentation.viewPath;
+        const blocked = await workbuddyPreview.beforeRun(manifest, route);
+        if (blocked) return success({ ...blocked, next: `Complete preview.next, then call ${name} with the same parameters. No task or provider call was created by this blocked request.` }, name);
+        following = !workbuddyPreview.disabledReason;
+      }
       if (name === 'workbench_run_task' && workbuddyPreview.enabled) {
         workbuddyPreview.configure(input.previewPolicy);
         const manifest = await loadManifest();
@@ -126,8 +142,8 @@ function registerTool(name, options, handler) {
         following = !workbuddyPreview.disabledReason;
       }
       let value = await handler(input);
-      if (['workbench_run_task', 'workbench_get_task', 'workbench_edit_image_region', 'workbench_get_image_edit'].includes(name)) value = await followResult(value);
-      if (['workbench_list_capabilities','workbench_describe_capability','workbench_present','workbench_run_task','workbench_get_task','workbench_get_frontend_context','workbench_edit_image_region','workbench_get_image_edit'].includes(name)) {
+      if (sceneFollowing.has(sceneOperation) || ['workbench_run_task', 'workbench_get_task', 'workbench_edit_image_region', 'workbench_get_image_edit'].includes(name)) value = await followResult(value);
+      if (sceneFollowing.has(sceneOperation) || ['workbench_list_capabilities','workbench_describe_capability','workbench_present','workbench_run_task','workbench_get_task','workbench_get_frontend_context','workbench_edit_image_region','workbench_get_image_edit'].includes(name)) {
         value = await workbuddyPreview.decorate(await loadManifest(), value, value.frontendPresentation?.viewPath || value.presentation?.actions?.[0]?.viewPath || value.presentation?.viewPath || value.viewPath || value.capability?.ui?.route || '/');
       }
       if (value.imageBase64 || value.edit?.pixels?.imageBase64) {
@@ -380,10 +396,13 @@ for (const [name,operation,description] of gameExportTools) {
   registerTool(name,{description,inputSchema:gameExportInputs[operation].shape,annotations:{readOnlyHint:['game-exports','game-export'].includes(operation),destructiveHint:false,idempotentHint:true,openWorldHint:false}},async input=>agentRequest(await loadManifest(),operation,input));
 }
 for (const [name, operation, description] of sceneWorkflowTools) {
-  registerTool(name, { description, inputSchema: sceneWorkflowInputs[operation].shape,
+  registerTool(name, { description, inputSchema: { ...sceneWorkflowInputs[operation].shape, ...(sceneProduction.has(operation) ? { previewPolicy: previewPolicySchema } : {}) },
     annotations: { readOnlyHint: ['scene-workflow-list', 'scene-workflow-get', 'scene-workflow-observe'].includes(operation), destructiveHint: false, idempotentHint: true,
       openWorldHint: ['scene-workflow-create', 'scene-workflow-execute', 'scene-workflow-revise', 'scene-workflow-resume'].includes(operation) } },
-  async input => agentRequest(await loadManifest(), operation, input));
+  async input => {
+    const { previewPolicy: _previewPolicy, ...request } = input;
+    return agentRequest(await loadManifest(), operation, request);
+  });
 }
 registerTool('workbench_get_scene_workflow_settings', { description: 'Read scene expert model profiles and credential readiness only; no model call or key values.', inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   async () => agentRequest(await loadManifest(), 'scene-workflow-settings', {}));
