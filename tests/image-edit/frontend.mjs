@@ -77,9 +77,31 @@ for (let x = 0, column = 0; x < 3840; x += 3, column++) { maskBudget.maskStroke(
 assert.throws(() => maskBudget.endMaskStroke(), /256 KiB/); checks++;
 check(maskBudget.selectionCount, 0); check(maskBudget.region, null); check(JSON.stringify(maskBudget.maskUndo), beforeMaskHistory, 'mask history budget failure rolls back the whole gesture and does not leave an unreplayable recipe');
 
+// Browsing must not reset selection; an explicit new editing base preserves it too.
+const versions = new PixelController(source, width, height);
+versions.selectRegion(null); versions.setBase(new Uint8Array(source));
+check(versions.selectionCount, 0, 'empty selection survives editing-base change');
+versions.undoMask(); check(versions.selectionCount, width * height);
+versions.selectRegion(null);
+versions.selectRectangle({ x: 1, y: 1 }, { x: 2, y: 2 });
+versions.selectRectangle({ x: 2, y: 1 }, { x: 3, y: 2 }, 'add');
+check(versions.selectionCount, 6);
+versions.selectRectangle({ x: 2, y: 1 }, { x: 2, y: 2 }, 'subtract');
+check(versions.selectionCount, 4);
+versions.setBase(new Uint8Array(source)); versions.undoMask(); check(versions.selectionCount, 6, 'base change preserves selection history');
+versions.beginMaskStroke('replace'); versions.maskStroke({ x: 7, y: 3 }, 'add'); versions.endMaskStroke();
+check(versions.selectionCount, 1); versions.undoMask(); check(versions.selectionCount, 6, 'new brush selection is one undo step');
+versions.beginMaskStroke('replace'); versions.maskStroke({ x: 0, y: 0 }, 'add'); versions.cancelMaskStroke(); check(versions.selectionCount, 6);
+
 const vite = await createTestViteServer({ configFile: false, appType: 'custom', resolve: { alias: { '@': process.cwd() } }, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, logLevel: 'error' });
 try {
   const client = await vite.ssrLoadModule('/features/image-edit/client.ts');
+  const { ImageVersionCache, ImageViewRequest } = await vite.ssrLoadModule('/features/image-edit/version-cache.ts');
+  const lastView = new ImageViewRequest(); const firstView = lastView.begin(); const secondView = lastView.begin(); check(firstView.aborted, true); check(secondView.aborted, false); lastView.cancel(); check(secondView.aborted, true);
+  const cache = new ImageVersionCache(200);
+  const cached = { pixels: source, width, height, rgbaSha256: 'fixture' };
+  cache.put('edit', 'source', cached); check(await cache.load('edit', 'source'), cached, 'cached versions do not fetch');
+  cache.put('edit', 'other', { ...cached, pixels: new Uint8Array(source) }); check(cache.peek('edit', 'source'), undefined, 'LRU byte budget is enforced');
   const hash = createHash('sha256').update(source).digest('hex');
   const value = { width, height, rgbaBase64: Buffer.from(source).toString('base64'), rgbaSha256: hash, rgbaByteLength: source.length, pixelFormat: 'sRGB-RGBA8-straight' };
   check((await client.verifiedImagePixels(value)).pixels, source);

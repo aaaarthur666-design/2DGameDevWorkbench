@@ -67,6 +67,7 @@ for (const viewPath of [
   '/tools/map-stitcher?map=map-a&imageEdit=edit-b&imageCandidate=source',
   '/tools/map-stitcher?imageTask=image-a',
   '/tools/scene-composer?document=scene-a&imageEdit=edit-c&imageCandidate=3',
+  '/tools/scene-composer?document=scene-a&sceneWorkflow=scene-task-a',
   '/assets?asset=image:source-a&imageEdit=edit-d&imageCandidate=2',
 ]) {
   const request = await queuePresentation(repositoryRoot, identityManifest, { viewPath, title: 'Exact preview identity', summary: 'Identity round trip' });

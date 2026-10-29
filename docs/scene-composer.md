@@ -64,6 +64,8 @@
 
 ## Agent 编辑与视觉检查
 
+需要多位专家规划并制作候选时，使用工具栏「场景协作」或 `workbench_create_scene_workflow`。它从已保存场景开始，在独立候选中复用或生成物件、创建或扩展地图、配置联动及局部改图；新生成与地图制作需要单独授权额度和范围。系统结合实际图片、接缝放大图和事件回放复核，最后按原场景版本采用。空场景也可启动。角色、额度、恢复与工具契约见[场景专家协作](scene-collaboration.md)。单次精确编辑仍使用下面的共享文档命令。
+
 `workbench_list_documents` 发现共享场景，`workbench_get_document` 读取当前内容或指定 `revision`；`viewPath` 使用 `?document=<id>` 打开同一工程。`metadataOnly=true` 只返回版本、名称和内容哈希，适合轮询。HTTP 对应 `/api/workbench/documents` 与 `/api/workbench/documents/<id>`；CLI 使用 `agent documents`、`agent document-get` 等同名操作。
 
 修改使用 `workbench_apply_document_commands`，输入为 `{documentId, expectedRevision, commandId, commands}`。一个事务最多 100 条命令，只影响一个文档，任何一条失败都不提交：

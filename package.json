@@ -58,7 +58,8 @@
     "test:route-a": "node tests/route-a/run.mjs && node tests/route-a/audit.mjs",
     "test:preview-follow": "node tests/preview-follow/run.mjs && node tests/preview-follow/workbuddy.mjs",
     "test:asset-import": "node tests/asset-import/run.mjs",
-    "test:game-export": "node tests/game-export/run.mjs"
+    "test:game-export": "node tests/game-export/run.mjs",
+    "test:scene-workflow": "node tests/scene-workflow/run.mjs && node tests/scene-workflow/generation.mjs && node tests/scene-workflow/map.mjs && node tests/scene-workflow/production.mjs && node tests/scene-workflow/visibility.mjs && node tests/scene-workflow/transport.mjs && node tests/scene-workflow/frontend.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

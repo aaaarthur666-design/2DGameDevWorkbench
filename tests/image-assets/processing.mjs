@@ -110,3 +110,11 @@ try {
   assert.equal(networkRequests, 0);
 } finally { globalThis.fetch = originalFetch; }
 console.log('Image processing: exact protected RGBA, soft-mask protection, transparent candidate replacement, alpha1-only cleanup, idempotence, size rejection, raw/derived provenance and adoption passed; 0 network calls.');
+
+const { imageDarkeningWarning } = await import('../../features/image-edit/appearance-check.mjs');
+const bright = new Uint8Array(100 * 4).fill(180), black = new Uint8Array(bright);
+for (let i = 0; i < bright.length; i += 4) { bright[i + 3] = 255; black.set([0, 0, 0, 255], i); }
+assert.equal(imageDarkeningWarning(bright, black)?.code, 'large-dark-patch');
+assert.equal(imageDarkeningWarning(black, black), null, 'Unchanged black art is not an anomaly.');
+for (let i = 0; i < black.length; i += 4) black[i + 3] = 0;
+assert.equal(imageDarkeningWarning(bright, black), null, 'Intentional transparency is not a black patch.');

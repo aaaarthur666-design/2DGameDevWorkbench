@@ -25,9 +25,9 @@ Preserve exported visibility and z order: surface / overall background at 0, mas
 
 `features/scene-composer/godot-builder.mjs` has a separate assembly contract. It supplies `ActorSlot`, scene-relative ordered z values, preserved instance IDs, transformed object origins and `MapCollisions.position = scene.map.offset`. Add the actor under ActorSlot at relative z=0 (or use its recorded actorZIndex). Share one exported interaction runtime version; compare existing runtime files/hashes before merging. Do not duplicate class_name registrations or overwrite project settings. Source scene ZIP is editor data, not an extra runtime dependency.
 
-## Instantiate through the level Builder
+## Instantiate through the target level owner
 
-The included `assets/map_mount.gd` is a small adaptation of the reference project's Builder behavior, not a replacement map engine. Place it outside generated map folders and use the actual scene path:
+Use the target project's existing level ownership and transition path. The optional `assets/map_mount.gd` adapts the reference project's Builder behavior; it does not require introducing a Builder into unrelated projects. If useful, place it outside generated map folders and use the actual scene path:
 
 ```gdscript
 const MapMount = preload("res://LevelModule/MapMount.gd")

@@ -27,7 +27,7 @@ export interface ImagePixels {
 }
 export interface ImageCandidate {
   version: string; taskId?: string; status: string; createdAt: string; error?: string; derivedState?: boolean;
-  operation: { type: string }; sha256?: string; rgbaSha256?: string; baseCandidateVersion?: string;
+  operation: { type: string }; sha256?: string; rgbaSha256?: string; baseCandidateVersion?: string; previewPath?: string;
   constraints?: { preserveOutsideRegion: boolean; preserveDimensions: boolean; preserveAlpha: boolean };
   diff?: ImageCandidateDiff; diffFromBase?: ImageCandidateDiff; diffFromSource?: ImageCandidateDiff;
   evidence?: { sourceRgbaSha256?: string; baseRgbaSha256?: string; maskSha256?: string; rawSha256?: string; sha256?: string; processingEvidence?: string; usageEvidence?: string; provider?: string; model?: string; preservation?: { changedOutsideMaskPixels?: number; protectedPixels?: number; editablePixels?: number }; alphaPreservation?: { changedAlphaPixels: number; expectedAlphaSha256: string; actualAlphaSha256: string } | null; alphaCleanup?: { threshold?: number } };
@@ -61,10 +61,10 @@ export const IMAGE_AI_REFERENCE_LIMITS = Object.freeze({ count: 8, perImageBytes
 export class ImageEditClientError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); this.name = 'ImageEditClientError'; }
 }
-export async function imageEditRequest<T>(operation: string, body: unknown): Promise<T> {
+export async function imageEditRequest<T>(operation: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/workbench/image-edit/${operation}`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-    cache: 'no-store', signal: AbortSignal.timeout(120000),
+    cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
   });
   const value = await response.json() as { error?: unknown; code?: string };
   if (!response.ok) throw new ImageEditClientError(typeof value.error === 'string' ? value.error : '局部调整请求未完成。', response.status, value.code);
@@ -127,7 +127,7 @@ export function imageCandidateFollowState(session: ImageEditSession, followVersi
 export const imageApplyInput = (target: ImageTargetInfo, editId: string, candidateVersion: string, commandId: string) => ({ editId, candidateVersion, expectedRevision: target.revision, expectedSha256: target.sha256, commandId });
 export const imageReadInput = (editId: string, candidateVersion?: string, includePixels = false) => ({ editId, includePixels, ...(candidateVersion ? { candidateVersion } : {}) });
 export const inspectImage = (target: ImageTargetRef, offset = 0) => imageEditRequest<ImageInspection>('inspect', imageInspectInput(target, offset));
-export const readImageEdit = (editId: string, candidateVersion?: string, includePixels = false) => imageEditRequest<{ edit: ImageEditSession }>('session-get', imageReadInput(editId, candidateVersion, includePixels));
+export const readImageEdit = (editId: string, candidateVersion?: string, includePixels = false, signal?: AbortSignal) => imageEditRequest<{ edit: ImageEditSession }>('session-get', imageReadInput(editId, candidateVersion, includePixels), signal);
 export const imageInspectionMetadata = (value: ImageInspection): ImageInspection => ({ target: value.target, namedRegions: value.namedRegions, sessions: value.sessions, relatedPagination: value.relatedPagination, historyOnly: value.historyOnly });
 export function mergeImageInspectionPage(current: ImageInspection, page: ImageInspection, kind: ImageRelatedKind): ImageInspection {
   if (page.target.targetId !== current.target.targetId || page.target.revision !== current.target.revision || page.target.sha256 !== current.target.sha256) throw new Error('翻页期间目标版本已变，请刷新目标状态；当前笔划保留。');
@@ -220,15 +220,28 @@ export async function rgbaHash(pixels: Uint8Array | Uint8ClampedArray) {
 export async function verifiedImagePixels(value: Partial<ImagePixels>) {
   const { width, height, rgbaBase64, rgbaSha256, rgbaByteLength, pixelFormat } = value;
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || !width || !height || width < 1 || height < 1 || width > 3840 || height > 3840 || width * height > 8294400 || pixelFormat !== 'sRGB-RGBA8-straight' || !rgbaBase64 || rgbaByteLength !== width * height * 4 || !rgbaSha256 || !/^[a-f0-9]{64}$/.test(rgbaSha256)) throw new Error('服务端 RGBA 描述不完整，未打开编辑。');
-  const pixels = base64ToBytes(rgbaBase64);
+  const pixels = await decodeImageBytes(rgbaBase64);
   if (pixels.byteLength !== rgbaByteLength || await rgbaHash(pixels) !== rgbaSha256) throw new Error('RGBA 字节或 SHA-256 不符，未打开编辑。');
   let previewSource: string | undefined;
   if (value.imageBase64 !== undefined) {
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(value.imageMimeType || '') || !value.sha256 || await rgbaHash(base64ToBytes(value.imageBase64, 56_000_000)) !== value.sha256) throw new Error('预览图片字节或 SHA-256 不符，未打开编辑。');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(value.imageMimeType || '') || !value.sha256 || await rgbaHash(await decodeImageBytes(value.imageBase64, 56_000_000)) !== value.sha256) throw new Error('预览图片字节或 SHA-256 不符，未打开编辑。');
     // Display saved bytes immediately on selection/restore. Only unsaved strokes need Canvas encoding.
     previewSource = `data:${value.imageMimeType};base64,${value.imageBase64}`;
   }
   return { pixels, width, height, rgbaSha256, previewSource };
+}
+// Bounded chunks let the browser paint/cancel between decoding large buffers.
+async function decodeImageBytes(encoded: string, maximumLength = 45_000_000) {
+  if (typeof encoded !== 'string' || encoded.length > maximumLength || encoded.length % 4) throw new Error('RGBA 编码无效或过大。');
+  const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+  const output = new Uint8Array(encoded.length / 4 * 3 - padding), chunkSize = 262144;
+  for (let start = 0; start < encoded.length; start += chunkSize) {
+    const chunk = encoded.slice(start, start + chunkSize);
+    if (start + chunkSize < encoded.length && chunk.includes('=')) throw new Error('RGBA 编码无效。');
+    output.set(base64ToBytes(chunk), start / 4 * 3);
+    if (start + chunkSize < encoded.length) await new Promise<void>(resolve => setTimeout(resolve, 0));
+  }
+  return output;
 }
 export function encodePixelPatch(spans: PixelSpan[], baseRgbaSha256: string): ImageLocalOperation {
   if (!spans.length || spans.reduce((total, span) => total + span.before.byteLength + span.after.byteLength, 0) > 524288) throw new Error('像素补丁为空或超过 512 KiB，请分次保存笔划。');

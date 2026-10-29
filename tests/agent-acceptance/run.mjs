@@ -101,12 +101,17 @@ try {
   assert.equal(engineering.createsTask, false);
   await access(path.join(root, engineering.skill));
   await access(path.join(root, engineering.guide));
-  assert.match(listed.conversationGuidance.text, /AskUserQuestion/);
+  const motionGuide = listed.conversationGuidance.topics.find(topic => topic.id === 'motion');
+  assert.equal(motionGuide.capabilityId, 'sprite-generator');
+  const motion = value(await call('workbench_get_guidance', { topic: motionGuide.id }));
+  assert.equal(motion.text, await readFile(path.join(root, motionGuide.source), 'utf8'));
+  assert.equal(motion.createsTask, false);
   const description = value(
     await call('workbench_describe_capability', {
       capabilityId: 'sprite-generator',
     }),
   );
+  assert(description.guidanceTopics.some(topic => topic.id === motionGuide.id));
   assert(
     description.capability.inputSchema.properties.operation.enum.includes(
       'approve',

@@ -13,8 +13,9 @@
 | 旧地图原图请求兼容 | Web `map-stitcher` / `generate-origin` | 沿用地图生成设置 |
 | 确定性拼接已有图片并生成状态/引擎包 | 本地适配器 `compose` | 不需要 |
 | 填充透明模板的整体图层 | Web `generate-layer` | 需要已配置 Gemini、OpenAI Images 或混元 |
+| 在场景任务中自动创建与逐块扩展地图 | 场景协作的 `map` 步骤 | 沿用已选地图服务，受生成次数与图块额度约束 |
 
-地图原图生产、拼接、区域绘制和扩图仍为人工地图编辑流程，不向 MCP Agent 开放自动执行。Agent 可以通过独立的 `image-assets` 生成或编辑背景 / 物品 PNG，也可通过已交付的 7A 高层图像 API 局部调整已保存的单张源图；两者均须明确采用，完成图片不代表已经创建或导出地图。详见[图像局部编辑](image-editing.md)。
+地图编辑器保留原有前端制作流程，底层 `map-stitcher` 操作不直接向 Agent 开放。自动创建与扩展使用 `workbench_create_scene_workflow`：在已保存场景的独立候选中生成、拼接并检查地图，最后明确采用；它不改写来源地图工程。该路径要求可验证源包，保留旧像素、坐标、碰撞与锁，范围见[场景专家协作](scene-collaboration.md)。用户明确要求网页操作时，也可使用宿主浏览器能力。独立 `image-assets` 继续提供背景 / 物品 PNG 生成或编辑，7A 高层图像 API 提供已保存源图的局部调整；完成独立图片不代表已经创建或导出地图。
 
 ## 开始编辑
 
@@ -45,7 +46,7 @@
 
 OpenAI 纯文本原图使用 `/v1/images/generations`，参考图 / 编辑 / 扩图使用 `/v1/images/edits`。原有自定义地址保留：edits 地址以 `/edits` 结尾时会沿用同一服务的 `/generations`；其他自定义地址需设置 `MAP_STITCHER_OPENAI_GENERATION_API_URL`。独立图片能力从 manifest 的地图 provider 列表引用 GPT Image 2.5 配置，不复制一份 provider 或 Key。
 
-旧 `map-stitcher` / `generate-origin` 及其 `generated-origin.png` 记录继续兼容，仍可按原配置使用 Nano Banana 2、GPT Image 2 / 2.5 或混元 Image 3.0。旧图的身份与历史不改写，地图制作的手动边界继续生效。
+旧 `map-stitcher` / `generate-origin` 及其 `generated-origin.png` 记录继续兼容，前端与场景协作执行器均可按固定配置使用 Nano Banana 2、GPT Image 2 / 2.5 或混元 Image 3.0。旧图的身份与历史不改写。
 
 手动验收：先保留一份有内容的地图，打开生成面板并检查模型设置；生成一张后确认旧图未变，下载预览，再点“用作中心图”，检查首圈卡片并生成一块扩图。最后从“打开”找回旧地图、刷新后重新打开新地图，确认两份草稿都在。真实图片生成会使用你配置的 API 额度；自动回归使用隔离模拟服务。
 
@@ -140,9 +141,9 @@ SceneMaker 的 ground 映射到 surface，整体图由旧视觉层合成，矩�
 
 生成设置只保留已有连接器实际支持的参数：服务选择、密钥、是否激活，以及唯一整体层提示词。Host 和 Model 由 Manifest 定义。密钥保存在本机受保护的持久配置或服务端环境变量中，页面只接收“已配置”状态，状态包和日志不包含密钥。
 
-旧 `map-stitcher` 的地图生产操作继续属于手动前端工作流，不向 MCP / Agent CLI 开放发现或执行。前端通过 `workbench/manifest.json` 和共享 Runtime 调用本地 `compose`、原图 `generate-origin` 和整体层 `generate-layer` 适配器；生产产物写入 `outputs/<task-id>/`。7A 的单源图局部调整使用独立高层图像接口，不开放这些地图生产操作。具体输入见 [连接器契约](connector-contract.md)。
+底层 `map-stitcher` 的生产操作不向 MCP / Agent CLI 直接开放发现或执行。前端与场景协作的统一执行器通过 manifest 和共享 Runtime 使用原图 `generate-origin`、整体层 `generate-layer`；前端还使用 `compose`。生产产物写入 `outputs/<task-id>/`。场景协作另外保存固定来源、模板、生成身份、拼接哈希与候选版本。7A 单源图局部调整继续使用独立高层图像接口。具体输入见[连接器契约](connector-contract.md)。
 
-页面 WebMCP 另提供七个操作入口，但不能用于绕过 Agent 手动地图边界：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入工作台共享的 runtime task ledger。
+页面 WebMCP 在宿主支持时另提供七个页面操作入口，用户明确要求网页操作时按实际 schema 使用：读取摘要、切换视图、导入图片、生成图片、创建区域、导出、管理队列。它们与按钮、快捷键共用控制器，遵循相同锁与版本检查。普通页面编辑不产生仓库级生产任务 ID；通过服务端执行的外部 `generate-layer` 会进入工作台共享的 runtime task ledger。
 
 ### 已保存源图的局部调整（7A–7D）
 
@@ -196,7 +197,7 @@ API 格式核对依据：[OpenAI 图片生成与编辑](https://developers.opena
 
 ## 混元 Image 3.0（地图）
 
-“地图生成设置 → 图片 API 模式”选择“混元 Image 3.0”。本次接入地图原图和整体层参考扩图；角色原图与动画仍使用原有 PixelLab 链路，地图不开放 MCP 自动制作。
+“地图生成设置 → 图片 API 模式”选择“混元 Image 3.0”，用于地图原图和整体层参考扩图；角色原图与动画仍使用原有 PixelLab 链路。MCP 自动地图制作通过场景协作的有界候选流程接入，不直接开放底层地图适配器。
 
 ### 账号和密钥
 

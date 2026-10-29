@@ -30,6 +30,16 @@ Input locks belong to owner/token pairs. Releasing a UI control must release its
 
 The reference still contains both MainEntry child-level hosting and SceneTransitionManager whole-tree switching. Choose the route used by the target level; do not silently unify them or copy both into a new game with overlapping ownership. Keep that decision explicit in the source-to-target map.
 
+## Actor animation contracts
+
+CopyWorms uses `AnimatedSprite2D` named `Sprite` in the formal warrior scene. For a full-set resource replacement, assign the generated SpriteFrames to that node and preserve its controller, node path, visual offset, scale and collision shape. For a single-action update, **merge only those clips** into a copy of the existing SpriteFrames; keep idle/walk/jump and every unselected clip. The included `assets/sprite_frames_merge.gd` exposes `merge_clips(existing, incoming)` and mutates neither input. Save its result to a new resource path, then update the intended actor reference. Inspect shared resources/scene inheritance before deciding whether a change should affect other actors. Do **not** also instantiate a second visual scene or replace its script with the helper. The source faces right; flip `Sprite.flip_h`, keeping CharacterBody2D/colliders unmirrored. Confirm nearest filtering, transparent padding and feet placement with movement/jumps. Enemy and boss cells can be different sizes; 128×128 is not a global requirement.
+
+`Player_Warrior._get_anim_for_state` maps IDLE→idle, RUN→walk, JUMP/FALL→jump, ATTACK→attack (or attack_in_air when appropriate). Concrete characters refine missing states. Pipeline actions `hurt`/`death` and some project resources `hit`/`defeated` require explicit aliases to actual clips. Inspect the concrete scene; never assume both spellings exist.
+
+`_update_animation` changes playback only when its target clip changes. Calling play+frame=0 on every physics tick prevents visible animation. Repeating an attack while remaining in the same logical state needs a distinct action occurrence/restart from the existing controller. PlayerBase owns attack windup and duration; `_on_attack` / DamageCalculator apply hits. Animation completion does not automatically end attack, apply damage or change player state.
+
+Cyber special actions deliberately return early from normal animation updates while dash/charge/skill sequences own the visual. Keep those gates. The source's jump frame hold and skill frame selections depend on exact clip lengths (including a jump hold at frame 4); revalidate them for replacement art rather than silently importing shorter clips.
+
 ## Reuse decisions
 
 | Code family | Default decision | Dependencies / validation |

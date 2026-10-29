@@ -1,4 +1,5 @@
 import '../helpers/runtime-workspace.mjs';
+import '../helpers/mock-keychain.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -51,7 +52,7 @@ export function registerApiSettingsTests(test) {
     assert.throws(() => updateMapGenerationSettings(connector, { provider: 'nano-banana', apiKey: 'replacement-fixture', active: 'invalid' }));
     assert.equal(readFileSync(file, 'utf8'), raw);
 
-    const restarted = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const restarted = spawnSync(process.execPath, ['--import', new URL('../helpers/mock-keychain.mjs', import.meta.url).href, '--input-type=module', '-e', `
       import assert from 'node:assert/strict';
       import { loadManifest } from './lib/workbench/runtime.mjs';
       import { getPublicMapGenerationSettings, resolveMapGenerationProvider, updateMapGenerationSettings } from './lib/workbench/map-generation-settings.mjs';

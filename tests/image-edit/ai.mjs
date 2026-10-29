@@ -135,6 +135,8 @@ try {
   check(sha(calls[0].images[0]), sha(await readFile(path.resolve(repositoryRoot, persisted.input.image))));
   check(await decode(calls[0].images[0]), manualPixels, 'The provider base is the manual candidate, not the original source.');
   const maskPixels = await decode(calls[0].mask);
+  check(calls[0].prompt.includes('x=400..463, y=400..463'), true, 'Frozen request includes precise bounds, not a painted overlay.');
+  check(calls[0].prompt.includes('fully transparent mask pixels are the region to reconstruct'), true);
   check(maskPixels[(400 * 1024 + 400) * 4 + 3], 0); check(maskPixels[manualOffset + 3], 255);
   await writeFile(referenceFile, await encode(Buffer.from([1, 2, 3, 255]), 1, 1));
   check(await readFile(path.resolve(repositoryRoot, persisted.input.references[0])), referenceBytes, 'A later source-file change cannot alter the frozen reference.');
