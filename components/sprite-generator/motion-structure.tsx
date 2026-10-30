@@ -2,6 +2,7 @@
 /* oxlint-disable next/no-img-element -- Pixel evidence must use original image bytes. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motionRequest, motionUrl } from './open-motion-model';
+import { MotionStructureHistory, StructureHistoryImage } from './motion-structure-history';
 import './motion-structure.css';
 
 type Point = { x: number; y: number; label: 0 | 1 };
@@ -258,12 +259,12 @@ export function MotionStructure({
   }, [analysisId, running, apply]);
 
   const request = async (action: () => Promise<Structure>) => {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true);
     setMessage('');
     try {
       const value = await action();
-      if (!alive.current) return;
+      if (!alive.current) return false;
       try {
         if (localKey) localStorage.removeItem(localKey);
       } catch {
@@ -271,8 +272,10 @@ export function MotionStructure({
       }
       apply(value);
       setVisible(true);
+      return true;
     } catch (error) {
       if (alive.current) setMessage((error as Error).message);
+      return false;
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -281,15 +284,15 @@ export function MotionStructure({
     setDraft(next);
     setDirty(true);
   };
-  const correct = (extra: Record<string, unknown>) => {
-    if (!analysis || !document) return;
-    void request(() =>
+  const correct = (extra: Record<string, unknown>, requestKey = crypto.randomUUID()) => {
+    if (!analysis || !document) return Promise.resolve(false);
+    return request(() =>
       motionRequest<Structure>(
         `open-motion/structures/${analysis.id}/corrections`,
         {
           expected_revision: analysis.revision,
           token: document.token,
-          request_key: crypto.randomUUID(),
+          request_key: requestKey,
           note,
           ...extra,
         },
@@ -1082,16 +1085,26 @@ export function MotionStructure({
                     </button>
                   </div>
                 )}
-                {analysis.revision > 1 && !dirty && (
-                  <button
-                    disabled={locked}
-                    onClick={() =>
-                      correct({ restore_revision: analysis.revision - 1 })
-                    }
-                  >
-                    恢复上一个结构版本
-                  </button>
-                )}
+                <MotionStructureHistory current={analysis} route={`open-motion/structures/${analysis.id}`} disabled={locked} dirty={dirty}
+                  onRestore={(request) => correct(request, request.request_key)}
+                  onRefresh={async () => {
+                    try { apply(await motionRequest<Structure>(`open-motion/structures/${analysis.id}`), true); }
+                    catch (error) { setMessage((error as Error).message); }
+                  }}>
+                  {(historical) => <>
+                    <p>{historical.document?.data.summary}</p>
+                    <StructureHistoryImage key={`${historical.id}:${historical.document?.revision}`} image={motionUrl(`open-motion/structures/${historical.id}/source`)} width={historical.source.width} height={historical.source.height}
+                      caption={`角色结构版本 ${historical.document?.revision} 的原图`}
+                      parts={(historical.document?.data.parts || []).map((part) => ({ id: part.id, name: part.name, maskUrl: historical.document?.masks.some((mask) => mask.id === part.id) ? motionUrl(`open-motion/structures/${historical.id}/masks/${part.id}`, { revision: String(historical.document.revision) }) : undefined }))}
+                      anchors={historical.document?.data.anchors || []} />
+                    {!!historical.document?.data.relations.length && <details><summary>历史连接与握持关系</summary><ul>{historical.document.data.relations.map((relation) => {
+                      const nodes = [...historical.document!.data.parts, ...historical.document!.data.anchors];
+                      const label = (id: string) => nodes.find((node) => node.id === id)?.name || id;
+                      return <li key={relation.id}>{label(relation.source)} → {label(relation.target)} · {relation.type} · {relation.state}：{relation.evidence}</li>;
+                    })}</ul></details>}
+                    {historical.document?.issues.map((issue, index) => <p key={index}>{issue.message}</p>)}
+                  </>}
+                </MotionStructureHistory>
                 {draft.uncertainties.length > 0 && (
                   <details>
                     <summary>不确定项与依据</summary>

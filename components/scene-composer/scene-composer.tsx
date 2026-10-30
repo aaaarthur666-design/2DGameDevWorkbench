@@ -42,6 +42,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
+import { WorkbenchBreadcrumb } from '@/components/workbench/shared-navigation';
 import { EditorWorkbenchMenu, EditorDraftControl, EditorTaskSummary } from '@/components/workbench/editor-chrome';
 import {
   listWorkItems,
@@ -84,6 +85,8 @@ import {
 } from '@/features/scene-composer/browser';
 import { useSceneDocument } from './use-scene-document';
 import { DocumentSyncStatus } from '@/components/workbench/document-sync-status';
+import { SharedDocumentPicker } from '@/components/workbench/shared-document-picker';
+import { sharedDocumentHref } from '@/features/editor-documents/library';
 import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
 import { mapImportFile, clearImportQuery, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
 import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
@@ -223,6 +226,7 @@ export function SceneComposer() {
   'use no memo';
   const { navigate } = useWorkbench();
   const [library, setLibrary] = useState<{ purpose: ImportPurpose; assetId?: string; replace?: boolean } | null>(null);
+  const [sharedOpen, setSharedOpen] = useState(false);
   const importStarted = useRef(false);
   const [handoffUrl, setHandoffUrl] = useState('');
   const [imageEdit, setImageEdit] = useState<{ target: ImageTargetRef; guard: DocumentSavedSnapshot<Scene> | null; navigation?: ImageEditNavigation } | null>(null);
@@ -534,7 +538,8 @@ export function SceneComposer() {
       else {
         const incoming = normalizeProject(JSON.parse(await bundle.files[0].file.text())) as InteractableProject;
         chooseObjects(incoming);
-        if (bundle.asset.definitionId) setObjectIds([bundle.asset.definitionId]);
+        if (bundle.asset.definitionIds?.length) setObjectIds(bundle.asset.definitionIds);
+        else if (bundle.asset.definitionId) setObjectIds([bundle.asset.definitionId]);
         setDialog(library?.replace ? 'replace' : 'objects');
       }
     });
@@ -733,9 +738,7 @@ export function SceneComposer() {
       <header className="sc-header">
         <div className="sc-title">
           <EditorWorkbenchMenu />
-          <Layers size={19} />
-          <h1>{ready ? scene.name : '场景组装'}</h1>
-          <span>场景组装</span>
+          <WorkbenchBreadcrumb compact projectName={ready ? scene.name : '正在打开场景…'} />
         </div>
         <div className="sc-actions">
           <EditorDraftControl capabilityId="scene-composer" />
@@ -756,7 +759,7 @@ export function SceneComposer() {
             onClick={() => openPicker('open')}
           >
             <FolderOpen />
-            打开
+            打开工程
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="更多项目操作" />}>
@@ -1654,7 +1657,8 @@ export function SceneComposer() {
             </>
           ) : (
             <>
-              <Button variant="outline" disabled={busy} onClick={() => {setLibrary({purpose: dialog === 'map' ? 'map' : dialog === 'open' ? 'scene' : 'interactable', replace: dialog === 'replace'});setDialog(null);}}>从资产库导入</Button>
+              {dialog === 'open' && <Button variant="outline" disabled={busy} onClick={() => { setDialog(null); setSharedOpen(true); }}>浏览服务端共享场景</Button>}
+              <Button variant="outline" disabled={busy} onClick={() => {setLibrary({purpose: dialog === 'map' ? 'map' : dialog === 'open' ? 'scene' : 'interactable', replace: dialog === 'replace'});setDialog(null);}}>从资产库选用</Button>
               <Button
                 variant="outline"
                 disabled={busy}
@@ -2002,6 +2006,12 @@ export function SceneComposer() {
         </DialogContent>
       </Dialog>
     </main>
+    <SharedDocumentPicker open={sharedOpen} kind="scene" currentId={scene.id} disabled={busy || !ready} onClose={() => setSharedOpen(false)} onOpen={async document => {
+      if (busy || !ready) throw new Error('场景正在处理内容，请完成后再打开工程。');
+      const href = sharedDocumentHref(location.pathname, document.id);
+      setSharedOpen(false);
+      await navigate(href);
+    }} />
     {workflow && <SceneWorkflowPanel
       document={workflow.document}
       initialWorkId={workflowInitialId}

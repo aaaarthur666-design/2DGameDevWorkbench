@@ -15,19 +15,26 @@ export interface DocumentResult<T> {
   currentRevision?: number;
   replayed?: boolean;
 }
+export type SharedDocumentSummary = Pick<SharedDocument, 'id' | 'kind' | 'revision' | 'name' | 'createdAt' | 'updatedAt' | 'viewPath'>;
+export interface SharedDocumentPage {
+  documents: SharedDocumentSummary[];
+  total: number;
+  nextOffset?: number | null;
+  issues?: Array<{ record: string; message: string }>;
+}
 export class DocumentClientError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
     this.name = 'DocumentClientError';
   }
 }
-async function request<T>(url: string, body?: unknown): Promise<T> {
+async function request<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/workbench/documents${url}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
-    signal: AbortSignal.timeout(90000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000),
   });
   const value = await response.json() as { error?: unknown; code?: string };
   if (!response.ok) throw new DocumentClientError(typeof value.error === 'string' ? value.error : '共享工程请求未完成。', response.status, value.code);
@@ -39,10 +46,10 @@ export function readDocument<T>(id: string, revision?: number) {
 export function readDocumentMetadata(id: string) {
   return request<DocumentResult<never>>(`/${encodeURIComponent(id)}?metadataOnly=true`);
 }
-export function listDocuments<T>(kind?: DocumentKind, offset = 0) {
+export function listDocuments(kind?: DocumentKind, offset = 0, signal?: AbortSignal) {
   const query = new URLSearchParams({ offset: String(offset), limit: '100' });
   if (kind) query.set('kind', kind);
-  return request<{ documents: Array<SharedDocument<T>>; total: number; nextOffset?: number }>(`?${query}`);
+  return request<SharedDocumentPage>(`?${query}`, undefined, signal);
 }
 export function createDocument<T>(kind: DocumentKind, content: T, commandId = crypto.randomUUID()) {
   return request<DocumentResult<T>>('', { kind, content, commandId });

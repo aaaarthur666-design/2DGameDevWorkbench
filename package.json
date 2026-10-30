@@ -45,7 +45,7 @@
     "test:presentation": "node tests/workbench-presentation/run.mjs",
     "test:workbench-shell": "node tests/workbench-shell/run.mjs",
     "test:frontend": "node tests/frontend-service/run.mjs",
-    "test:open-motion": "node tests/open-motion/run.mjs",
+    "test:open-motion": "node tests/open-motion/run.mjs && node tests/authoring-gaps/run.mjs",
     "test:dev-supervisor": "node tests/sprite-pipeline-supervisor/run.mjs",
     "lint": "oxlint",
     "format": "oxfmt",
@@ -53,13 +53,15 @@
     "test:prop-art": "node tests/prop-art/run.mjs",
     "test:image-assets": "node tests/image-assets/run.mjs && node tests/image-assets/processing.mjs && node tests/image-assets/frontend.mjs",
     "test:image-edit": "node tests/image-edit/core.mjs && node tests/image-edit/targets.mjs && node tests/image-edit/run.mjs && node tests/image-edit/restore.mjs && node tests/image-edit/frontend.mjs && node tests/image-edit/ai.mjs && node tests/image-edit/ai-recovery.mjs && node tests/image-edit/scene-sources.mjs && node tests/image-edit/references.mjs && node tests/image-edit/presentation.mjs && node tests/image-edit/transport.mjs",
-    "test:editor-documents": "node tests/editor-documents/run.mjs && node tests/editor-documents/frontend-sync.mjs",
+    "test:editor-documents": "node tests/editor-documents/run.mjs && node tests/editor-documents/frontend-sync.mjs && node tests/editor-documents/library.mjs",
     "test:scene-observation": "node tests/scene-observation/run.mjs",
     "test:route-a": "node tests/route-a/run.mjs && node tests/route-a/audit.mjs",
     "test:preview-follow": "node tests/preview-follow/run.mjs && node tests/preview-follow/workbuddy.mjs",
-    "test:asset-import": "node tests/asset-import/run.mjs",
-    "test:game-export": "node tests/game-export/run.mjs",
-    "test:scene-workflow": "node tests/scene-workflow/run.mjs && node tests/scene-workflow/generation.mjs && node tests/scene-workflow/map.mjs && node tests/scene-workflow/production.mjs && node tests/scene-workflow/visibility.mjs && node tests/scene-workflow/transport.mjs && node tests/scene-workflow/frontend.mjs"
+    "test:asset-import": "node tests/asset-import/run.mjs && node tests/asset-import/animation-timing.mjs",
+    "test:game-export": "node tests/game-export/run.mjs && node tests/game-export/history.mjs",
+    "test:scene-workflow": "node tests/scene-workflow/run.mjs && node tests/scene-workflow/generation.mjs && node tests/scene-workflow/map.mjs && node tests/scene-workflow/production.mjs && node tests/scene-workflow/visibility.mjs && node tests/scene-workflow/transport.mjs && node tests/scene-workflow/frontend.mjs",
+    "test:asset-packages": "node tests/asset-packages/core.mjs && node tests/asset-packages/catalog.mjs && node tests/asset-packages/http.mjs",
+    "test:asset-navigation": "node tests/asset-navigation/run.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

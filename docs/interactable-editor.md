@@ -28,6 +28,8 @@
 
 本机草稿通过 IndexedDB 自动保存；开始编辑后通过 Runtime Bridge 同步共享工程，界面显示同步状态。已有 projectId 不变，共享 revision 独立管理。“保存源文件”下载可继续编辑的 JSON；“导入项目”可以打开源 JSON 或本工具导出的 ZIP。Godot 中手改的 `.tscn/.tres` 不反向写入源 JSON。任意第三方 `SpriteFrames.tres` 不属于当前导入格式；使用原始帧图或精灵表即可。
 
+“打开工程”可选择当前浏览器的本机草稿、源文件、资产库项目或“浏览服务端共享工程”。共享列表来自当前连接的本机 Runtime 服务，不属于云端账号；系统读取全部分页摘要后支持按名称或工程 ID 搜索、分页与刷新。未同步的旧浏览器草稿仍需在原浏览器打开后同步。选中共享工程后沿用工作台的离页保存与 `?document=<id>` 加载：目标本机未同步修改保持原有冲突保护，不用服务端内容直接覆盖。列表不可读会显示错误，其他文件与资产库入口仍可使用。
+
 ## 共享工程与 AI 编辑
 
 网页与 Agent 共用一个服务端文档。`workbench_list_documents(kind="interactable")` 发现工程，`workbench_get_document` 返回完整项目、稳定 ID、revision 与 contentHash；`?document=<projectId>` 在编辑器继续同一工程。只存在浏览器的旧草稿须先打开并成功同步。轻量读取使用 `metadataOnly=true`，不传回素材正文。

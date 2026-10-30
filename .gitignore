@@ -115,6 +115,7 @@ logs/
 !/docs/agent-preview-follow.md
 !/docs/architecture.md
 !/docs/asset-catalog.md
+!/docs/asset-packages.md
 !/docs/connector-contract.md
 !/docs/desktop-compatibility.md
 !/docs/game-engineering.md

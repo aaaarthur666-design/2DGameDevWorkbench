@@ -381,6 +381,25 @@ try {
     currentProject,
   );
   assert(!entries.some((f) => /manifest|result\.json|qa\.json/.test(f.name)));
+  const archiveManifest = JSON.parse(await zip.file('forge-assets.json').async('string'));
+  assert.equal(archiveManifest.format, 'forge-asset-archive');
+  assert.equal(archiveManifest.version, 1);
+  assert.equal(archiveManifest.entries.length, 5);
+  for (const entry of archiveManifest.entries) {
+    assert(entry.sourceIdentity.assetId);
+    assert.match(entry.sourceVersion, /^[a-f0-9]{64}$/);
+    for (const file of entry.files) {
+      const bytes = await zip.file(file.path).async('nodebuffer');
+      assert.equal(file.bytes, bytes.length);
+      assert.equal(file.sha256, createHash('sha256').update(bytes).digest('hex'));
+      assert(file.mime && file.role);
+    }
+  }
+  const exportedMap = archiveManifest.entries.find((entry) => entry.kind === 'map');
+  assert.equal(exportedMap.mapType, 'project');
+  assert.equal(exportedMap.metadata.projectRevision, 2);
+  assert.deepEqual(exportedMap.metadata.map, { format: 'forge-map-project', version: 1 });
+  assert.equal(archiveManifest.entries.find((entry) => entry.kind === 'animation').metadata.loop, null, 'missing loop stays unknown');
   assert(!entries.some((f) => f.name.includes('..') || f.name.startsWith('/')));
   assert.deepEqual((await readdir(taskDirectory)).sort(), beforeArchive.sort());
   changeNativeBytes = true;

@@ -11,9 +11,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  listDocuments,
   type SharedDocument,
+  type SharedDocumentSummary,
 } from '@/features/editor-documents/client';
+import { readSharedDocumentLibrary } from '@/features/editor-documents/library';
 import type { Scene } from '@/features/scene-composer/model.mjs';
 import {
   adoptionInput,
@@ -42,6 +43,7 @@ import type {
   WorkflowHistoryPage,
 } from '@/features/scene-workflow/client';
 import './scene-workflow.css';
+import { WorkflowAcceptanceDetails, WorkflowStepDetails } from './scene-workflow-plan-details';
 
 const defaultProfile: ModelProfile = {
   provider: 'openai',
@@ -533,7 +535,7 @@ export function SceneWorkflowPanel({
       roles: {},
     });
   const [keys, setKeys] = useState({ openai: '', tokenhub: '' }),
-    [sources, setSources] = useState<Array<SharedDocument>>([]);
+    [sources, setSources] = useState<Array<SharedDocumentSummary>>([]);
   const [works, setWorks] = useState<SceneWorkflow[]>([]),
     [work, setWork] = useState<SceneWorkflow | null>(null);
   const [historyPage, setHistoryPage] = useState<WorkflowHistoryPage | null>(null);
@@ -607,6 +609,7 @@ export function SceneWorkflowPanel({
   };
   useEffect(() => {
     let alive = true;
+    const sourceController = new AbortController();
     const initialize = async () => {
       try {
         const saved = sessionStorage.getItem(storageKey);
@@ -640,17 +643,8 @@ export function SceneWorkflowPanel({
             setWork(requested.value.work);
           } else if (requested.status === 'rejected') setError(message(requested.reason));
         }
-        const rows: Array<SharedDocument> = [];
-        let offset: number | undefined = 0;
-        do {
-          const result: {
-            documents: Array<SharedDocument>;
-            nextOffset?: number;
-          } = await listDocuments('interactable', offset);
-          rows.push(...result.documents);
-          offset = result.nextOffset;
-        } while (offset !== undefined && offset !== null);
-        if (alive) setSources(rows);
+        const result = await readSharedDocumentLibrary('interactable', sourceController.signal);
+        if (alive) setSources(result.documents);
       } catch (cause) {
         if (alive) setError(message(cause));
       }
@@ -658,6 +652,7 @@ export function SceneWorkflowPanel({
     void initialize();
     return () => {
       alive = false;
+      sourceController.abort();
     };
   }, [document.id, storageKey, initialWorkId]);
   const pollingId = work?.id,
@@ -1283,6 +1278,7 @@ export function SceneWorkflowPanel({
                                     .join('、')}
                                 </span>
                               )}
+                              <WorkflowStepDetails step={item} scene={document.content} steps={plan.plan.steps} />
                             </li>
                           );
                         })}
@@ -1290,6 +1286,7 @@ export function SceneWorkflowPanel({
                     </>
                   )}
                 </details>
+                {plan && <WorkflowAcceptanceDetails plan={plan.plan} scene={document.content} />}
                 <WorkflowProductionReceipts work={work} />
                 {work.evidence.length > 0 && (
                   <section aria-label="候选画面对比">

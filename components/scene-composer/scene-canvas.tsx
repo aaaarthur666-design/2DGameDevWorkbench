@@ -519,7 +519,7 @@ export function SceneCanvas(p: Props) {
         {!scene.map && (
           <div className="sc-canvas-empty">
             <strong>先选择一张地图</strong>
-            <span>再把左侧交互物拖到这里</span>
+            <span>点击上方“选择地图”，从资产库选用或打开地图源包，再把左侧交互物拖到这里。</span>
           </div>
         )}
         {p.targetMode && (
