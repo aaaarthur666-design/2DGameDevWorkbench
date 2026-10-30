@@ -56,7 +56,12 @@ type Structure = {
     revision: number;
     token: string;
     data: Proposal;
-    masks: { id: string; file: string; sha256: string }[];
+    masks: {
+      id: string;
+      file: string;
+      sha256: string;
+      compute?: { device?: string; seconds?: number; mps_fallback_enabled?: boolean };
+    }[];
     issues: { id: string; message: string }[];
     confirmation: { note: string } | null;
   } | null;
@@ -602,6 +607,13 @@ export function MotionStructure({
             {document && draft && (
               <>
                 <p>{document.data.summary}</p>
+                {document.masks.some(mask => mask.compute?.device) && (
+                  <small>
+                    分割设备：{[...new Set(document.masks.map(mask => mask.compute?.device?.toUpperCase()).filter(Boolean))].join(' / ')}
+                    {document.masks.some(mask => mask.compute?.mps_fallback_enabled)
+                      ? ' · 已允许部分算子使用 CPU' : ''}
+                  </small>
+                )}
                 {document.issues.length > 0 && (
                   <ul>
                     {document.issues.map((issue, i) => (

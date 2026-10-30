@@ -57,6 +57,7 @@ type Temporal = {
     height: number;
     confirmation: { note: string } | null;
     manual_corrections: unknown[];
+    compute?: { device?: string; seconds?: number; mps_fallback_enabled?: boolean };
     parts: { id: string; name: string }[];
     frames: { frame_index: number; source_sha256: string; parts: Region[] }[];
     observations: {
@@ -395,6 +396,13 @@ export function MotionTemporalStructure({
         )}
         {doc && (
           <>
+            {doc.compute?.device && (
+              <p>
+                追踪设备：{doc.compute.device.toUpperCase()}
+                {doc.compute.seconds != null ? ` · ${doc.compute.seconds.toFixed(1)} 秒` : ''}
+                {doc.compute.mps_fallback_enabled ? ' · 已允许部分算子使用 CPU' : ''}
+              </p>
+            )}
             <div className="structure-actions">
               <label>
                 <input
