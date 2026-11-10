@@ -143,11 +143,25 @@ SPRITE_PIPELINE_API_TOKEN=optional-bearer-token
 
 手工像素修补可直接编辑未锁定、未导出的候选帧，无需先逐帧标记待修补；保存仍校验原版本 SHA-256、使该帧旧审核失效并重新执行 QA。外部整帧替换仍须先标记待修补。修补页支持采用当前帧并继续、处理完后返回整段播放确认；洋葱皮默认关闭，橡皮擦模式暂时隐藏洋葱皮以显示真实透明区域。内置地面攻击预设明确限定为一次纵向劈砍。
 
-通过根目录 npm 命令启动时，Python 管线只监听回环地址，任务和角色包写入 `work/sprite-pipeline/`，成品写入 `outputs/sprite-pipeline/`；两者都不会提交到 Git。直接使用上游启动器时仍沿用其用户数据与文档导出目录。公开部署的 Cloudflare 页面不能启动本机 Python；若要远程使用，需要把管线单独部署到可信 HTTPS 服务，并补充访问控制和持久存储。
+通过根目录 npm 命令启动时，Python 管线只监听回环地址，任务和对象预设写入 `work/sprite-pipeline/`，成品写入 `outputs/sprite-pipeline/`；两者都不会提交到 Git。直接使用上游启动器时仍沿用其用户数据与文档导出目录。公开部署的 Cloudflare 页面不能启动本机 Python；若要远程使用，需要把管线单独部署到可信 HTTPS 服务，并补充访问控制和持久存储。
+
+## 对象身份与预设（N1）
+
+开放动作准备页的“已有对象”读取对象库存，区分角色与交互物，类型由所选预设确定。角色仍显示朝向，并可使用原有角色结构工具；交互物显示自身原图，不添加朝向或持武器的手。该入口只选择已有预设，没有手动切换类型或上传交互物原图的新流程。“上传角色原图”仍只接受既有的 64×64 / 128×128 透明 PNG 角色输入。
+
+`GET /v1/presets` 返回 `objects`，同时保留旧 `characters` 与 `actions`；`GET /v1/open-motion/references` 返回 `objects` 与旧 `characters`，预览路径 `/v1/open-motion/references/<id>` 可以读取已有任一类型。`workbench_list_presets` 同样保留这三份清单；旧服务缺少 objects 时按角色清单兼容。对象行的类型字段为 `object_type`。
+
+新 `plan-motion` / `revise-motion` 请求在 `motionSpec` 内使用 `object_id` 与 `object_type`，类型为 `character` 或 `interactable`；省略类型按 character 处理。ID 必须来自已有有效预设，类型必须与预设一致。旧 `character_id` 仍接受；同时提供两个 ID 时必须一致。这里使用 snake_case，不能改成 `objectId` / `objectType`。
+
+仅含旧 `character_id` 的历史输入和记录仍按旧形状序列化，不自动加入 object_id/object_type，不迁移旧作业或改变其冻结哈希。工作与作业的参考快照容器继续叫 `character`，它可保存两种预设；已有角色预设的快照仍保留原字段形状。容器名是兼容约定，不能据此把交互物当作角色。新交互物预设使用 128×128 画布，不含 `facing` 或 `weapon_hand`。
+
+N1 交互物动画沿用 SpriteFrames 导出，导出清单带 `object_id` / `object_type` 和兼容的 `character_id`，不写没有意义的 `source_facing`。资产目录与导入元数据使用 `objectId` / `objectType`，保留帧序、FPS、循环、锚点和来源；旧角色包继续按原规则读取。此处交付的是动画片段，不是 N5 的状态槽或过渡绑定。
+
+已有对象预设来自普通数据根的 `objects/<id>/object.json`，portable 模式则是 `presets/objects/<id>/object.json`；角色原目录继续可读。私有 portable 对象预设不提交到仓库。N1 没有开放 PixelLab 物品图 transfer、交互物上传、交互物合同模板、状态链或动画状态写回；这些仍需 N2 的真实可行性结果和后续开发。对象字段兼容与模拟测试不证明 PixelLab 对物品动画的生成品质。
 
 ## Agent / MCP 接线
 
-`sprite-generator` 由 `sprite-pipeline` 本地适配器驱动。Manifest 输入必须包含 `operation`；创建作业时还要提供真实预设的 `characterId` 和 `actionId`。适配器会将它们转换为 Python 所需的 `character_id` / `action_id` 并调用 `/v1/jobs`，不会再把通用 Workbench envelope 直接发给 FastAPI。
+`sprite-generator` 由 `sprite-pipeline` 本地适配器驱动。Manifest 输入必须包含 `operation`；旧版动作/攻击的直接作业创建仍提供真实角色预设的 `characterId` 和 `actionId`，不新增交互物直接创建入口。开放动作使用上一节的 `motionSpec` 对象身份。适配器会将它们转换为 Python 所需的 `character_id` / `action_id` 并调用 `/v1/jobs`，不会再把通用 Workbench envelope 直接发给 FastAPI。
 
 ```json
 {
@@ -195,7 +209,7 @@ npm run workbench -- doctor --json
 
 ## 旧版资产恢复与任务栏
 
-工作台把序列帧任务保存在项目的 `work/sprite-pipeline/jobs`，角色参考保存在 `work/sprite-pipeline/characters`。独立版默认使用 Windows 用户目录 `%LOCALAPPDATA%/SpritePipeline`。两个目录不同会造成旧任务没有出现在工作台列表中，不能仅凭列表数量判断文件已丢失。
+工作台把序列帧任务保存在项目的 `work/sprite-pipeline/jobs`，角色参考保存在 `work/sprite-pipeline/characters`，已有通用对象预设位于 `work/sprite-pipeline/objects`。独立版默认使用 Windows 用户目录 `%LOCALAPPDATA%/SpritePipeline`。两个目录不同会造成旧任务没有出现在工作台列表中，不能仅凭列表数量判断文件已丢失。
 
 工作台启动器默认启用 `SPRITE_PIPELINE_IMPORT_USER_ASSETS=1`：首次发现旧版的真实任务与角色参考时，校验并复制到项目目录。原目录保持不动；已有同名数据不覆盖，冲突副本放入 `work/sprite-pipeline/recovery`。导入结果记录在 `work/sprite-pipeline/config/user_library_import.json`。这是逐项的一次性导入：重复启动不会重复导入，删除已导入资产后不会从旧目录重新复活；后续仍在独立版修改同一个任务时不会双向同步。生成中的任务暂缓，fixture 流程测试不导入。设置该变量为 `0` 可关闭，显式 portable/test 根目录也不导入用户资产。
 

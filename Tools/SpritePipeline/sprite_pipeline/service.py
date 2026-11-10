@@ -84,6 +84,7 @@ class SpritePipelineService:
     def list_presets(self) -> dict[str, Any]:
         return {
             "characters": self.presets.list_characters(),
+            "objects": self.presets.list_objects(),
             "actions": self.presets.list_actions(),
         }
 
@@ -175,6 +176,11 @@ class SpritePipelineService:
         characters_dir = self.settings.user_characters_dir
         characters_dir.mkdir(parents=True, exist_ok=True)
         selected_id = base_id
+        if reuse_if_identical and self.presets.object_path(base_id).is_file():
+            raise ConflictError(
+                "idempotent character ID is reserved by an object preset",
+                details={"character_id": base_id},
+            )
         if reuse_if_identical and self.presets.character_exists(base_id):
             existing, existing_path = self.presets.load_character(base_id)
             existing_reference = existing_path.parent / existing.reference_frame
@@ -199,7 +205,7 @@ class SpritePipelineService:
             )
         for suffix in range(1, 1000):
             candidate_id = base_id if suffix == 1 else f"{base_id}_{suffix:03d}"
-            if not self.presets.character_exists(candidate_id):
+            if not self.presets.object_exists(candidate_id):
                 selected_id = candidate_id
                 break
         else:
@@ -496,7 +502,9 @@ class SpritePipelineService:
         return self._create_job_unlocked(request, fingerprint)
 
     def _create_job_unlocked(self, request: GenerationRequest, fingerprint: str) -> JobRecord:
-        character, character_path = self.presets.load_character(request.character_id)
+        character, character_path = self.presets.load_object(request.object_id, object_type=request.object_type)
+        if character.object_type == "interactable" and request.open_plan is None:
+            raise ValidationHarnessError("interactable jobs require the open-motion workflow")
         if request.open_plan:
             from .collaboration.workspace import OpenMotionWorkspace
             binding = request.open_plan
@@ -3317,6 +3325,8 @@ class SpritePipelineService:
                 "provider_model": candidate.provider_model,
                 "diagnostic_only": candidate.diagnostic_only,
                 "character_id": job.character.character_id,
+                **({"object_id": job.character.object_id, "object_type": job.character.object_type}
+                   if not job.character._legacy_identity else {}),
                 "action_id": job.action.action_id,
                 "manifest_action_name": job.action.manifest_action_name,
                 "cell_width": job.character.cell_width,
@@ -3384,7 +3394,7 @@ class SpritePipelineService:
                 staged_sheet, staged_godot, recipe,
                 anchor_x=job.character.anchor.x,
                 ground_y=job.character.anchor.ground_y,
-                facing=job.character.facing,
+                facing=getattr(job.character, "facing", None),
             )
             staged_recipe = staging / destinations["recipe"].name
             staged_qa = staging / destinations["qa"].name

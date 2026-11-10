@@ -32,6 +32,7 @@ class AssetCatalog:
                 "createdAt": job.get("created_at", row.get("created_at")), "updatedAt": row["updated_at"],
                 "availability": "available" if source else "missing",
                 "characterId": row.get("character_id"), "actionId": job.get("action_id"),
+                **({"objectId": job["object_id"], "objectType": job["object_type"]} if job.get("object_id") else {}),
                 "jobId": row.get("job_id"), "candidateIndex": row.get("candidate_index"),
                 "candidateCount": job.get("candidate_count"), "frameCount": material.get("frame_count"),
                 "previewKind": "animation" if source and source.suffix.lower() == ".gif" else "image",
@@ -87,14 +88,16 @@ class AssetCatalog:
             candidate = next(c for c in job.candidates if c.candidate_index == row["candidate_index"])
             metadata = {
                 "width": job.character.cell_width, "height": job.character.cell_height,
-                "facing": job.character.facing, "fps": job.action.fps, "loop": job.action.loop,
+                **({"facing": job.character.facing} if job.character.object_type == "character" else {}), "fps": job.action.fps, "loop": job.action.loop,
                 "productionRevision": job.revision,
+                **({"objectId": job.character.object_id, "objectType": job.character.object_type}
+                   if not job.character._legacy_identity else {}),
                 "anchor": [job.character.anchor.x, job.character.anchor.ground_y],
                 "animationRepresentations": [{
                     "representation": "frames", "frameKeys": [f"frame-{frame.index}" for frame in candidate.frames],
                     "fps": job.action.fps, "loop": job.action.loop,
                     "anchor": [job.character.anchor.x, job.character.anchor.ground_y],
-                    "sourceFacing": job.character.facing,
+                    **({"sourceFacing": job.character.facing} if job.character.object_type == "character" else {}),
                     "jobId": job.job_id, "candidateIndex": candidate.candidate_index,
                 }],
             }
@@ -118,7 +121,7 @@ class AssetCatalog:
                         "representation": "sheet", "sheetKey": "sheet", "godotKey": "godot",
                         "fps": contract.get("fps"), "loop": contract.get("loop"),
                         "regions": contract.get("source_region_px"), "anchor": contract.get("anchor"),
-                        "sourceFacing": contract.get("source_facing"),
+                        **({"sourceFacing": contract["source_facing"]} if "source_facing" in contract else {}),
                         "sheetSha256": contract["sheet_sha256"],
                         "jobId": job.job_id, "candidateIndex": candidate.candidate_index,
                     })

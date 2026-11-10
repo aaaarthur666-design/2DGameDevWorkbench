@@ -1,5 +1,19 @@
-export type MotionSpec = {
-  character_id: string;
+export type MotionObjectType = 'character' | 'interactable';
+export type MotionObjectIdentity = {
+  object_id?: string;
+  object_type?: MotionObjectType;
+  character_id?: string;
+};
+export type MotionReferenceObject = {
+  id: string;
+  name: string;
+  width: number;
+  height?: number;
+  facing?: string;
+  valid: boolean;
+  object_type?: MotionObjectType;
+};
+export type MotionSpec = MotionObjectIdentity & {
   description: string;
   ending: string;
   return_to_reference: boolean;
@@ -114,7 +128,7 @@ export type MotionWork = {
   status: string;
   message: string;
   updated_at: string;
-  character: { display_name: string; facing: string; cell_width: number };
+  character: { display_name: string; facing?: string; cell_width: number; object_id?: string; object_type?: MotionObjectType };
   plan: MotionPlan | null;
   plan_sha256: string | null;
   job: MotionJob | null;
@@ -183,7 +197,8 @@ export const motionSteps = [
   '导出与使用',
 ];
 export const blankSpec: MotionSpec = {
-  character_id: '',
+  object_id: '',
+  object_type: 'character',
   description: '',
   ending: '',
   return_to_reference: false,
@@ -199,9 +214,39 @@ export const blankSpec: MotionSpec = {
   provider: 'pixellab',
   review_protocol: 'experts_v1',
 };
+export function motionObjectId(value: MotionObjectIdentity): string {
+  return value.object_id ?? value.character_id ?? '';
+}
+export function motionObjectType(value: MotionObjectIdentity): MotionObjectType {
+  return value.object_type ?? 'character';
+}
+export function motionReferenceObjects(value: {
+  objects?: MotionReferenceObject[];
+  characters?: MotionReferenceObject[];
+}): MotionReferenceObject[] {
+  return (value.objects ?? value.characters ?? []).map(item => ({
+    ...item, object_type: item.object_type ?? 'character',
+  }));
+}
+export function motionSpecWithDefaults(value: MotionSpec): MotionSpec {
+  const next = { ...blankSpec, ...value, review_protocol: value.review_protocol };
+  // Do not add modern identity fields to a historical draft or saved work.
+  if (value.object_id === undefined && value.character_id !== undefined) {
+    delete next.object_id;
+    if (value.object_type === undefined) delete next.object_type;
+  }
+  return next;
+}
+export function selectMotionObject(value: MotionSpec, id: string, type: MotionObjectType = 'character'): MotionSpec {
+  if (motionObjectId(value) === id && motionObjectType(value) === type) return { ...value };
+  const next = { ...value, object_id: id, object_type: type };
+  delete next.character_id;
+  if (motionObjectId(value) !== id || motionObjectType(value) !== type)
+    next.visual_structure = null;
+  return next;
+}
 export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
-  // Local drafts merge defaults; the API serializes fields in schema order.
-  // Key order is not an edit and must never trigger a fresh paid plan.
+  // Identity aliases and object key order must not trigger a fresh paid plan.
   const ordered = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(ordered);
     if (value && typeof value === 'object')
@@ -212,28 +257,19 @@ export function motionSpecsEqual(a: MotionSpec, b: MotionSpec): boolean {
       );
     return value;
   };
-  return (
-    JSON.stringify(
-      ordered({
-        timing_mode: 'auto',
-        ...a,
-        review_protocol: a.review_protocol ?? 'baseline',
-        budget: { max_review_calls: 2, ...a.budget },
-        seed: a.seed ?? null,
-        visual_structure: a.visual_structure ?? null,
-      }),
-    ) ===
-    JSON.stringify(
-      ordered({
-        timing_mode: 'auto',
-        ...b,
-        review_protocol: b.review_protocol ?? 'baseline',
-        budget: { max_review_calls: 2, ...b.budget },
-        seed: b.seed ?? null,
-        visual_structure: b.visual_structure ?? null,
-      }),
-    )
-  );
+  const normalized = (value: MotionSpec) => {
+    const next: MotionSpec = {
+      timing_mode: 'auto', ...value,
+      object_id: motionObjectId(value), object_type: motionObjectType(value),
+      review_protocol: value.review_protocol ?? 'baseline',
+      budget: { max_review_calls: 2, ...value.budget },
+      seed: value.seed ?? null,
+      visual_structure: value.visual_structure ?? null,
+    };
+    delete next.character_id;
+    return ordered(next);
+  };
+  return JSON.stringify(normalized(a)) === JSON.stringify(normalized(b));
 }
 export function motionStep(work: MotionWork | null): number {
   if (!work) return 0;

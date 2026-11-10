@@ -10,7 +10,7 @@ v4 增加 `target-motion-stage`（制作前本地绑定真实末图）、`repair
 
 本文描述 MCP、CLI、Web HTTP bridge 与能力适配器共享的任务和文档语义。生产输入以 `workbench/manifest.json` 为机器权威；共享文档命令以 `lib/workbench/document-contract.mjs`、图片会话以 `lib/workbench/image-edit-contract.mjs` 及实际 MCP schema 为准。本文解释跨能力约束和协议转换，不复制完整 JSON Schema。
 
-开放动作使用 `sprite-generator` 的 `plan-motion` / `revise-motion` / `get-motion` / `generate-motion` / `pause-motion` / `resume-motion`。`motionSpec` 含原始描述、角色、终态、播放设置和调用上限；嵌套字段在任务持久化前按 manifest 校验，不能夹带 Key 或未知控制字段。规划明确授权 `planningAuthorized`，异步轮询沿用原 taskId；结果含 `openWorkId`、`work` 及精确 `?work=` 链接。确认生成绑定 `expectedRevision` 和 `planSha256`，禁止执行旧方案。只有用户已授权直接制作时才设置 `autoExecute`。本机页面的 `/api/workbench/open-motion` 仅代理列明的工作区、帧图及已保存导出路径；不能作任意 HTTP 代理。
+开放动作使用 `sprite-generator` 的 `plan-motion` / `revise-motion` / `get-motion` / `generate-motion` / `pause-motion` / `resume-motion`。`motionSpec` 含原始描述、对象身份、终态、播放设置和调用上限；嵌套字段在任务持久化前按 manifest 校验，不能夹带 Key 或未知控制字段。规划明确授权 `planningAuthorized`，异步轮询沿用原 taskId；结果含 `openWorkId`、`work` 及精确 `?work=` 链接。确认生成绑定 `expectedRevision` 和 `planSha256`，禁止执行旧方案。只有用户已授权直接制作时才设置 `autoExecute`。本机页面的 `/api/workbench/open-motion` 仅代理列明的工作区、帧图及已保存导出路径；不能作任意 HTTP 代理。
 
 当前注册四项 `local-adapter`：image-assets、原图、序列帧和交互物。共享交互物编辑另走文档工具：
 
@@ -22,6 +22,12 @@ v4 增加 `target-motion-stage`（制作前本地绑定真实末图）、`repair
 | `interactable-editor` | `interactable-editor` | 完全本地导出 |
 
 `lib/workbench/runtime.mjs` 负责统一校验、任务记录、调度、状态和输出验证；适配器只负责能力协议转换。
+
+### 开放动作的对象身份
+
+`motionSpec.object_id` 指向已有对象预设，`motionSpec.object_type` 为 `character` 或 `interactable`，省略按 character。旧 `motionSpec.character_id` 仍接受；同时提供 object_id 与 character_id 时必须相等。对象类型须与预设一致。旧 character_id-only 请求、冻结 spec 和参考快照保持原序列化，读取不迁移旧作业。新对象身份仅用于开放动作与其内部作业绑定；旧 Native create/create-and-generate 继续使用顶层 characterId/actionId，交互物不能通过它绕过开放动作。
+
+`GET /v1/presets` 新增 objects 并保留 characters/actions；`GET /v1/open-motion/references` 新增 objects 并保留 characters；`GET /v1/open-motion/references/<id>` 返回已登记对象的真实 PNG。工作与作业的快照容器仍叫 character。交互物预设固定 128×128，不含 facing/weapon_hand；目前只读取已有预设，上传接口和 reference-art transfer 仍仅创建角色参考。详见[对象身份与预设](sprite-generator.md#对象身份与预设n1)。
 
 ## 2. 公共任务模型
 

@@ -145,6 +145,10 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 `sprite-generator` 通过本地适配器连接 `Tools/SpritePipeline`。开发总控默认在回环地址启动或复用 SpritePipeline，并支持创建任务、开始生成、查询和导出。远端生成是异步的；重复查询只刷新已有上游任务，不会重新提交一次生成。
 
+N1 通过 `object_identity.py` 在 TaskSpec、GenerationRequest 与预设间共享 `object_id` / `object_type`；类型为 character 或 interactable。`presets.py` 的 `load_object` 读取对象目录并兼容旧角色目录，拒绝 ID 冲突与类型不符。交互物预设不带 facing/weapon_hand，画布为 128×128。库存 API 增加 objects，同时保留 characters/actions；前端选择已有对象，角色结构工具仅对角色显示。
+
+历史 character_id-only 输入保留原序列化和冻结哈希；OpenWork.character / JobRecord.character 容器名仍兼容两种快照，旧角色快照不被强制改写。Native create 的旧角色/动作路径不扩张；交互物只走开放动作对象绑定。N1 没有增加交互物上传或 PixelLab prop transfer，没有 N3 合同模板、状态链与写回能力。
+
 ### 5.2 独立交互物编辑
 
 `interactable-editor` 在本地校验项目并导出 Godot 4.7.x 资源。当前支持 inspect、toggle、pickup、sequence 四类对象，以及 proximity_press、pointer_click、automatic_enter、external_request 四类触发方式。导出不要求本机安装 Godot，也不调用外部生成 API。

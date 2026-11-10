@@ -9,6 +9,8 @@ import { loadManifest, findCapability, validateInput, runConnector, refreshTask 
 import { taskViewPath, taskPresentation } from '../../lib/workbench/presentation.mjs';
 import { createTestViteServer } from '../helpers/vite-server.mjs';
 import { verifyPlanningProgress } from './planning-progress.mjs';
+import { verifyMotionObjects } from './object-model.mjs';
+import { listPresets } from '../../lib/workbench/agent-api.mjs';
 
 const root = path.resolve('work/test-runs', process.env.WORKBENCH_TEST_RUN, 'open-motion');
 await mkdir(root, { recursive: true });
@@ -32,6 +34,23 @@ try {
   const motionSpec = { character_id:'test_hero', description:'角色低头检查手套，最后保持低头', provider:'fixture', review_protocol:'experts_v1', candidate_count:2, budget:{max_planning_calls:8,max_generation_calls:5,max_review_calls:35} };
   const input = { operation:'plan-motion', motionSpec, planningAuthorized:true };
   assert.deepEqual(validateInput(capability,input),[]);
+  const { character_id: legacyCharacterId, ...commonSpec } = motionSpec;
+  const modernSpec = { ...commonSpec, object_id: legacyCharacterId, object_type: 'character' };
+  assert.deepEqual(validateInput(capability, { ...input, motionSpec: modernSpec }), []);
+  const modernDefaultSpec = { ...modernSpec }; delete modernDefaultSpec.object_type;
+  assert.deepEqual(validateInput(capability, { ...input, motionSpec: modernDefaultSpec }), []);
+  assert.ok(validateInput(capability, { ...input, motionSpec: commonSpec }).length);
+  assert.ok(validateInput(capability, { ...input, motionSpec: { ...modernSpec, character_id: 'another_object' } }).length);
+  assert.ok(validateInput(capability, { ...input, motionSpec: { ...modernSpec, object_type: 'prop' } }).length);
+  const references = await request('/v1/open-motion/references');
+  const door = references.objects.find(item => item.id === 'fixture_door');
+  assert.equal(door.object_type, 'interactable');
+  assert.equal(door.facing, undefined);
+  assert.ok(references.characters.some(item => item.id === 'test_hero'));
+  const presets = await listPresets(manifest, { query: 'fixture_door' });
+  assert.equal(presets.objects[0].object_type, 'interactable');
+  assert.equal(presets.characters.length, 0);
+
   assert.ok(validateInput(capability,{...input,planningAuthorized:false}).length);
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,apiKey:'must-not-be-stored'}}).length);
   assert.ok(validateInput(capability,{...input,motionSpec:{...motionSpec,budget:{max_generation_calls:99}}}).length);
@@ -101,9 +120,23 @@ try {
   const attempts=complete.job.candidates.map(c=>c.submission_attempts);
   await request(`/v1/open-motion/${workId}/generate`,{expected_revision:1,plan_sha256:work.plan_sha256});
   assert.deepEqual((await request(`/v1/open-motion/${workId}`)).job.candidates.map(c=>c.submission_attempts),attempts);
+  const objectInput = { ...input, motionSpec: { ...commonSpec, object_id: 'fixture_door', object_type: 'interactable', description: 'The fixture door opens and holds position.' } };
+  let objectOutcome = await runConnector(manifest, capability, objectInput);
+  for (let n = 0; n < 100 && objectOutcome.task.status === 'running'; n++) { await delay(100); objectOutcome = await refreshTask(manifest, objectOutcome.task.id); }
+  assert.equal(objectOutcome.task.status, 'attention_required');
+  const objectWork = await request(`/v1/open-motion/${objectOutcome.task.adapter.openWorkId}`);
+  assert.equal(objectWork.spec.object_id, 'fixture_door');
+  assert.equal(objectWork.spec.object_type, 'interactable');
+  assert.equal(objectWork.spec.character_id, undefined);
+  assert.equal(objectWork.character.object_type, 'interactable');
+  assert.equal(objectWork.character.facing, undefined);
+  assert.equal(objectWork.character.weapon_hand, undefined);
+
   // Real frontend proxy implementation, including refusal of arbitrary paths/origins.
   vite=await createTestViteServer({configFile:false,appType:'custom',logLevel:'error',resolve:{alias:{'@':process.cwd()}},server:{middlewareMode:true}});
-  const { motionPlanningProgress, motionPlanningRequestKey } = await vite.ssrLoadModule('/components/sprite-generator/open-motion-model.ts');
+  const motionModel = await vite.ssrLoadModule('/components/sprite-generator/open-motion-model.ts');
+  const { motionPlanningProgress, motionPlanningRequestKey } = motionModel;
+  verifyMotionObjects(motionModel);
   verifyPlanningProgress(motionPlanningProgress, motionPlanningRequestKey);
   const {adjustmentRangeError,adjustmentAttemptBudget}=await vite.ssrLoadModule('/components/sprite-generator/motion-adjustment-range.ts');
   assert.equal(adjustmentRangeError(14,15,16,[0],2,false),'','15–16 is a valid two-frame tail');

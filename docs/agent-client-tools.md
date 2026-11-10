@@ -24,7 +24,7 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 | `workbench_get_environment` | 检查运行环境、服务兼容性、前端和 Key 配置状态 |
 | `workbench_start_services` | 离线时启动本机 SpritePipeline，不安装或生成 |
 | `workbench_start_frontend` | 启动本机 Web 与 Bridge，宿主另行打开预览 |
-| `workbench_list_presets` | 查询真实角色与动作 ID 和默认参数 |
+| `workbench_list_presets` | 查询真实对象与动作 ID 和默认参数；objects 追加对象类型，characters/actions 保留兼容 |
 | `workbench_interactable_template` | 返回完整行为模板，不保存或导出 |
 | `workbench_list_tasks` | 查最近执行和原生作业，用于追踪操作 |
 | `workbench_list_assets` | 按名称、类型、候选条件分页查持久资产 |

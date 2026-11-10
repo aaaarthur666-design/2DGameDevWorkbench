@@ -92,6 +92,8 @@ CLAUDE.md
 !/Tools/SpritePipeline/presets/characters/README.md
 !/Tools/SpritePipeline/presets/characters/_template/
 !/Tools/SpritePipeline/presets/characters/diagnostic_dummy/
+# Portable object presets contain local user reference images.
+/Tools/SpritePipeline/presets/objects/
 
 # Runtime logs and disposable caches
 *.log

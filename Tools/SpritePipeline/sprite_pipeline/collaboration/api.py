@@ -215,11 +215,11 @@ def create_router(service):
 
     @router.get("/references")
     def references():
-        return {"characters": service.list_presets()["characters"]}
+        return {key: value for key, value in service.list_presets().items() if key in {"characters", "objects"}}
 
     @router.get("/references/{character_id}")
     def reference_preview(character_id: str):
-        character, path = service.presets.load_character(character_id)
+        character, path = service.presets.load_object(character_id)
         service._validate_reference_image(path.parent / character.reference_frame, character.cell_width, character.cell_height)
         return Response((path.parent / character.reference_frame).read_bytes(), media_type="image/png", headers={"Cache-Control": "no-store"})
 

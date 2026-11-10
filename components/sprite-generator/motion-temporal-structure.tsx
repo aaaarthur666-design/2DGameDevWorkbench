@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { motionRequest, motionUrl, type MotionWork } from './open-motion-model';
+import { motionRequest, motionUrl, motionObjectId, motionObjectType, type MotionWork } from './open-motion-model';
 import { MotionStructureHistory, StructureHistoryImage, temporalHistoryImage, type StructureHistoryEntry } from './motion-structure-history';
 import './motion-structure.css';
 
@@ -110,18 +110,7 @@ const visibility: Record<string, string> = {
   occluded: '遮挡',
 };
 
-export function MotionTemporalStructure({
-  work,
-  candidate,
-  stage,
-  frame,
-  frameSha,
-  playing,
-  readOnly,
-  onFrame,
-  onStop,
-  children,
-}: {
+type MotionTemporalStructureProps = {
   work: MotionWork;
   candidate: number;
   stage?: number;
@@ -132,7 +121,26 @@ export function MotionTemporalStructure({
   onFrame: (frame: number) => void;
   onStop: () => void;
   children: ReactNode;
-}) {
+};
+
+export function MotionTemporalStructure(props: MotionTemporalStructureProps) {
+  if (motionObjectType(props.work.spec) === 'interactable')
+    return <div className="motion-canvas motion-large">{props.children}</div>;
+  return <CharacterTemporalStructure {...props} />;
+}
+
+function CharacterTemporalStructure({
+  work,
+  candidate,
+  stage,
+  frame,
+  frameSha,
+  playing,
+  readOnly,
+  onFrame,
+  onStop,
+  children,
+}: MotionTemporalStructureProps) {
   const [analysis, setAnalysis] = useState<Temporal | null>(null),
     [opened, setOpened] = useState(false),
     [overlay, setOverlay] = useState(false);
@@ -225,7 +233,7 @@ export function MotionTemporalStructure({
     setError('');
     try {
       const ref = await motionRequest<Reference>(
-        `open-motion/references/${work.spec.character_id}/structure`,
+        `open-motion/references/${motionObjectId(work.spec)}/structure`,
       );
       if (
         !ref.analysis?.source_current ||

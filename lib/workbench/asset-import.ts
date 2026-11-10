@@ -9,6 +9,8 @@ export type ImportPurpose =
 export type LibraryAsset = {
   id: string;
   kind: string;
+  objectId?: string;
+  objectType?: 'character' | 'interactable';
   origin?: string;
   attachmentOnly?: boolean;
   title: string;

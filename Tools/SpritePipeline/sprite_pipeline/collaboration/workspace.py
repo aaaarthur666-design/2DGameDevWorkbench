@@ -74,6 +74,7 @@ class OpenMotionWorkspace:
                 rows.append({"id": w.id, "revision": w.revision, "title": w.plan.title if w.plan else w.spec.description[:60],
                              "status": w.status, "job_id": w.job_id, "job_status": job.get("status"),
                              "updated_at": max(w.updated_at, job.get("updated_at", "")),
+                             "object_id": w.spec.object_id, "object_type": w.spec.object_type, "object_name": w.character["display_name"],
                              "character_name": w.character["display_name"], "diagnostic_only": w.spec.provider == "fixture"})
             except (ValueError, OSError, KeyError):
                 continue
@@ -99,7 +100,7 @@ class OpenMotionWorkspace:
                 raise ValidationHarnessError(f'所选复核协议至少需要 {minimum} 次视觉额度（每候选一个片段检查和整段复核）；尚未调用规划模型，请先调整预算')
             if not self.model.configured:
                 raise ValidationHarnessError("请先在模型设置中配置规划模型；不会创建空生成任务")
-            character, preset_path = self.service.presets.load_character(spec.character_id)
+            character, preset_path = self.service.presets.load_object(spec.object_id, object_type=spec.object_type)
             source = preset_path.parent / character.reference_frame
             self.service._validate_reference_image(source, character.cell_width, character.cell_height)
             data = source.read_bytes()
@@ -140,7 +141,7 @@ class OpenMotionWorkspace:
                 raise ValidationHarnessError(f'所选复核协议至少需要 {minimum} 次视觉额度；未创建新版本或调用规划模型')
             if work.status == "planning":
                 raise ConflictError("规划尚在执行，请等待结果后修改")
-            character, preset_path = self.service.presets.load_character(spec.character_id)
+            character, preset_path = self.service.presets.load_object(spec.object_id, object_type=spec.object_type)
             source = preset_path.parent / character.reference_frame
             self.service._validate_reference_image(source, character.cell_width, character.cell_height)
             data = source.read_bytes()
@@ -246,8 +247,8 @@ class OpenMotionWorkspace:
                                             visibility_review_version=work.visibility_review_version)
                                 if work.version >= 2 and work.spec.provider != 'fixture':
                                     from .quality import validate_quality_plan
-                                    from ..models import CharacterPreset
-                                    validate_quality_plan(plan, work.spec, CharacterPreset.model_validate(work.character), require_checkpoints=work.version >= 3,
+                                    from ..models import validate_object_preset
+                                    validate_quality_plan(plan, work.spec, validate_object_preset(work.character), require_checkpoints=work.version >= 3,
                                                           policy_version=work.generation_policy_version)
                             except ValidationHarnessError as exc:
                                 problem = str(exc)
@@ -331,9 +332,9 @@ class OpenMotionWorkspace:
                                   generation_policy_version=work.generation_policy_version,
                                   visibility_review_version=work.visibility_review_version,
                                   end_targets=work.end_targets,
-                                  compiled_prompts=[compiled_prompt(work.plan, self.service.presets.load_character(work.spec.character_id)[0], i,
+                                  compiled_prompts=[compiled_prompt(work.plan, self.service.presets.load_object(work.spec.object_id, object_type=work.spec.object_type)[0], i,
                                                                    policy_version=work.generation_policy_version) for i in range(len(work.plan.stages))])
-            request = GenerationRequest(character_id=work.spec.character_id, action_id="motion_" + work.id[:12],
+            request = GenerationRequest(**work.spec.identity_fields(), action_id="motion_" + work.id[:12],
                                         provider=work.spec.provider, candidate_count=work.spec.candidate_count,
                                         seed=work.spec.seed, request_key=f"open-motion-{work.id}-{work.revision}", open_plan=binding)
             job = self.service.create_job(request)

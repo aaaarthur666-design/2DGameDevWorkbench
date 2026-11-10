@@ -64,7 +64,7 @@ class VisualStructures:
                 'message': f"本地分割已就绪 · {runtime.get('compute', {}).get('device', 'fixture').upper()}；查看和纠正不调用外部模型。" if runtime['ready'] else runtime.get('compute', {}).get('error', '尚未安装独立分割工具；可继续使用原制作流程。')}
 
     def reference(self, character_id):
-        character, preset = self.service.presets.load_character(character_id)
+        character, preset = self.service.presets.load_object(character_id, object_type="character")
         path = preset.parent / character.reference_frame
         self.service._validate_reference_image(path, character.cell_width, character.cell_height)
         data = path.read_bytes()

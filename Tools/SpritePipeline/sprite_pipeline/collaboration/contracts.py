@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 
+from ..object_identity import ObjectIdentity
+
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
@@ -23,8 +25,8 @@ class VisualStructureSelection(Contract):
     token: str = Field(pattern=r'^[0-9a-f]{64}$')
 
 
-class TaskSpec(Contract):
-    character_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$", max_length=100)
+class TaskSpec(ObjectIdentity, Contract):
+    object_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$", max_length=100)
     description: str = Field(min_length=4, max_length=2000)
     ending: str = Field(default="", max_length=300)
     return_to_reference: bool = False
@@ -45,7 +47,7 @@ class TaskSpec(Contract):
         if self.review_protocol is None:
             data.pop('review_protocol', None)
         if self.visual_structure is None:data.pop('visual_structure',None)
-        return data
+        return self.preserve_identity_shape(data)
 
 
 def review_calls_per_check(spec):

@@ -822,15 +822,30 @@
           "motionSpec": {
             "type": "object",
             "required": [
-              "character_id",
               "description"
             ],
             "additionalProperties": false,
             "properties": {
+              "object_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_]*$",
+                "maxLength": 100,
+                "description": "已存在的对象预设 ID；从对象清单选择，不接收图片移送。"
+              },
+              "object_type": {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "interactable"
+                ],
+                "default": "character",
+                "description": "对象预设的类型，须与已保存预设一致。"
+              },
               "character_id": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9_]*$",
-                "maxLength": 100
+                "maxLength": 100,
+                "description": "历史角色任务兼容字段；新任务使用 object_id。与 object_id 同时提供时必须一致。"
               },
               "description": {
                 "type": "string",
@@ -927,7 +942,19 @@
                   }
                 }
               }
-            }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "object_id"
+                ]
+              },
+              {
+                "required": [
+                  "character_id"
+                ]
+              }
+            ]
           },
           "targetImageBase64": {
             "type": "string",

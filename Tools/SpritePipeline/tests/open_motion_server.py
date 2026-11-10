@@ -15,6 +15,8 @@ import uvicorn
 
 root = Path(sys.argv[1]).resolve()
 fixture = TemporaryHarness(root)
+from object_test_fixtures import write_interactable
+write_interactable(root)
 fixture.write_sequence(root/'target-fixture')
 service = SpritePipelineService(root)
 service.settings = replace(service.settings, poll_interval_seconds=0.25)

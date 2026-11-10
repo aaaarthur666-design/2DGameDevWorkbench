@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from .errors import NotFoundError, ValidationHarnessError
 from .jsonio import inside, read_json
-from .models import ActionPreset, CharacterPreset
+from .models import ActionPreset, CharacterPreset, ObjectPreset, validate_object_preset
 from .settings import HarnessSettings
 
 
@@ -84,6 +84,55 @@ class PresetRepository:
                 if not asset.is_file() and not required:
                     raise ValidationHarnessError("configured character asset is missing", details={"field": field, "path": str(asset)})
         return preset, path
+
+    @property
+    def objects_dir(self) -> Path:
+        return (self.settings.presets_dir if self.settings.portable_mode else self.settings.data_root) / "objects"
+
+    def object_path(self, object_id: str) -> Path:
+        safe = self._safe_id(object_id, "object_id")
+        return inside(self.objects_dir, self.objects_dir / safe / "object.json")
+
+    def object_exists(self, object_id: str) -> bool:
+        return self.object_path(object_id).is_file() or self.character_exists(object_id)
+
+    def load_object(self, object_id: str, *, object_type: str | None = None, verify_assets: bool = True) -> tuple[ObjectPreset, Path]:
+        path = self.object_path(object_id)
+        if not path.is_file():
+            preset, path = self.load_character(object_id, verify_assets=verify_assets)
+        else:
+            if self.character_exists(object_id):
+                raise ValidationHarnessError("object identity conflicts with an existing character", details={"object_id": object_id})
+            try:
+                preset = validate_object_preset(read_json(path))
+            except (ValidationError, ValueError) as exc:
+                raise ValidationHarnessError("invalid object preset", details={"path": str(path), "error": str(exc)}) from exc
+            if preset.object_id != object_id:
+                raise ValidationHarnessError("object directory and object_id differ", details={"path": str(path)})
+            if verify_assets:
+                for field in ("reference_frame", "master", "palette", "silhouette"):
+                    filename = getattr(preset, field)
+                    if filename is not None and not inside(path.parent, path.parent / filename).is_file():
+                        raise ValidationHarnessError("configured object asset is missing", details={"field": field, "path": str(path)})
+        if object_type is not None and preset.object_type != object_type:
+            raise ValidationHarnessError("object type does not match its preset", details={"object_id": object_id, "object_type": object_type})
+        return preset, path
+
+    def list_objects(self) -> list[dict]:
+        rows = [{**row, "object_type": "character"} for row in self.list_characters()]
+        for path in sorted(self.objects_dir.glob("*/object.json")):
+            object_id = path.parent.name
+            try:
+                preset, preset_path = self.load_object(object_id)
+                row = {"id": object_id, "object_type": preset.object_type, "name": preset.display_name,
+                       "path": str(preset_path), "source": "user", "valid": True,
+                       "width": preset.cell_width, "height": preset.cell_height, "description": preset.identity_description}
+                if preset.object_type == "character":
+                    row["facing"] = preset.facing
+                rows.append(row)
+            except Exception as exc:
+                rows.append({"id": object_id, "name": "INVALID", "path": str(path), "source": "user", "valid": False, "error": str(exc)})
+        return rows
 
     def load_action(self, action_id: str) -> tuple[ActionPreset, Path]:
         path = self.action_path(action_id)

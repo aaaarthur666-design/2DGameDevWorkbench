@@ -1,4 +1,5 @@
 import '../helpers/runtime-workspace.mjs';
+import './object-animation.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import os from 'node:os';

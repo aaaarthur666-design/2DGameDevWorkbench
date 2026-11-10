@@ -47,6 +47,12 @@ import {
   motionSteps,
   motionStep,
   motionSpecsEqual,
+  motionObjectId,
+  motionObjectType,
+  motionReferenceObjects,
+  motionSpecWithDefaults,
+  selectMotionObject,
+  type MotionReferenceObject,
   motionPlanningProgress,
   motionPlanningRequestKey,
   motionRequest,
@@ -64,13 +70,6 @@ import { MotionTemporalStructure } from './motion-temporal-structure';
 import { MotionVisualReview } from './motion-visual-review';
 import { MotionStructure } from './motion-structure';
 
-type Character = {
-  id: string;
-  name: string;
-  width: number;
-  facing: string;
-  valid: boolean;
-};
 type Recent = {
   id: string;
   title: string;
@@ -170,7 +169,7 @@ export function SpriteStudioEntry({ module }: { module: WorkbenchModule }) {
       key={`${work || resolved?.work || 'new'}:${params.get('version') || resolved?.revision || ''}`}
       workId={work || resolved?.work || ''}
       version={Number(params.get('version')) || resolved?.revision}
-      characterId={params.get('character') || ''}
+      objectId={params.get('object') || params.get('character') || ''}
       initialCandidate={Number(params.get('candidate')) || 1}
     />
   );
@@ -179,21 +178,21 @@ export function SpriteStudioEntry({ module }: { module: WorkbenchModule }) {
 function OpenMotionStudio({
   workId,
   version,
-  characterId,
+  objectId,
   initialCandidate,
 }: {
   workId: string;
   version?: number;
-  characterId: string;
+  objectId: string;
   initialCandidate: number;
 }) {
   const wb = useWorkbench();
   const [work, setWork] = useState<MotionWork | null>(null);
   const [spec, setSpec] = useState<MotionSpec>({
     ...blankSpec,
-    character_id: characterId,
+    object_id: objectId,
   });
-  const [characters, setCharacters] = useState<Character[]>([]);
+  const [objects, setObjects] = useState<MotionReferenceObject[]>([]);
   const [configuration, setConfiguration] = useState<Configuration | null>(
     null,
   );
@@ -286,15 +285,15 @@ function OpenMotionStudio({
   }, []);
   const refreshLists = useCallback(async () => {
     const [refs, config, history] = await Promise.all([
-      motionRequest<{ characters: Character[] }>('open-motion/references'),
+      motionRequest<{ objects?: MotionReferenceObject[]; characters?: MotionReferenceObject[] }>('open-motion/references'),
       motionRequest<Configuration>('open-motion/settings'),
       motionRequest<{ works: Recent[] }>('open-motion'),
     ]);
-    setCharacters(
-      refs.characters.filter((c) => c.valid && c.id !== 'diagnostic_dummy'),
-    );
+    const available = motionReferenceObjects(refs).filter(item => item.valid && item.id !== 'diagnostic_dummy');
+    setObjects(available);
     setConfiguration(config);
     setRecent(history.works.filter((w) => !w.diagnostic_only));
+    return available;
   }, []);
 
   useEffect(() => {
@@ -312,8 +311,8 @@ function OpenMotionStudio({
           applyWork(value);
           setSpec(value.spec);
           loaded = value;
-        } else if (characterId) {
-          setSpec({ ...blankSpec, character_id: characterId });
+        } else if (objectId) {
+          setSpec(selectMotionObject(blankSpec, objectId));
         }
         try {
           const draft = localStorage.getItem(draftKey);
@@ -329,14 +328,8 @@ function OpenMotionStudio({
                 saved.revision === loaded.revision &&
                 loaded.revision === loaded.latest_revision)
             ) {
-              setSpec({
-                ...blankSpec,
-                ...saved.spec,
-                review_protocol: saved.spec.review_protocol,
-                ...(characterId ? { character_id: characterId,
-                  ...(characterId !== saved.spec.character_id ? { visual_structure: null } : {}),
-                } : {}),
-              });
+              const restored = motionSpecWithDefaults(saved.spec);
+              setSpec(objectId ? selectMotionObject(restored, objectId) : restored);
               requestKey.current = saved.requestKey || '';
               if (loaded && !motionSpecsEqual(saved.spec, loaded.spec))
                 setStep(0);
@@ -346,7 +339,11 @@ function OpenMotionStudio({
           if (live)
             setError('草稿未能读取。服务器中的作品仍可从制作记录打开。');
         }
-        await refreshLists();
+        const available = await refreshLists();
+        if (live && objectId) {
+          const reference = available.find(item => item.id === objectId);
+          if (reference) setSpec(current => selectMotionObject(current, reference.id, reference.object_type));
+        }
       } catch (e) {
         if (live) setError((e as Error).message);
       } finally {
@@ -357,7 +354,7 @@ function OpenMotionStudio({
     return () => {
       live = false;
     };
-  }, [workId, version, characterId, draftKey, applyWork, refreshLists]);
+  }, [workId, version, objectId, draftKey, applyWork, refreshLists]);
 
   useEffect(() => {
     if (!workId || !ready) return;
@@ -467,7 +464,14 @@ function OpenMotionStudio({
   };
   const edit = (value: Partial<MotionSpec>) => {
     requestKey.current = '';
-    setSpec((previous) => ({ ...previous, ...('character_id' in value && value.character_id!==previous.character_id ? {visual_structure:null}:{}), ...value }));
+    setSpec(previous => {
+      if ('object_id' in value || 'character_id' in value) {
+        const changes = { ...value };
+        delete changes.object_id; delete changes.object_type; delete changes.character_id;
+        return selectMotionObject({ ...previous, ...changes }, motionObjectId(value), motionObjectType(value));
+      }
+      return { ...previous, ...value };
+    });
   };
   const plan = () =>
     run(async () => {
@@ -624,7 +628,7 @@ function OpenMotionStudio({
               <p>
                 {
                   [
-                    '选好角色，用自己的话描述它要做什么。',
+                    '选好对象，用自己的话描述它要做什么。',
                     '核对动作顺序、结束姿势和调用范围。',
                     '生成在本机服务持续运行，可以离开页面后回来。',
                     '完整播放并检查动作；技术检查不能替代你的视觉判断。',
@@ -636,26 +640,26 @@ function OpenMotionStudio({
             {step === 0 && (
               <div className="motion-grid">
                 <section className="motion-card motion-reference">
-                  <h2>使用哪个角色</h2>
-                  <MotionStructure key={spec.character_id} characterId={spec.character_id} disabled={readOnly || busy} registerDraftSaver={registerStructureDraftSaver} modelConfiguration={JSON.stringify(configuration?.configuration || null)} generationStructure={spec.visual_structure} onGenerationStructure={(value)=>edit({visual_structure:value})} />
+                  <h2>使用哪个对象</h2>
+                  {motionObjectType(spec) === 'character' ? <MotionStructure key={motionObjectId(spec)} characterId={motionObjectId(spec)} disabled={readOnly || busy} registerDraftSaver={registerStructureDraftSaver} modelConfiguration={JSON.stringify(configuration?.configuration || null)} generationStructure={spec.visual_structure} onGenerationStructure={(value)=>edit({visual_structure:value})} /> : <div className="motion-canvas"><img src={motionUrl(`open-motion/references/${motionObjectId(spec)}`)} alt="对象参考图" /></div>}
                   <label>
-                    已有角色
+                    已有对象
                     <select
-                      value={spec.character_id}
+                      value={motionObjectId(spec)}
                       disabled={readOnly}
-                      onChange={(e) => { edit({ character_id: e.target.value }); setUploadIdentity(''); }}
+                      onChange={(e) => { const selected = objects.find(item => item.id === e.target.value); edit({ object_id: e.target.value, object_type: selected?.object_type ?? 'character' }); setUploadIdentity(''); }}
                     >
-                      <option value="">请选择角色</option>
-                      {characters.map((c) => (
+                      <option value="">请选择对象</option>
+                      {objects.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name} · {c.width}px · 朝
-                          {c.facing === 'left' ? '左' : '右'}
+                          {c.name} · {c.object_type === 'interactable' ? '交互物' : '角色'} · {c.width}px
+                          {c.object_type !== 'interactable' && c.facing ? ` · 朝${c.facing === 'left' ? '左' : '右'}` : ''}
                         </option>
                       ))}
                     </select>
                   </label>
                   <details>
-                    <summary>上传自己的原图</summary>
+                    <summary>上传角色原图</summary>
                     <div className="motion-stack">
                       <p>
                         64 × 64 或 128 × 128 透明
@@ -719,7 +723,8 @@ function OpenMotionStudio({
                               });
                               await refreshLists();
                               edit({
-                                character_id: value.character.character_id,
+                                object_id: value.character.character_id,
+                                object_type: 'character',
                               });
                               setUploadIdentity('');
                             });
@@ -730,15 +735,15 @@ function OpenMotionStudio({
                     </div>
                   </details>
                   <Link href="/tools/reference-art">
-                    还没有角色？先制作原图 <ArrowRight size={14} />
+                    制作角色原图 <ArrowRight size={14} />
                   </Link>
                 </section>
                 <section className="motion-card motion-brief">
                   <h2>描述这段动作</h2>
                   <label>
-                    角色要做什么
+                    对象要做什么
                     <textarea
-                      aria-label="角色要做什么"
+                      aria-label="对象要做什么"
                       value={spec.description}
                       onChange={(e) => edit({ description: e.target.value })}
                       disabled={readOnly}
@@ -992,8 +997,7 @@ function OpenMotionStudio({
                     <span>
                       {work.character.display_name}
                       <small>
-                        原图朝{work.character.facing === 'left' ? '左' : '右'} ·{' '}
-                        {work.character.cell_width}px
+                        {motionObjectType(work.spec) === 'interactable' ? '交互物' : `原图朝${work.character.facing === 'left' ? '左' : '右'}`} · {work.character.cell_width}px
                       </small>
                     </span>
                   </div>
@@ -1429,7 +1433,7 @@ function OpenMotionStudio({
                 readOnly ||
                 work?.status === 'planning' ||
                 active ||
-                !spec.character_id ||
+                !motionObjectId(spec) ||
                 spec.description.trim().length < 4
               }
               onClick={plan}
@@ -1441,7 +1445,7 @@ function OpenMotionStudio({
           {step === 1 && planningStopped && (
             <button
               className="motion-primary"
-              disabled={busy || !ready || readOnly || !spec.character_id || spec.description.trim().length < 4}
+              disabled={busy || !ready || readOnly || !motionObjectId(spec) || spec.description.trim().length < 4}
               onClick={plan}
             >
               <Sparkles size={16} />
