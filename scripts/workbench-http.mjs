@@ -30,9 +30,9 @@ import {
   summarizeTask,
 } from '../lib/workbench/runtime.mjs';
 import {
-  getPublicMapGenerationSettings,
-  updateMapGenerationSettings,
-} from '../lib/workbench/map-generation-settings.mjs';
+  getPublicImageGenerationSettings,
+  updateImageGenerationSettings,
+} from '../lib/workbench/image-generation-settings.mjs';
 
 import { referenceServiceRequest } from '../lib/workbench/adapters/reference-art.mjs';
 import { exportSceneRequest } from '../lib/workbench/scene-export.mjs';
@@ -118,7 +118,7 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/v1/image-assets/settings' && ['GET', 'POST'].includes(request.method)) {
       try {
         const { connector } = findCapability(await loadManifest(), 'image-assets');
-        sendJson(response, 200, request.method === 'GET' ? getPublicMapGenerationSettings(connector) : updateMapGenerationSettings(connector, await readJsonBody(request)));
+        sendJson(response, 200, request.method === 'GET' ? getPublicImageGenerationSettings(connector) : updateImageGenerationSettings(connector, await readJsonBody(request)));
       } catch (error) { sendJson(response, error.status || 400, { error: error.message }); }
       return;
     }
@@ -428,7 +428,7 @@ const server = http.createServer(async (request, response) => {
       sendJson(
         response,
         200,
-        getPublicMapGenerationSettings(capability.connector),
+        getPublicImageGenerationSettings(capability.connector),
       );
       return;
     }
@@ -443,7 +443,7 @@ const server = http.createServer(async (request, response) => {
         sendJson(
           response,
           200,
-          updateMapGenerationSettings(capability.connector, body),
+          updateImageGenerationSettings(capability.connector, body),
         );
       } catch (error) {
         sendJson(response, 400, {

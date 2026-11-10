@@ -1,4 +1,5 @@
 import '../helpers/runtime-workspace.mjs';
+import './type-loading.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import os from 'node:os';
@@ -65,6 +66,17 @@ try {
   assert.equal((await listImportedAssets(root, manifest)).length, 0);
   const receipt = await commit(inspection, 'mixed', { animation: { loop: false }, interactable: { definitionIds: [project.objects[0].definitionId] } });
   assert.equal(receipt.importedCount, 7);
+  const retainedTypes = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['map', 'scene'] } } };
+  const disabledInspection = await inspectAssetPackage(root, retainedTypes, { bytes: await zipBytes(archive), filename: 'disabled-types.zip' });
+  assert(disabledInspection.candidates.filter(item => ['map', 'scene'].includes(item.kind)).every(item => item.status === 'incomplete' && item.missing.some(message => message.includes('未启用'))));
+  assert(disabledInspection.candidates.some(item => item.kind === 'interactable' && item.status !== 'incomplete'));
+  const inspectedMap = inspection.candidates.find(item => item.kind === 'map');
+  await assert.rejects(commitAssetPackages(root, retainedTypes, { commandId: 'disabled-after-inspection', selections: [{ inspectionId: inspection.inspectionId, candidateId: inspectedMap.id }] }), /素材类型未启用/);
+  const noScene = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['scene'] } } };
+  assert.equal((await inspectAssetPackage(root, noScene, { bytes: map.bytes, filename: 'map-source.zip' })).candidates[0].status, 'editable');
+  const noMap = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['map'] } } };
+  const mapFreeScene = await createScenePackage(createScene('不含地图的场景'));
+  assert.equal((await inspectAssetPackage(root, noMap, { bytes: mapFreeScene, filename: 'scene-source.zip' })).candidates[0].status, 'editable');
   assert.deepEqual(await commit(inspection, 'mixed', { animation: { loop: false }, interactable: { definitionIds: [project.objects[0].definitionId] } }), receipt);
   assert.deepEqual((await readAssetPackageCommit(root, manifest, 'mixed')).result, receipt);
   await assert.rejects(commit(inspection, 'mixed', { animation: { loop: true }, interactable: { definitionIds: [project.objects[0].definitionId] } }), /commandId/);

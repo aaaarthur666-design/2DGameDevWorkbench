@@ -621,6 +621,16 @@ try {
   const mcpScenes = await client.callTool({ name: 'workbench_list_assets', arguments: { kind: 'scene' } });
   assert.deepEqual(mcpScenes.structuredContent.assets, scenes.assets);
   assert.equal((await agentRequest(manifest, 'asset-manifest', { assetIds: [sceneId] })).manifest.assets[0].sceneRevision, 1);
+  const retainedTypes = structuredClone(manifest);
+  retainedTypes.agentAssets.assetCatalog.disabledKinds = ['map', 'scene'];
+  const retainedCatalog = await agentRequest(retainedTypes, 'assets', { limit: 100 });
+  assert(retainedCatalog.assets.length > 0);
+  assert(retainedCatalog.assets.every(asset => !['map', 'scene'].includes(asset.kind)));
+  assert.equal(retainedCatalog.coverage.mapProjectRecords, 0);
+  assert.equal(retainedCatalog.coverage.sceneExportRecords, 0);
+  await assert.rejects(agentRequest(retainedTypes, 'asset', { assetId: sceneId }));
+  await assert.rejects(agentRequest(retainedTypes, 'scene-workflow-settings', {}), /Unknown agent operation/);
+  await assert.rejects(agentRequest(retainedTypes, 'scene-split-inspect', {}), /Unknown agent operation/);
   // Missing recorded files stay visible and prevent an incomplete download.
   await unlink(path.join(repositoryRoot, exports[1].outputs[0]));
   assert.equal((await agentRequest(manifest, 'asset', { assetId: `scene:${exports[1].exportId}` })).asset.readiness.filesAvailable, false);

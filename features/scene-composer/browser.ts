@@ -15,7 +15,6 @@ import {
   loadDraft,
 } from '@/features/interactable-editor/browser-storage';
 import {
-  normalizeProject,
   type InteractableProject,
 } from '@/features/interactable-editor/contract.mjs';
 import {
@@ -45,7 +44,8 @@ import { readDocument } from '../editor-documents/client';
 import { documentFingerprint, type DocumentSyncCache } from '../editor-documents/sync-controller.mjs';
 import { browserRequestJournal } from '../editor-documents/browser-journal';
 import { browserDocumentMedia } from '../editor-documents/browser-media';
-import { parseDocumentMediaReference } from '../editor-documents/media-references.mjs';
+import { portableProject } from '../interactable-editor/portable-project';
+export { portableProject } from '../interactable-editor/portable-project';
 import { sharedSceneContent } from './shared-content.mjs';
 
 type SavedScene = { scene: Scene; backupRevision: number | null };
@@ -137,25 +137,6 @@ export async function readLocalObjectProjects() {
     (i) => i.capabilityId === 'interactable-editor' && i.draftKey,
   );
   return [...new Map(items.map((i) => [i.draftKey, i])).values()];
-}
-export async function portableProject(project: InteractableProject) {
-  const clean = normalizeProject(project);
-  for (const asset of clean.assets) {
-    if (asset.source.startsWith('data:')) continue;
-    if (parseDocumentMediaReference(asset.source)) {
-      asset.source = await browserDocumentMedia.dataUrl(asset.source, asset.mime);
-      continue;
-    }
-    const response = await fetch(
-      `/api/workbench/interactable-assets?path=${encodeURIComponent(asset.source)}`,
-    );
-    if (!response.ok)
-      throw new Error(`无法读取素材 ${asset.name}，请重新导入源文件。`);
-    asset.source = await dataUrl(
-      (await response.blob()).slice(0, undefined, asset.mime),
-    );
-  }
-  return clean;
 }
 export async function readObjects(fileOrItem: File | WorkItem) {
   const project =

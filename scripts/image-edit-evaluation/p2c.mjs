@@ -17,7 +17,7 @@ import {
   repositoryRoot as root,
 } from '../../lib/workbench/runtime.mjs';
 import { imageEditRequest } from '../../lib/workbench/image-edits.mjs';
-import { resolveMapGenerationProvider } from '../../lib/workbench/map-generation-settings.mjs';
+import { resolveImageGenerationProvider } from '../../lib/workbench/image-generation-settings.mjs';
 import {
   json,
   save,
@@ -63,7 +63,7 @@ for (const rows of [frozen.rows, protocol.order]) {
 }
 for (const row of protocol.order) assert.match(row.ticket, /^[a-zA-Z0-9_-]+$/);
 assert.equal(new Set(protocol.order.map((row) => row.ticket)).size, 8);
-const provider = resolveMapGenerationProvider(
+const provider = resolveImageGenerationProvider(
   findCapability(await loadManifest(), 'image-assets').connector,
   'gpt-image-2.6',
   'edit-image',

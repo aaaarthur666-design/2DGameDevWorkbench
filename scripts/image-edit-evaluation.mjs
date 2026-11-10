@@ -40,8 +40,8 @@ async function freeze() {
     await writeFile(path.join(out, 'baseline', file), bytes, { flag: 'wx' });
   }
   const { loadManifest, findCapability } = await import('../lib/workbench/runtime.mjs');
-  const { getPublicMapGenerationSettings } = await import('../lib/workbench/map-generation-settings.mjs');
-  const service = getPublicMapGenerationSettings(findCapability(await loadManifest(), 'image-assets').connector);
+  const { getPublicImageGenerationSettings } = await import('../lib/workbench/image-generation-settings.mjs');
+  const service = getPublicImageGenerationSettings(findCapability(await loadManifest(), 'image-assets').connector);
   const baseline = { schemaVersion: 1, createdAt: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), files: fileHashes, service, quality: 'auto (quality field omitted)', seed: null, environment: { node: process.version, sharp: sharp.versions, platform: os.platform(), release: os.release(), cpu: os.cpus()[0]?.model, logicalCpus: os.cpus().length, memoryBytes: os.totalmem() }, batchSha256: sha(JSON.stringify(batch)), formalHoldout: 'Every source family and derivative in this batch is excluded from formal evaluation.' };
   for (const c of batch.cases) {
     const dir = path.join(out, 'cases', c.id); await mkdir(dir, { recursive: true });
@@ -86,8 +86,8 @@ async function run() {
     process.env.OPENAI_API_KEY = 'p0-fixture-only';
     process.env.MAP_STITCHER_OPENAI_API_URL = batch.service.endpoint;
   } else if (batch.cases.some(c => c.operation.type === 'ai-edit')) {
-    const { resolveMapGenerationProvider } = await import('../lib/workbench/map-generation-settings.mjs');
-    const configured = resolveMapGenerationProvider(findCapability(await loadManifest(), 'image-assets').connector, 'gpt-image-2.6', 'edit-image');
+    const { resolveImageGenerationProvider } = await import('../lib/workbench/image-generation-settings.mjs');
+    const configured = resolveImageGenerationProvider(findCapability(await loadManifest(), 'image-assets').connector, 'gpt-image-2.6', 'edit-image');
     if (!configured?.apiKey) throw new Error('Image provider is not configured; no task or reservation created.');
     if (configured.endpoint !== batch.service.endpoint || configured.model !== batch.service.model) throw new Error('Provider differs from the frozen service.');
     process.env.OPENAI_API_KEY = configured.apiKey;

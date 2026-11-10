@@ -5,7 +5,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { spawn } from 'node:child_process';
 import { findCapability, loadManifest, persistTask, readTask, refreshTask, repositoryRoot, runConnector, validateInput } from '../../lib/workbench/runtime.mjs';
-import { getPublicMapGenerationSettings, resolveMapGenerationProvider } from '../../lib/workbench/map-generation-settings.mjs';
+import { getPublicImageGenerationSettings, resolveImageGenerationProvider } from '../../lib/workbench/image-generation-settings.mjs';
 import { imageSha256, inspectImageBytes, readImageAssetSource, validateImageAssetDimensions } from '../../lib/workbench/adapters/image-assets-source.mjs';
 import { imageUsageEvidence, requestOpenAIImage } from '../../lib/workbench/adapters/openai-image-provider.mjs';
 
@@ -62,10 +62,10 @@ try {
   };
 
   assert.equal(capability.connector.providerSource, 'map-stitcher');
-  assert.equal(getPublicMapGenerationSettings(capability.connector).providers[0].model, 'gpt-image-2.6-sunburst');
-  assert.equal(resolveMapGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-background').endpoint, 'http://127.0.0.1:9012/v1/images/generations');
+  assert.equal(getPublicImageGenerationSettings(capability.connector).providers[0].model, 'gpt-image-2.6-sunburst');
+  assert.equal(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-background').endpoint, 'http://127.0.0.1:9012/v1/images/generations');
   process.env.MAP_STITCHER_OPENAI_GENERATION_API_URL = 'http://127.0.0.1:9012/custom-generations';
-  assert.match(resolveMapGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-prop').endpoint, /custom-generations$/);
+  assert.match(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-prop').endpoint, /custom-generations$/);
   delete process.env.MAP_STITCHER_OPENAI_GENERATION_API_URL;
   assert.deepEqual(validateInput(capability, { operation: 'generate-prop', prompt: '灯笼' }), []);
   assert.deepEqual(validateInput(capability, { operation: 'edit-image', prompt: 'fixture', image: dataUrl(source), preserveAlpha: true }), []);
@@ -123,7 +123,7 @@ try {
   assert.equal(JSON.stringify(prop).includes('test-image-secret'), false);
 
   const beforeEvidenceFailure = calls.length;
-  await assert.rejects(requestOpenAIImage(resolveMapGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-background'), {
+  await assert.rejects(requestOpenAIImage(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-background'), {
     prompt: 'fixture evidence failure', dimensions: { size: '1024x1024' },
     onResponseMetadata: async () => { throw new Error('test-image-secret disk failure'); },
   }), error => error.submissionUnknown === true && !error.message.includes('test-image-secret'));

@@ -180,6 +180,23 @@ try {
   const sceneTarget = await readImageTarget(root, manifest, { kind: 'scene-layer', documentId: scene.id, layerId: 'map_overall' });
   check(sceneTarget.editable, false); check(sceneTarget.locked, false); check(sceneTarget.sourceEntry.documentId, scene.id);
   await reject(() => apply(sceneTarget, blue, candidate, 'scene-forbidden'), 'IMAGE_TARGET_READ_ONLY');
+  const allTargets = await listImageTargets(root, manifest, { limit: 200 });
+  check(allTargets.issues, undefined);
+  check([...new Set(allTargets.targets.map(target => target.targetRef.kind))].sort((a, b) => a.localeCompare(b)), ['image-task', 'interactable', 'map-layer', 'scene-layer']);
+  const allTargetIds = allTargets.targets.map(target => target.targetId);
+  check(allTargetIds, [...allTargetIds].sort((a, b) => a.localeCompare(b)));
+  const paginatedIds = [];
+  let offset = 0;
+  do {
+    const page = await listImageTargets(root, manifest, { limit: 4, offset });
+    check(page.total, allTargets.total);
+    check(page.issues, undefined);
+    paginatedIds.push(...page.targets.map(target => target.targetId));
+    offset = page.nextOffset;
+  } while (offset !== null);
+  check(paginatedIds, allTargetIds, 'Mixed target kinds must paginate without duplicates or omissions');
+  check((await listImageTargets(root, manifest, { scope: { documentId: scene.id } })).targets.map(target => target.targetId), [sceneTarget.targetId]);
+  check((await listImageTargets(root, manifest, { scope: { taskId: candidate.taskId } })).targets.map(target => target.targetId), [imageSource.targetId]);
   assert.throws(() => decodeImageTarget('imgtarget:v1:Li4vsecret')); assertions++;
   assert.throws(() => decodeImageTarget(encodeImageTarget(ref) + '=')); assertions++;
   const originalCandidateBytes = await readFile(path.join(root, 'outputs/candidate-blue/image.png'));

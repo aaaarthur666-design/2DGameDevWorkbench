@@ -47,7 +47,7 @@ import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
 import { clearImportQuery, libraryAnimationTiming, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
 import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
 import { projectSchema } from '@/features/interactable-editor/contract.mjs';
-import { portableProject } from '@/features/scene-composer/browser';
+import { portableProject } from '@/features/interactable-editor/portable-project';
 import { readDocument } from '@/features/editor-documents/client';
 import { useSharedDocument } from '@/features/editor-documents/use-shared-document';
 import { documentFingerprint, type DocumentSavedSnapshot } from '@/features/editor-documents/sync-controller.mjs';
