@@ -14,9 +14,7 @@ export const workspaceGroups = productionLines.map((line) => ({
 }));
 
 export function currentWorkbenchPage(pathname: string) {
-  // Compatibility routes keep their original deep-link parameters and editor.
-  const route = pathname === '/tools/map-stitcher-legacy'
-    ? '/tools/map-stitcher' : pathname;
+  const route = pathname;
   const tool = workbenchModules.find((entry) => entry.href === route);
   const group = workspaceGroups.find((entry) => entry.id === tool?.productionLine || entry.href === route);
   const destination = Object.values(workbenchDestinations).find((entry) => 'href' in entry && entry.href === route);

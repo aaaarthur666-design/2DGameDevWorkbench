@@ -1,4 +1,4 @@
-# 部件属性计划与本地分层换色试验
+# 部件属性计划、简单换色与独立复核
 
 在图片局部调整工作区输入外观修改描述后，「部件与属性计划 · 试验」会展开。可以手填部件及属性，也可以先让视觉模型提出建议。精确颜色命令仍直接显示本地操作入口。
 
@@ -20,11 +20,9 @@
 
 这次明确选择的范围取代旧的合成范围，必须完全位于原生成的最大授权区内。新候选从原生成基准派生，区域内复制已保存响应的 RGB，全图 Alpha 和区域外 RGBA 取自基准。Bridge 校验会话、原基准版本、原始返回哈希和授权范围。原始返回缺失、被修改或范围越界时会停止。每次修正都是独立本地候选。
 
-## 生成时附加表面参考
+## 干净局部图与 RGB 参考
 
-在「生成外观」中启用干净局部图后，可以再加一张相同坐标、相同尺寸的参考。选择「普通 RGB 局部图（对照）」会在额外位置使用原局部图。选择「分层明暗图（试验）」会从同一基准的本地分析中提取漫反射明暗，转换为适合查看的 sRGB，并沿用原 Alpha。确认计划时可以看到额外参考缩略图。两张图占用八个参考位置中的两个，用户已有参考依次在前，干净局部图排在最后。明暗估计供生成器参考，部件的实际可写像素仍由已确认的蒙版决定。
-
-Agent 在 `image-plan-prepare` 中使用 `localContext:true` 及 `softReference:{kind:"rgb"}` 或 `{kind:"shading",analysisId}`。明暗分析须属于同一会话和同一不可变基准。返回的 `referenceManifest` 按发送顺序保留每个参考的角色、尺寸和哈希，派生参考还记录原图坐标、基准哈希及层来源。查询软参考计划的 MCP 响应附带可写区、额外参考和干净局部图三张原生预览。提交时仍使用原操作和 `planRef`。不选额外参考时沿用既有流程。
+`image-plan-prepare` 可用 `localContext:true` 附上同一基准的干净局部裁切图，仍要求输出完整原图。可额外提供 `softReference:{kind:"rgb"}` 作为同坐标、同尺寸的 RGB 对照。参考数量仍最多 8 张；用户参考在前，干净局部图用于定位。计划保存每张图的角色、尺寸、坐标与哈希，发送前可查看。参考图不改变已确认蒙版的授权范围。
 
 ## 独立复核成品
 
@@ -42,44 +40,13 @@ Agent 在 `image-plan-prepare` 中使用 `localContext:true` 及 `softReference:
 4. 「准备计划并预览范围」只冻结输入，不生成。绿色叠图显示实际可写区，旁边显示局部参考。改变基准、范围、描述或策略后重新准备；每份计划最多提交一个候选。
 5. 查看候选，分别记录目标变化、应保内容、边界与透明度。记录绑定候选哈希，不代表独立盲评。采用仍使用原有明确采用动作。
 
-命名区域使用保存时的逐像素蒙版，适用于同一来源版本上的后续候选。参考哈希或分层可信度在提交前校验失败时，计划仍可用。候选一经记录，再次查询或恢复沿用原命令。
+命名区域使用保存时的逐像素蒙版，适用于同一来源版本上的后续候选。参考哈希在提交前校验失败时，计划仍可用。候选一经记录，再次查询或恢复沿用原命令。
 
-## 分层怎样参与输出
-
-「分层换色实验」在本机估计线性 RGB 底色 A、漫反射明暗 S、非漫反射残差 R。用户指定原底色和目标底色后，在允许区内计算 `I新 = I原 + (A新 − A原) × S`。分层换色与简单 RGB 换色都按通道映射。原底色的线性通道值低于 0.01 时，加上目标与原底色的通道差值，其余通道乘以目标与原底色的比值。这样纯红样本也能映射到纯蓝。候选证据记录超出色域的通道数。
-
-这适用于保形、保材质、主要改变底色的实验。它不是去木纹或换金属执行器，也不会生成准确的物理材质。反光、透明、彩色照明以及像素画纹理分解错误，都可能使颜色或细节不正确。残差里的旧色不会自动被去除。
-
-运行器固定 Marigold IID Lighting v1-1 的 revision `08c3930bb641abf786ba44ce92547507ebefbc16`，输入 sRGB，输出 float32 线性 RGB。当前参数为处理最长边 512、4 步、ensemble=3、seed=1807，输出匹配源尺寸；透明图另用 0.5 和 0.75 灰色衬底比较。对可见像素拟合并记录两个非负全局尺度，再计算补偿前的重建误差和预测分歧。源图最长边限制为 1536。
-
-当前门槛是部件内可见像素的误差 P90 ≤ 0.15、分歧 P90 ≤ 0.12，**不是标定过的正确概率或画质分数**。不满足时默认停止；选择「整块回退到简单换色」才执行本地 RGB 对照，并记录 `simple-rgb-fallback`。不会自动进入付费生成，也不会通过降低编辑强度掩盖失败。通过门槛仍须看图检查目标色、纹理和边界。
-
-## 选择简单换色或分层换色
+## 简单换色
 
 **换色方法的选择。** 要把选中表面染成同一色相，可在「简单换色对照」选择「保留相对明暗，统一色相」。它在线性 RGB 中按原像素亮度与原底色亮度的比值缩放目标颜色。需要保留各通道原有差异时，可对照「RGB 通道比例」。两种算法均作用于整个可写区，先把藤叶、金属边饰等要保留原色的像素划出。保明暗映射需要比纯黑更亮的原色样本。
 
-分层试验先选择部件表面。金属、光晕、半透明或尚未确认的表面可直接切换到保明暗简单换色。对有明暗的哑光表面，本地分析后准备计划，界面显示选区内的不稳定像素数和主要分歧来源。若误差或分歧过大，默认停止。也可以在准备前指定整块回退和简单算法。通过门槛只表示可试做分层候选，实际颜色和纹理仍要看图。四例的比较见[本地实测](../../work/local-edit-p2d-20261101/report.html)。
-
-同一会话、基准版本、源图和分析配置可以复用运行中或已完成的分析。复用已完成的结果会再核对层文件哈希。网页的「重新分析当前基准」明确开启新分析；MCP 在新命令中指定 `fresh:true`。新分层操作可传 `surface`（`diffuse`、`reflective`、`emissive`、`translucent` 或 `unknown`），简单回退使用 `fallbackMapping`；单独 `color-map` 使用 `mapping`。简单算法取 `rgb` 或 `luminance`，省略时沿用 RGB 比例。未带 `surface` 的旧分层请求沿用原数值门槛。准备计划返回 `recolorDecision`，执行前按同一基准和范围再核验一次。新回执另存超限像素的分歧来源，旧层数据同样可读。
-
-## 可选运行环境
-
-只有分层分析需要此环境。普通本地编辑、属性计划、简单换色无需 Python。当前机上已经安装于忽略的 `work/intrinsic-runtime/`，不随源码提交。此处使用 Marigold 分析器；没有接入研究方案中排除的 IntrinsicEdit 编辑管线。
-
-在仓库根目录、Python 3.12 和支持 CUDA 12.8 的 NVIDIA 环境中可显式安装：
-
-```powershell
-py -3.12 -m venv work/intrinsic-runtime/venv
-if ($LASTEXITCODE -ne 0) { throw 'venv failed' }
-& 'work/intrinsic-runtime/venv/Scripts/python.exe' -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128
-if ($LASTEXITCODE -ne 0) { throw 'torch installation failed' }
-& 'work/intrinsic-runtime/venv/Scripts/python.exe' -m pip install -r Tools/MarigoldAnalysis/requirements.txt
-if ($LASTEXITCODE -ne 0) { throw 'analysis dependencies failed' }
-& 'work/intrinsic-runtime/venv/Scripts/python.exe' Tools/MarigoldAnalysis/setup_model.py
-if ($LASTEXITCODE -ne 0) { throw 'model installation failed' }
-```
-
-安装命令从 PyTorch/PyPI/Hugging Face 下载依赖与固定模型，不发送素材。worker 设置离线模式，每次验证模型文件与源图哈希；界面不会自动安装。无 CUDA 时采用 CPU，尚无 CPU 耗时验证。`receipt.json` 保留参数、依赖版本、模型哈希、耗时及 PyTorch 峰值显存分配量，后者不是全机显存占用。
+`color-map` 的 `mapping` 取 `rgb` 或 `luminance`，省略时使用 RGB 比例。它是确定性本地处理，不需要 Python、模型 Key 或额外生成调用。
 
 ## 接口与恢复
 
@@ -92,15 +59,13 @@ if ($LASTEXITCODE -ne 0) { throw 'model installation failed' }
 | `image-part-get` / `workbench_get_part_suggestion` | 查询原请求和回执，MCP 以原生图片返回规划视图 |
 | `image-plan-prepare` / `workbench_prepare_image_plan` | 绑定 target/source guard、editId/revision、baseCandidateVersion、regionRef；冻结策略、范围和参考，不生成 |
 | `image-plan-get` / `workbench_get_image_plan` | 读取已有计划 |
-| `image-analysis-create` / `workbench_analyze_image_attributes` | 启动一份离线分析；稳定 commandId，返回 analysisId |
-| `image-analysis-get` / `workbench_get_image_analysis` | 查询原分析和预览；服务重启后标为需检查，不自动重跑 |
-| `image-edit` / `workbench_edit_image_region` | 使用原 operation、constraints、regionRef 和 planRef 提交；分层换色附 analysisId、from、to、fallback |
+| `image-edit` / `workbench_edit_image_region` | 使用原 operation、constraints、regionRef 和 planRef 提交 |
 | `image-edit` 的 `recompose-ai` 操作 | 传入原 AI candidateVersion、rawSha256 和新 regionRef，baseCandidateVersion 必须与原生成的基准一致，仅在本地重合成 |
 | `image-review-record` / `workbench_record_image_review` | 保存当前查看者的三项判断与缺陷坐标，不自动采用，也不宣称评审独立性 |
 | `image-critic-prepare` / `workbench_prepare_candidate_check` | 本地冻结指令、候选身份和视图；传入首轮的 parentReviewRef 可另备缺陷诊断 |
 | `image-critic-run` / `workbench_request_candidate_check` | 明确请求一次独立模型复核或诊断，记录回执和用量 |
 | `image-critic-get` / `workbench_get_candidate_check` | 凭 reviewRef 取回原记录及送检视图；请求中断时查询此记录 |
 
-计划的一次调用限制不等于服务端美元费用上限。现有图片生成沿用原服务配置；真实实验必须另有相应范围和费用授权。重复生成命令查询原候选；过期计划、错误哈希、被修改的层数据都被拒绝。分析记录与候选记录分开持久化。发生未知回执时检查原 commandId、editId 或 analysisId，不改 ID 重新提交。
+计划的一次调用限制不等于服务端美元费用上限。现有图片生成沿用原服务配置；真实实验必须另有相应范围和费用授权。重复生成命令查询原候选；过期计划、错误哈希都被拒绝。发生未知回执时检查原 commandId、editId 或 reviewRef，不改 ID 重新提交。
 
 回归：`npm run test:image-attribute-plan`；相关完整图片编辑回归、类型检查、lint 和构建见开发导航。真实诊断证据放在忽略的 `work/local-edit-p1-20261101/`；通过流程测试不等于画质已经提升。

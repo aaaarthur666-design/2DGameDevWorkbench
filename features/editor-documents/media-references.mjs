@@ -1,5 +1,3 @@
-import { collectSceneDocumentMedia } from '../scene-composer/document-media.mjs';
-
 export const DOCUMENT_MEDIA_PREFIX = '/api/workbench/document-media/';
 const extensions = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'application/zip': 'zip' };
 const mimes = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', wav: 'audio/wav', ogg: 'audio/ogg', mp3: 'audio/mpeg', zip: 'application/zip' };
@@ -19,8 +17,7 @@ export function mediaTypeMatches(reference, mime) {
   return Boolean(parsed && extensions[mime] === parsed.extension);
 }
 
-// Includes historical split baselines and scalar conflict previews as well as
-// visible art. Consumers mutate only the returned owner/key slots on a clone.
+// Consumers mutate only the returned owner/key slots on a clone.
 export function documentMediaReferences(kind, content) {
   const refs = [], seen = new WeakMap();
   const add = (owner, key, mime, name = '媒体', dimensions) => {
@@ -30,9 +27,7 @@ export function documentMediaReferences(kind, content) {
     keys.add(key); seen.set(owner, keys);
     refs.push({ owner, key, mime, name, ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}) });
   };
-  if (kind === 'scene') collectSceneDocumentMedia(content, add, parseDocumentMediaReference);
-  else {
-    for (const asset of content.assets) add(asset, 'source', asset.mime, asset.name);
-  }
+  if (kind !== 'interactable') throw new Error('Unsupported document kind.');
+  for (const asset of content.assets) add(asset, 'source', asset.mime, asset.name);
   return refs;
 }

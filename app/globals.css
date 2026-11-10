@@ -2,7 +2,6 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import './theme-tokens.css';
-@import '../components/map-stitcher/map-editor.css';
 
 @custom-variant dark (&:is(.dark *));
 

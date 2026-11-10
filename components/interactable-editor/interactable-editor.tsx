@@ -44,7 +44,7 @@ import {
 } from '@/lib/workbench/editor-session';
 import { listWorkItems, readWorkspaceDraft } from '@/lib/workbench/browser-store';
 import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
-import { clearImportQuery, libraryAnimationTiming, readEditorHandoff, storeEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
+import { clearImportQuery, libraryAnimationTiming, readEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
 import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
 import { projectSchema } from '@/features/interactable-editor/contract.mjs';
 import { portableProject } from '@/features/interactable-editor/portable-project';
@@ -89,7 +89,6 @@ export function InteractableEditor() {
   const [localProjects, setLocalProjects] = useState<WorkItem[]>([]), [localProjectsError, setLocalProjectsError] = useState('');
   const [localProjectsLoading, setLocalProjectsLoading] = useState(false);
   const importStarted = useRef(false);
-  const [handoffUrl, setHandoffUrl] = useState('');
   const [project, setProjectState] =
       useState<InteractableProject>(createProject),
     [selected, setSelected] = useState(''),
@@ -479,14 +478,6 @@ export function InteractableEditor() {
       }
     } finally { setBusy(false); }
   };
-  const sendToScene = () => void run(async () => {
-    await persist(true);
-    const href=await storeEditorHandoff('scene-composer','interactable',{project:latest.current.project,definitionIds:exportIds.length?exportIds:[current.definitionId]});
-    setHandoffUrl(href);
-  });
-  useEffect(()=>{
-    if(!busy && handoffUrl) queueMicrotask(()=>{setHandoffUrl('');void navigate(handoffUrl);});
-  },[busy,handoffUrl,navigate]);
   const consumeImport = useEffectEvent(()=>{
     const params=new URLSearchParams(location.search),assetId=params.get('importAsset'),purpose=params.get('importPurpose');
     if(assetId&&['image','animation','interactable'].includes(purpose||'')){queueMicrotask(()=>setLibrary({purposes:[purpose as ImportPurpose],assetId}));clearImportQuery();}
@@ -553,8 +544,7 @@ export function InteractableEditor() {
         </span>
         <span className="ie-spacer" />
         <button disabled={busy || !ready} onClick={()=>setLibrary({purposes:['interactable']})}>从资产库选用交互物项目</button>
-        <button disabled={busy || !ready || !draftWritable} onClick={()=>void run(async()=>{await saveProjectToLibrary(latest.current.project);await persist(true);setMessage('交互物源项目已保存到资产库，可直接导入场景；尚未导出 Godot。');})}>保存到资产库</button>
-        <button disabled={busy || !ready || !draftWritable} onClick={sendToScene}>用于制作场景</button>
+        <button disabled={busy || !ready || !draftWritable} onClick={()=>void run(async()=>{await saveProjectToLibrary(latest.current.project);await persist(true);setMessage('交互物源项目已保存到资产库；尚未导出 Godot。');})}>保存到资产库</button>
         <button disabled={busy || !ready || imageOpening || Boolean(imageEdit)} onClick={() => setOpenProject(true)}>
           <Upload size={16} />
           打开工程

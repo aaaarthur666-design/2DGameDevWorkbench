@@ -26,5 +26,5 @@ const server = await createTestViteServer({
   server: { host: '127.0.0.1', port: 0 },
 });
 await server.listen();
-console.log(`Navigation fixture: http://127.0.0.1:${server.httpServer.address().port}/tools/map-stitcher?map=fixture&returnTo=%2Fassets%3Fkind%3Dmap%26offset%3D40%26asset%3Dfixture`);
+console.log(`Navigation fixture: http://127.0.0.1:${server.httpServer.address().port}/tools/interactable-editor?document=fixture&returnTo=%2Fassets%3Fkind%3Dinteractable%26offset%3D40%26asset%3Dfixture`);
 process.on('SIGINT', async () => { await server.close(); process.exit(0); });

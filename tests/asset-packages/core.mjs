@@ -1,16 +1,11 @@
 import '../helpers/runtime-workspace.mjs';
-import './type-loading.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
-import { mapProjectFixture } from '../helpers/map-project.mjs';
 import { createProject, createObject } from '../../features/interactable-editor/contract.mjs';
-import { createScene, addMaterial, addInstance, replaceMap } from '../../features/scene-composer/model.mjs';
-import { createScenePackage } from '../../features/scene-composer/package.mjs';
-import { buildSceneGodotPackage } from '../../features/scene-composer/godot-builder.mjs';
 import { buildGodotPackage } from '../../features/interactable-editor/godot-builder.mjs';
 import { repositoryRoot } from '../../lib/workbench/runtime.mjs';
 import { ASSET_PACKAGE_LIMITS } from '../../lib/workbench/asset-package-contract.mjs';
@@ -29,32 +24,23 @@ try {
   assert.equal(ASSET_PACKAGE_LIMITS.containerExpandedBytes, ASSET_PACKAGE_LIMITS.uploadBytes);
   assert.equal(ASSET_PACKAGE_LIMITS.expandedBytes, 3 * 1024 * 1024 * 1024);
   assert(ASSET_PACKAGE_LIMITS.expandedBytes >= 4 * ASSET_PACKAGE_LIMITS.uploadBytes, 'bounded known nested duplication must fit current maximal downloads');
-  const map = await mapProjectFixture(png);
   const project = createProject();
   project.assets = [{ id: 'image', name: 'sprite.png', mime: 'image/png', source: `data:image/png;base64,${png.toString('base64')}` }];
   project.objects = [createObject('toggle'), createObject('pickup')];
   for (const object of project.objects) object.visual.assetId = 'image';
   const rawProject = Buffer.from(JSON.stringify(project));
-  const scene = createScene('完整场景');
-  replaceMap(scene, { name: '地图', origin: { x: -1, y: 2 }, offset: { x: 0, y: 0 }, layers: [{ id: 'map-overall', name: '整体', source: `data:image/png;base64,${png.toString('base64')}`, width: 16, height: 16, locked: false, hidden: false, included: true }], collisions: [], warnings: [], source: `data:application/zip;base64,${Buffer.from(map.bytes).toString('base64')}` });
-  const material = addMaterial(scene, project, project.objects[0].definitionId);
-  addInstance(scene, material.id, 12, -2);
-  const sceneBytes = await createScenePackage(scene);
   const archive = new JSZip();
   archive.file('character/角色-12345678/reference.png', png);
   archive.file('prop/物品-12345678/prop.png', png);
   archive.file('animation/动作-12345678/frames/frame_010.png', frame2);
   archive.file('animation/动作-12345678/frames/frame_002.png', png);
   archive.file('animation/动作-12345678/素材说明.txt', '播放速度：12 FPS\n');
-  archive.file('map/地图-12345678/map-source.zip', map.bytes);
-  archive.file('map/合成图-12345678/map.png', png);
   archive.file('interactable/开关-12345678/interactable-project.json', rawProject);
   archive.file('interactable/物件-23456789/interactable-project.json', rawProject);
-  archive.file('scene/场景-12345678/scene-source.zip', sceneBytes);
   const broken = structuredClone(project); broken.assets[0].source = 'missing.png';
   archive.file('interactable/损坏-45678900/interactable-project.json', JSON.stringify(broken));
   const inspection = await inspect(await zipBytes(archive), 'forge-assets.zip');
-  assert.equal(inspection.candidates.length, 8, 'repeated whole projects group once; broken group remains visible');
+  assert.equal(inspection.candidates.length, 5, 'repeated whole projects group once; broken group remains visible');
   assert.equal(inspection.candidates.filter(item => item.status === 'incomplete').length, 1);
   const animation = inspection.candidates.find(item => item.kind === 'animation');
   assert.equal(animation.metadata.fps, 12); assert.deepEqual(animation.requiredParameters.map(item => item.key), ['loop']);
@@ -65,42 +51,30 @@ try {
   await assert.rejects(commit(inspection, 'missing-parameters'), /补充/);
   assert.equal((await listImportedAssets(root, manifest)).length, 0);
   const receipt = await commit(inspection, 'mixed', { animation: { loop: false }, interactable: { definitionIds: [project.objects[0].definitionId] } });
-  assert.equal(receipt.importedCount, 7);
-  const retainedTypes = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['map', 'scene'] } } };
+  assert.equal(receipt.importedCount, 4);
+  const retainedTypes = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['prop'] } } };
   const disabledInspection = await inspectAssetPackage(root, retainedTypes, { bytes: await zipBytes(archive), filename: 'disabled-types.zip' });
-  assert(disabledInspection.candidates.filter(item => ['map', 'scene'].includes(item.kind)).every(item => item.status === 'incomplete' && item.missing.some(message => message.includes('未启用'))));
+  assert(disabledInspection.candidates.filter(item => item.kind === 'prop').every(item => item.status === 'incomplete' && item.missing.some(message => message.includes('未启用'))));
   assert(disabledInspection.candidates.some(item => item.kind === 'interactable' && item.status !== 'incomplete'));
-  const inspectedMap = inspection.candidates.find(item => item.kind === 'map');
-  await assert.rejects(commitAssetPackages(root, retainedTypes, { commandId: 'disabled-after-inspection', selections: [{ inspectionId: inspection.inspectionId, candidateId: inspectedMap.id }] }), /素材类型未启用/);
-  const noScene = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['scene'] } } };
-  assert.equal((await inspectAssetPackage(root, noScene, { bytes: map.bytes, filename: 'map-source.zip' })).candidates[0].status, 'editable');
-  const noMap = { ...manifest, agentAssets: { assetCatalog: { disabledKinds: ['map'] } } };
-  const mapFreeScene = await createScenePackage(createScene('不含地图的场景'));
-  assert.equal((await inspectAssetPackage(root, noMap, { bytes: mapFreeScene, filename: 'scene-source.zip' })).candidates[0].status, 'editable');
+  const inspectedProp = inspection.candidates.find(item => item.kind === 'prop');
+  await assert.rejects(commitAssetPackages(root, retainedTypes, { commandId: 'disabled-after-inspection', selections: [{ inspectionId: inspection.inspectionId, candidateId: inspectedProp.id }] }), /素材类型未启用/);
   assert.deepEqual(await commit(inspection, 'mixed', { animation: { loop: false }, interactable: { definitionIds: [project.objects[0].definitionId] } }), receipt);
   assert.deepEqual((await readAssetPackageCommit(root, manifest, 'mixed')).result, receipt);
   await assert.rejects(commit(inspection, 'mixed', { animation: { loop: true }, interactable: { definitionIds: [project.objects[0].definitionId] } }), /commandId/);
   const reused = await commit(inspection, 'mixed-again', { animation: { loop: false }, interactable: { definitionIds: [project.objects[0].definitionId] } });
-  assert.equal(reused.importedCount, 0); assert.equal(reused.reusedCount, 7);
+  assert.equal(reused.importedCount, 0); assert.equal(reused.reusedCount, 4);
   for (const record of await listImportedAssets(root, manifest)) for (const file of record.files) assert.equal(sha(await readFile(await resolveImportedAssetFile(root, record, file.path, manifest))), file.sha256);
 
   // Source wrappers restore one logical asset and retain original Godot bytes.
-  const mapGodot = await zipBytes(new JSZip().file('forge_maps/example/source_state.zip', map.bytes).file('forge_maps/example/map_export.json', JSON.stringify({ format: 'frame-ronin-engine-package', version: 1, target: 'godot' })).file('forge_maps/example/main.gd', 'Never execute this text.'));
-  const sceneGodot = (await buildSceneGodotPackage(scene, { repositoryRoot })).bytes;
   const objectGodot = (await buildGodotPackage({ project }, { repositoryRoot })).bytes;
-  for (const [bytes, kind] of [[mapGodot, 'map'], [sceneGodot, 'scene'], [objectGodot, 'interactable']]) {
-    const value = await inspect(bytes, `${kind}-godot.zip`);
-    assert.equal(value.candidates.length, 1); assert.equal(value.candidates[0].kind, kind);
+  {
+    const value = await inspect(objectGodot, 'interactable-godot.zip');
+    assert.equal(value.candidates.length, 1); assert.equal(value.candidates[0].kind, 'interactable');
     assert.notEqual(value.candidates[0].status, 'incomplete', JSON.stringify(value));
-    await commit(value, `${kind}-godot`, kind === 'interactable' ? { interactable: { definitionIds: project.objects.map(item => item.definitionId) } } : {});
-    const record = (await listImportedAssets(root, manifest)).find(item => item.provenance.packageHash === sha(bytes));
-    assert.deepEqual(await readFile(await resolveImportedAssetFile(root, record, record.payload.godotPath, manifest)), bytes);
+    await commit(value, 'interactable-godot', { interactable: { definitionIds: project.objects.map(item => item.definitionId) } });
+    const record = (await listImportedAssets(root, manifest)).find(item => item.provenance.packageHash === sha(objectGodot));
+    assert.deepEqual(await readFile(await resolveImportedAssetFile(root, record, record.payload.godotPath, manifest)), objectGodot);
   }
-  const pngPackage = await zipBytes(new JSZip().file('map_overall.png', png).file('map_composite.png', png).file('png_manifest.json', JSON.stringify({ layers: ['overall'], width: 16, height: 16, originX: -2, originY: 10, composition: '整体' })));
-  const pngInspection = await inspect(pngPackage, 'map-all-png.zip');
-  assert.equal(pngInspection.candidates[0].mapType, 'image'); assert.equal(pngInspection.candidates[0].status, 'material');
-  assert.equal(pngInspection.candidates[0].metadata.originX, -2);
-
   const sheet = await sharp({ create: { width: 32, height: 16, channels: 4, background: '#00000000' } }).composite([{ input: png, left: 0, top: 0 }, { input: frame2, left: 16, top: 0 }]).png().toBuffer();
   const exportContract = { format: 'sprite-pipeline-godot', version: 1, animation: 'hit', frame_count: 2, fps: 9, loop: false, source_region_px: [[16, 0, 16, 16], [0, 0, 16, 16]], cell_size: [16, 16], anchor: [7, 14], source_facing: 'left', visual_offset: [1, -6], sheet_sha256: sha(sheet), job_id: 'job', candidate_index: 3 };
   const godotAnimation = await zipBytes(new JSZip().file('forge_sprites/job/export.json', JSON.stringify(exportContract)).file('forge_sprites/job/sprite-sheet.png', sheet).file('forge_sprites/job/sprite_frames.tres', 'read-only'));
@@ -172,5 +146,5 @@ try {
   await mkdir(path.join(directories.persistent, '.commit-lock'));
   await writeFile(path.join(directories.persistent, '.commit-lock', 'owner.json'), JSON.stringify({ pid: 2147483647, token: 'dead' }));
   assert.equal(await withAssetPackageCommitLock(root, manifest, async () => 'recovered'), 'recovered');
-  console.log('Package core passed: mixed/legacy archives, missing parameters/media, grouped objects, exact playback, source/Godot wrappers, PNG collection, hash/path/duplicate/link defenses, atomic/idempotent commit and dead-owner recovery.');
+  console.log('Package core passed: mixed/legacy archives, missing parameters/media, grouped objects, exact playback, source/Godot wrappers, hash/path/duplicate/link defenses, atomic/idempotent commit and dead-owner recovery.');
 } finally { await rm(root, { recursive: true, force: true }); }

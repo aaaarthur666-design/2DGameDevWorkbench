@@ -15,7 +15,6 @@ Primary evidence in that repository:
 | `EnemyModule/Formal/EnemyBase.gd` and concrete scenes | Enemy registration, actor lifecycle, resource/config dependencies |
 | `Global/EventBus.gd`, `InputManager.gd`, `SceneTransitionManager.gd`, `GameManager.gd` | Synchronous events, owner cleanup, token locks, transition and global ownership |
 | `LevelModule/Formal/Level_02_SceneBuilder.gd` and relevant level Builders | Scene assembly, map reparenting, placement, dependency direction |
-| `LevelModule/Scenes/PixelworkMapStitch/` | Generated runtime + manifest + annotations + tiles; not just a background PNG |
 | `DataConfig/` | Resource-driven player/enemy/gameplay parameters actually consumed by code |
 
 Prefer actual code/scenes/config for observable behavior and the architecture report for documented contracts. If they differ, report the mismatch and choose a bounded adaptation. Older project Skill text has drift (Godot AI version, config migration, dream state representation); do not copy it as unquestioned authority.
@@ -51,11 +50,10 @@ Cyber special actions deliberately return early from normal animation updates wh
 | PlayerBase / EnemyBase + concrete classes + configs | Reuse as a dependency group when that gameplay is requested | DamageCalculator, GameManager, InputManager, global definitions, scenes, resource classes and assets |
 | InputManager / SceneTransitionManager / GameManager | Adapt after target ownership is decided | Autoload registration, existing level entry strategy, input actions, scene cleanup; not standalone utility files |
 | Scene/UI Builders | Reuse assembly pattern and needed operations | Their concrete level fields, signals and story nodes are project-specific |
-| Pixelwork generated maps | Preserve the complete export and required plugin/runtime | Streaming thread drain, actor groups, region gates, re-entry and exact resource paths |
 | Current workbench interaction runtime | Use the exporter and CopyWorms profile already in this repository | Shared runtime version, exported IDs, signal bridge and target EventBus contract |
 | Level 03–05 plot, dream transitions, boss tuning, special effects | Do not include by default | Add only for requested gameplay; no arbitrary story dependencies in a new project |
 
-No source package is blindly vendored by this Skill. The included small visual and map helpers are adaptations of the cited methods, not full copies of the game. Before extracting other code, retain its source path/commit/hash, trace its dependencies and check the repository's stated reuse terms. The baseline README describes learning/competition use; do not relabel it as MIT or assume third-party Pixelwork/plugin code has the same terms.
+No source package is blindly vendored by this Skill. The included small visual helpers are adaptations of the cited methods, not full copies of the game. Before extracting other code, retain its source path/commit/hash, trace its dependencies and check the repository's stated reuse terms. The baseline README describes learning/competition use; do not relabel it as MIT or assume third-party Pixelwork/plugin code has the same terms.
 
 ## Architecture and implementation output
 

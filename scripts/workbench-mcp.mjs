@@ -6,9 +6,6 @@ import * as z from 'zod/v4';
 import { assetInputs, assetTools } from '../lib/workbench/asset-contract.mjs';
 import { documentInputs, documentTools } from '../lib/workbench/document-contract.mjs';
 import { imageEditInputs, imageEditTools } from '../lib/workbench/image-edit-contract.mjs';
-import { sceneSplitInputs, sceneSplitTools } from '../lib/workbench/scene-split-contract.mjs';
-import { sceneWorkflowInputs, sceneWorkflowTools } from '../lib/workbench/scene-workflow-contract.mjs';
-import { sceneWorkflowPath } from '../lib/workbench/scene-workflow-presentation.mjs';
 import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { previewInputs, previewTools } from '../lib/workbench/preview-follow-contract.mjs';
 import { WorkBuddyPreview } from '../lib/workbench/workbuddy-preview.mjs';
@@ -43,7 +40,7 @@ const server = new McpServer(
       'Continue within the user\'s existing scope and budget, including delegated inspection and selection. Ask for unresolved consequential choices or scope changes. Read-only discussion creates no production task; prepare_task optionally saves input validation for authorized work.',
       'Poll the original task/job. Resolve unknown paid submissions using their saved receipts and provider IDs before a new attempt. Shared editing uses current version/hash guards and stable commandId.',
       'On the first WorkBuddy user message, check workbench_get_environment; start offline frontend services once, poll readiness for at most 60 seconds and stop on conflicts. Follow guidance topic presentation for host opening. WorkBuddy requires a visible preview for this session before production: discover the host present_files schema, open preview.hostAction and confirm the session page. preview_required creates no task or provider call; continue with the same parameters after connecting. Use previewPolicy only for an explicit user refusal/dismissal or verified host-tool failure. Use workbench_present at step/selection changes and workbench_get_frontend_context to confirm arrival. Respect paused, closed and unsaved pages. Other clients remain headless unless they present. Page acknowledgement confirms arrival, not artwork quality.',
-      'Direct map-stitcher adapter operations remain outside MCP. Scene-workflow tools support bounded map creation/extension only under their explicit frozen policy and quotas; read scene-collaboration guidance first. Explicit webpage requests can use available host browser tools. Report actual assets, checks and target-engine evidence with appropriate detail.',
+      'Explicit webpage requests can use available host browser tools. Report actual assets, checks and target-engine evidence with appropriate detail.',
     ].join(' '),
   },
 );
@@ -52,14 +49,9 @@ function success(value, name) {
   if (value.plan?.previewPng) {
     const {previewPng,localPreviewPng,softReferencePreviewPng,...plan}=value.plan;
     const images=[{role:'writable-area',data:previewPng,mimeType:'image/png'}];
-    if (softReferencePreviewPng) images.push({role:plan.softReference.kind==='rgb'?'rgb-control':'diffuse-shading',data:softReferencePreviewPng,mimeType:'image/png'});
+    if (softReferencePreviewPng) images.push({role:'rgb-control',data:softReferencePreviewPng,mimeType:'image/png'});
     if (localPreviewPng) images.push({role:'clean-crop',data:localPreviewPng,mimeType:'image/png'});
     return success({...value,plan,images},name);
-  }
-  if (value.analysis?.previews) {
-    const {previews,...analysis}=value.analysis;
-    const images=Object.entries(previews).map(([role,data])=>({role,data,mimeType:'image/png'}));
-    return success({...value,analysis,images},name);
   }
   if(value.check?.views?.some(view=>view.png)){
     const views=value.check.views;
@@ -120,10 +112,6 @@ function failure(error) {
 }
 
 const workbuddyPreview = new WorkBuddyPreview(repositoryRoot, () => server.server.getClientVersion()?.name);
-const sceneOperations = new Map(sceneWorkflowTools.map(([name, operation]) => [name, operation]));
-const sceneProduction = new Set(['scene-workflow-create', 'scene-workflow-execute', 'scene-workflow-revise', 'scene-workflow-resume', 'scene-workflow-adopt']);
-const sceneFollowing = new Set([...sceneProduction, 'scene-workflow-get', 'scene-workflow-pause']);
-const previewPolicySchema = z.enum(['auto', 'user-declined', 'user-dismissed', 'host-unavailable']).optional().describe('WorkBuddy preview exception only for an explicit user choice or verified unavailable host tool. Omit normally. This does not change the production request identity.');
 let following = false;
 async function followResult(value) {
   if (!following || !value.presentation?.viewPath) return value;
@@ -137,22 +125,6 @@ async function followResult(value) {
 function registerTool(name, options, handler) {
   server.registerTool(name, options, async (input) => {
     try {
-      const sceneOperation = sceneOperations.get(name);
-      if (workbuddyPreview.enabled && name === 'workbench_prepare_map_split' && input.mode === 'vision') {
-        workbuddyPreview.configure(input.previewPolicy);
-        const blocked = await workbuddyPreview.beforeRun(await loadManifest(), `/tools/scene-composer?document=${encodeURIComponent(input.documentId)}`);
-        if (blocked) return success(blocked, name);
-      }
-      if (sceneProduction.has(sceneOperation) && workbuddyPreview.enabled) {
-        workbuddyPreview.configure(input.previewPolicy);
-        const manifest = await loadManifest();
-        const route = sceneOperation === 'scene-workflow-create'
-          ? sceneWorkflowPath(manifest, input.spec.documentId)
-          : (await agentRequest(manifest, 'scene-workflow-get', { workId: input.workId })).presentation.viewPath;
-        const blocked = await workbuddyPreview.beforeRun(manifest, route);
-        if (blocked) return success({ ...blocked, next: `Complete preview.next, then call ${name} with the same parameters. No task or provider call was created by this blocked request.` }, name);
-        following = !workbuddyPreview.disabledReason;
-      }
       if (name === 'workbench_run_task' && workbuddyPreview.enabled) {
         workbuddyPreview.configure(input.previewPolicy);
         const manifest = await loadManifest();
@@ -169,15 +141,15 @@ function registerTool(name, options, handler) {
         if (name === 'workbench_request_candidate_check') targetId = (await agentRequest(manifest,'image-critic-get',{reviewRef:input.reviewRef})).check.targetId;
         const target = await agentRequest(manifest, 'image-inspect', targetId ? { targetId } : { target: input.target });
         const kind = target.target.targetRef.kind;
-        const moduleId = kind === 'interactable' ? 'interactable-editor' : ['scene-layer', 'scene-instance','scene-split-part'].includes(kind) ? 'scene-composer' : 'map-stitcher';
+        const moduleId = 'interactable-editor';
         const route = kind === 'image-task' ? manifest.agentAssets.assetCatalog.route : [...manifest.capabilities, ...manifest.editorModules].find(module => module.id === moduleId)?.ui?.route;
         const blocked = await workbuddyPreview.beforeRun(manifest, route || '/');
         if (blocked) return success(blocked, name);
         following = !workbuddyPreview.disabledReason;
       }
       let value = await handler(input);
-      if (sceneFollowing.has(sceneOperation) || ['workbench_run_task', 'workbench_get_task', 'workbench_edit_image_region', 'workbench_get_image_edit'].includes(name)) value = await followResult(value);
-      if (sceneFollowing.has(sceneOperation) || ['workbench_list_capabilities','workbench_describe_capability','workbench_present','workbench_run_task','workbench_get_task','workbench_get_frontend_context','workbench_edit_image_region','workbench_get_image_edit'].includes(name)) {
+      if (['workbench_run_task', 'workbench_get_task', 'workbench_edit_image_region', 'workbench_get_image_edit'].includes(name)) value = await followResult(value);
+      if (['workbench_list_capabilities','workbench_describe_capability','workbench_present','workbench_run_task','workbench_get_task','workbench_get_frontend_context','workbench_edit_image_region','workbench_get_image_edit'].includes(name)) {
         value = await workbuddyPreview.decorate(await loadManifest(), value, value.frontendPresentation?.viewPath || value.presentation?.actions?.[0]?.viewPath || value.presentation?.viewPath || value.viewPath || value.capability?.ui?.route || '/');
       }
       if (value.imageBase64 || value.edit?.pixels?.imageBase64 || value.edit?.comparison) {
@@ -434,27 +406,11 @@ const discoveryTools = [
 for (const [name,operation,description] of gameExportTools) {
   registerTool(name,{description,inputSchema:gameExportInputs[operation].shape,annotations:{readOnlyHint:['game-exports','game-export'].includes(operation),destructiveHint:false,idempotentHint:true,openWorldHint:false}},async input=>agentRequest(await loadManifest(),operation,input));
 }
-for (const [name, operation, description] of sceneWorkflowTools) {
-  registerTool(name, { description, inputSchema: { ...sceneWorkflowInputs[operation].shape, ...(sceneProduction.has(operation) ? { previewPolicy: previewPolicySchema } : {}) },
-    annotations: { readOnlyHint: ['scene-workflow-list', 'scene-workflow-get', 'scene-workflow-observe'].includes(operation), destructiveHint: false, idempotentHint: true,
-      openWorldHint: ['scene-workflow-create', 'scene-workflow-execute', 'scene-workflow-revise', 'scene-workflow-resume'].includes(operation) } },
-  async input => {
-    const { previewPolicy: _previewPolicy, ...request } = input;
-    return agentRequest(await loadManifest(), operation, request);
-  });
-}
-registerTool('workbench_get_scene_workflow_settings', { description: 'Read scene expert model profiles and credential readiness only; no model call or key values.', inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
-  async () => agentRequest(await loadManifest(), 'scene-workflow-settings', {}));
 for (const [name, operation, description] of documentTools) {
-  registerTool(name, { description, inputSchema: documentInputs[operation].shape, annotations: { readOnlyHint: ['documents', 'document-get', 'document-observe', 'document-validate', 'document-simulate'].includes(operation), destructiveHint: false, idempotentHint: operation !== 'document-export', openWorldHint: false } }, async input => agentRequest(await loadManifest(), operation, input));
+  registerTool(name, { description, inputSchema: documentInputs[operation].shape, annotations: { readOnlyHint: ['documents', 'document-get', 'document-validate', 'document-simulate'].includes(operation), destructiveHint: false, idempotentHint: true, openWorldHint: false } }, async input => agentRequest(await loadManifest(), operation, input));
 }
 for (const [name, operation, description] of imageEditTools) {
-  registerTool(name, { description, inputSchema: imageEditInputs[operation].shape, annotations: { readOnlyHint: ['image-inspect', 'image-session-get', 'image-panel-suggest', 'image-plan-get', 'image-analysis-get', 'image-part-get', 'image-critic-get'].includes(operation), destructiveHint: false, idempotentHint: true, openWorldHint: ['image-edit', 'image-part-suggest', 'image-critic-run'].includes(operation) } }, async input => agentRequest(await loadManifest(), operation, input));
-}
-for (const [name, operation, description] of sceneSplitTools) {
-  const inputSchema = { ...sceneSplitInputs[operation].shape, ...(operation === 'scene-split-prepare' ? {previewPolicy:previewPolicySchema} : {}) };
-  registerTool(name, {description,inputSchema,annotations:{readOnlyHint:['scene-split-get','scene-split-inspect'].includes(operation),destructiveHint:false,idempotentHint:true,openWorldHint:operation==='scene-split-prepare'}},
-    async ({previewPolicy: _policy,...input}) => agentRequest(await loadManifest(),operation,input));
+  registerTool(name, { description, inputSchema: imageEditInputs[operation].shape, annotations: { readOnlyHint: ['image-inspect', 'image-session-get', 'image-plan-get', 'image-part-get', 'image-critic-get'].includes(operation), destructiveHint: false, idempotentHint: true, openWorldHint: ['image-edit', 'image-part-suggest', 'image-critic-run'].includes(operation) } }, async input => agentRequest(await loadManifest(), operation, input));
 }
 for (const [name, operation, description] of previewTools) {
   registerTool(name, {

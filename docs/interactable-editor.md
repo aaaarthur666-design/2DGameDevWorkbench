@@ -10,7 +10,7 @@
 | 共享文档 MCP / CLI | 与网页接续编辑相同 projectId，按版本执行类型化命令 | `work/editor-documents/` 不可变版本；不创建生成任务 |
 | MCP / CLI `export-godot` | Agent 已有结构化项目，需要可审计导出 | `work/tasks/` 与 `outputs/<task-id>/` |
 
-各入口使用相同项目契约。共享保存、资产库 `save-project` 和 Godot 导出是独立动作；共享工程不会自动成为生成任务。交互物与地图可以分别导入 Godot，也可以通过[场景组装](scene-composer.md)人工或按已声明的场景命令摆放后统一导出。本编辑器继续只负责物件素材与行为。
+各入口使用相同项目契约。共享保存、资产库 `save-project` 和 Godot 导出是独立动作；共享工程不会自动成为生成任务。交互物可以独立导出并接入 Godot。本编辑器继续只负责物件素材与行为。
 
 ## 物品原图生成
 
@@ -51,9 +51,9 @@
 
 `workbench_adopt_document_image` 可把已完成 `image-assets` 的 prop PNG 采用到指定 `definitionId`，须携带 sourceTaskId、原图 sha256、expectedRevision、commandId。操作验证原任务及透明图片，增加素材并绑定默认外观，不改物件行为或状态专用图片，不启动新的生图调用。
 
-`workbench_validate_document` 读取确切版本，检查结构与媒体。`workbench_simulate_document` 接收最多 200 个类型化输入事件，返回每个定义的状态、顺序事件及 `expectEvents` / `expectStates` 结果；单独交互物项目使用 definitionId 作为模拟 instanceId。文本可用 advance-text 推进，等待音效可用 finish-audio 完成。未设置期望时的 passed=true 不代表行为验收。模拟不会写回文档，也不执行 Godot 物理、真实音频或游戏存档。跨实例联动在场景的 links 中配置；本编辑器负责目标 A/B 的图片、visible 和 solidEnabled 外观，详情见[场景联动](scene-composer.md)。
+`workbench_validate_document` 读取确切版本，检查结构与媒体。`workbench_simulate_document` 接收最多 200 个类型化输入事件，返回每个定义的状态、顺序事件及 `expectEvents` / `expectStates` 结果；单独交互物项目使用 definitionId 作为模拟 instanceId。文本可用 advance-text 推进，等待音效可用 finish-audio 完成。未设置期望时的 passed=true 不代表行为验收。模拟不会写回文档，也不执行 Godot 物理、真实音频或游戏存档。本编辑器负责目标 A/B 的图片、visible 和 solidEnabled 外观；游戏中的跨物件接线由目标工程实现。
 
-`workbench_observe_document` 和 `workbench_export_document` 当前只接受场景文档。交互物需要视觉观察时可显式导入共享场景；独立交互物交付仍使用既有 export-godot / copyworms 流程。
+查看实际外观使用交互物编辑器预览；交付使用既有 export-godot / copyworms 流程。共享文档工具不另提供图片观察或导出操作。
 
 ## 静态图片槽的局部调整（7A–7D）
 
@@ -67,7 +67,7 @@
 
 7C 已接“AI 局部修改”，选区增减笔刷只改蒙版，不改 RGBA；提交前冻结基准候选、描述、参考字节和硬边 `mask-runs` 区域。小尺寸图片可能只支持本地精修，不能为调用 AI 自动放大；AI 默认提供“保留原图透明度”，按本次编辑基准逐像素保持 Alpha；关闭后选区内透明度可变。内部细节与碰撞适配仍需检查。请求中断后检查原命令与任务，不自动重新提交。精确会话 / 候选深链可继续查看，缺少当前写入 guard 的历史保持只读，不会把状态图片改绑默认槽。
 
-本批真实模型请求为 0，实际 UI 与真实模型品质验收分别记录。7D 已接指定状态槽及场景引用：选中实例使用独立派生素材，其他共享实例保留；地图快照仅在验证单源像素映射后开放，图层 PNG 与嵌入源 ZIP 同一事务保存。不能确认映射的派生或合成层只读，使用源地图入口继续。引用该物件的既有场景保持固定快照，现有 Image 2.6 面板和整张默认图采用沿用原流程。详见[图像局部编辑](image-editing.md)。
+实际 UI 与真实模型品质验收分别记录。静态状态槽采用绑定确切版本和槽位指纹，动画状态槽只读。已有游戏导出保持固定快照，Image 2.6 面板和整张默认图采用沿用原流程。详见[图像局部编辑](image-editing.md)。
 
 ## 行为约定
 
@@ -209,11 +209,11 @@ Godot 参数也可通过 `GODOT_47_BIN` 提供；无参数只运行 JavaScript �
 3. `workbench_get_result` 返回带 task 参数的编辑地址；制作记录中的物件也直达编辑器。已有不同的同 ID 本机草稿会保留，Agent 版本另存；再次打开同一任务会恢复该版本的后续编辑。
 4. Agent 继续修改时，通过 get_task/read_artifact 读取已有源文件，修改后再次 save-project；需要交付包时才 export-godot。已保存不等于已导出。模板没有生成美术，缺图片时只能称为交互逻辑草稿。
 
-人工验收：重连 MCP 后说“制作一扇靠近按 E 开关的门，先保存逻辑草稿，不要生成美术或导出”。应出现一个可继续编辑的物件，前端可查看触发与切换状态；再说“把按键改为 F，然后导出 Godot”，应沿用原物件 ID 并给出真实 ZIP。另说“把地图自动拼起来”，应引导至地图前端，任务数量不增加。
+人工验收：重连 MCP 后说“制作一扇靠近按 E 开关的门，先保存逻辑草稿，不要生成美术或导出”。应出现一个可继续编辑的物件，前端可查看触发与切换状态；再说“把按键改为 F，然后导出 Godot”，应沿用原物件 ID 并给出真实 ZIP。另说“只说明这个物件的行为”，应只读现有工程，任务数量不增加。
 
 ## 内部素材联用
 
-当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+当前支持从资产库直接选择可复用源文件，并将图片、动画和完整项目导入交互物编辑器；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
 
 ## 交付到游戏项目
 

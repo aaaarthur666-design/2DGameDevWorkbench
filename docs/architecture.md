@@ -76,15 +76,13 @@ flowchart LR
     B --> R
     M -.共享文档与图片会话.-> B
     C -.共享文档与图片会话.-> B
-    B --> SD[版本化场景与交互物文档]
+    B --> SD[版本化交互物文档]
     R --> F[workbench/manifest.json]
     R --> X[Adapter registry]
     X --> S[SpritePipeline]
-    X --> T[Map Stitcher]
     X --> O[Interactable Editor]
     X --> G[Image 2.6 assets]
-    G --> E
-    T -.可选外部生成.-> E[Gemini / OpenAI Images / Hunyuan]
+    G --> E[OpenAI Images]
     R --> Q[work/tasks]
     R --> U[outputs/task-id]
     P -.只读原生 job 摘要.-> S
@@ -123,21 +121,21 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 ### Image 2.6 独立素材
 
-`image-assets` 负责路线 A 的背景、透明物品与已有图片编辑。它嵌入地图/交互物页面，不创建重复的导航模块。统一适配器使用 `gpt-image-2.6-sunburst`，保存原始响应、规范化 PNG、尺寸、实际 Alpha 和 SHA-256。任务先持久化为 running，再异步调用；轮询不重复提交，结果不确定时需要检查。生成与采用分开：采用重读文件并核对哈希，背景成为独立地图层，透明物品绑定现有交互物。旧 PixelLab 链路继续可用；不接入 Qwen 分层。
+`image-assets` 负责透明物品与已有图片编辑。它嵌入交互物页面，不创建重复的导航模块。统一适配器使用 `gpt-image-2.6-sunburst`，保存原始响应、规范化 PNG、尺寸、实际 Alpha 和 SHA-256。任务先持久化为 running，再异步调用；轮询不重复提交，结果不确定时需要检查。生成与采用分开：采用重读文件并核对哈希，透明物品绑定现有交互物。旧 PixelLab 链路继续可用。
 
 新图片请求另保存白名单用量证据 `provider-usage.json`，包括可取得的 token 计数、HTTP/请求身份、耗时和返回质量。在图片校验前持久化，输出验证失败仍能保留已返回的 usage；缺失计数与实际账单金额保持 null。记录失败不会重新请求。费率估算属于独立评测，不能由任务 completed 推断质量通过或实际收费。
 
 `image-assets-processing.mjs` 是新生成/编辑和本地process-image共用的确定性处理器；不联网、不缩放、不覆盖输入。蒙版Alpha=0采用候选，其余区域复制源图的解码sRGB/RGBA8，编码后再验证保护区。低Alpha清理默认仅归零prop的Alpha=1像素，且不越过蒙版保护。原始候选、派生PNG、两者哈希和processing-report分别保存；process-image在解析供应商/凭据前进入本地分支，未调用外部模型。文档和前端采用继续验证新任务身份与派生图哈希。
 
-### 已有图片局部编辑（7A–7D）
+### 已有图片局部编辑
 
-`lib/workbench/image-edits.mjs` 将目标发现、区域解析、候选执行和定点采用连接为持久会话；五个已注册工具为 inspect、resolve、edit、apply 和 get-edit，完整名称与操作见 [图片局部编辑](image-editing.md)。本地路径对已有源图执行确定性操作，通过薄适配层复用 SpritePipeline 的纯像素核心，再使用 `process-image` 保存并验证候选；不需要 Python 服务、模型 Key 或外部图片请求。地图生产、拼接和扩展仍保持手动前端边界。
+`lib/workbench/image-edits.mjs` 将目标发现、区域解析、候选执行和定点采用连接为持久会话；五个已注册工具为 inspect、resolve、edit、apply 和 get-edit，完整名称与操作见 [图片局部编辑](image-editing.md)。本地路径对已有源图执行确定性操作，通过薄适配层复用 SpritePipeline 的纯像素核心，再使用 `process-image` 保存并验证候选；不需要 Python 服务、模型 Key 或外部图片请求。
 
 所有 `image-*` 操作从 MCP/CLI 转发 canonical Runtime Bridge，包括会刷新候选状态的读取；Bridge 不可用时失败，不回退到客户端进程写文件。同一数据目录只支持一个写入权威 Bridge。会话、命名区域、配方及 commandId 记录位于 `workspace.imageEditDirectory`；源版本、源图哈希、会话版本与目标锁共同控制写入。任务身份在适配器执行前持久化，重复命令读取原记录；崩溃后的未知提交不会自动再执行。
 
 源 PNG/JPEG/WebP 保留原始文件字节，文件 `sha256` 与规范解码后 sRGB/RGBA8 straight-alpha 的 `rgbaSha256` 分开记录。Canvas、预览图及蒙版都不是权威像素源。7A 的 `restore-region` 在同源会话内取样恢复区域；7B 的 `candidateVersion="source"` 恢复单图为新版本，不回滚工程。宿主先完成持久保存，采用后读准确版本并更新保存基线。
 
-7C 已接显式 `ai-edit`：增减笔刷只改硬边蒙版，`mask-runs`、基准候选、描述与参考字节在任务执行前冻结，taskId 先于模型提交持久保存。断连 / 重启只恢复原身份，不自动重发。任务保留精确会话 / 候选深链，写入 guard 不满足的历史只读。服务端把保护区基准 RGBA 本地合成并核对编码后结果；选区内画质与 Alpha 不由此保证。本批真实模型请求为 0，实际 UI 验收另记；7D 已接指定状态槽及场景引用：选中实例使用独立派生素材，其他共享实例保留；地图快照仅在验证单源像素映射后开放，图层 PNG 与嵌入源 ZIP 同一事务保存。不能确认映射的派生或合成层只读，使用源地图入口继续。像素回归和 mock 通过不代表真实模型品质或 Godot 引擎验收。
+7C 已接显式 `ai-edit`：增减笔刷只改硬边蒙版，`mask-runs`、基准候选、描述与参考字节在任务执行前冻结，taskId 先于模型提交持久保存。断连 / 重启只恢复原身份，不自动重发。任务保留精确会话 / 候选深链，写入 guard 不满足的历史只读。服务端把保护区基准 RGBA 本地合成并核对编码后结果；选区内画质与 Alpha 不由此保证。交互物目标绑定明确的默认、切换状态或序列静态槽；动画槽只读。像素回归和 mock 通过不代表真实模型品质或 Godot 引擎验收。
 
 ### 5.0 角色原图
 
@@ -147,13 +145,11 @@ MCP、CLI 和 Web 在允许的能力范围内汇入同一套运行时，因此�
 
 `sprite-generator` 通过本地适配器连接 `Tools/SpritePipeline`。开发总控默认在回环地址启动或复用 SpritePipeline，并支持创建任务、开始生成、查询和导出。远端生成是异步的；重复查询只刷新已有上游任务，不会重新提交一次生成。
 
-### 5.2 地图拼接
-
-`map-stitcher` 的确定性拼接、状态恢复、区域标注与导出在本地完成。`generate-origin` 从提示词生成中心图，预览采用后再编辑；`generate-layer` 扩展已有透明模板。两者可按配置调用 Gemini、OpenAI Images 或混元 Image 3.0，外部生成不是本地拼接的前置条件。底层地图适配器不向 MCP 直接开放；场景协作可在明确地图策略、冻结服务和额度内创建／扩展候选，其他地图编辑继续使用前端。模板中 alpha 大于 0 的像素必须被保留，生成内容只填充完全透明区域。
-
-### 5.3 独立交互物编辑
+### 5.2 独立交互物编辑
 
 `interactable-editor` 在本地校验项目并导出 Godot 4.7.x 资源。当前支持 inspect、toggle、pickup、sequence 四类对象，以及 proximity_press、pointer_click、automatic_enter、external_request 四类触发方式。导出不要求本机安装 Godot，也不调用外部生成 API。
+
+图片服务配置由 `image-generation-settings.mjs`、`image-settings-store.mjs` 与 `macos-image-credentials.mjs` 管理，尺寸规划在 `adapters/image-generation-size.mjs`。部件定位和候选独立复核使用 `vision-models.mjs` / `vision-model-contract.mjs`；序列帧原生模型配置仍保留，跨两侧的统一配置属于后续 M4。
 
 ## 6. Agent 调用面
 
@@ -184,7 +180,7 @@ CLI 的 `list`、`describe`、`prepare`、`run`、`status` 与上述语义对齐
 
 ## 8. Web 工作台与本地状态
 
-Web 工作台提供生产台、场景台、专业工具和高级配置。它负责：
+Web 工作台提供角色制作与交互物入口、专业工具和高级配置。它负责：
 
 - 合并展示运行时任务、SpritePipeline 原生任务与浏览器草稿；
 - 在离开或替换编辑会话前保存草稿，并在繁忙或未保存时提示；
@@ -216,23 +212,17 @@ Web 工作台提供生产台、场景台、专业工具和高级配置。它负�
 
 新增能力时，应先实现独立适配器和清单条目，再让 MCP、CLI 与 Web 自动消费。若需要外部 API，应把认证、重试、错误归一化和输出验证留在服务端适配器；浏览器只获得完成任务所需的非敏感状态。完整步骤见 [使用与操作手册](operations-manual.md)。
 
-## 场景与交互物共享文档
+## 交互物共享文档
 
-场景组装在 Manifest 的 `editorModules` 注册网页入口；共享文档操作不伪装为生成任务。场景与交互物保存在 `workspace.documentDirectory`，Bridge 是写入权威，MCP/CLI 转发至同一写入入口。提交要求 `expectedRevision` 和 `commandId`，保存不可变历史与原子当前版本；恢复产生新版本。新历史将媒体保存为 SHA-256 引用，原件按内容复用并在入库时核验，媒体文件变化后重新检查完整性；旧内嵌历史保持原身份。场景浏览器使用引用与独立 IndexedDB Blob 缓存，兼容制作接口默认展开媒体，导出生成自包含包。`contentHash` 始终标识存储版本。IndexedDB 是本地缓存与冲突恢复备份，未提交草稿不冒充服务端版本。
+共享交互物保存在 `workspace.documentDirectory`，`kind=interactable`。Bridge 是写入权威，MCP/CLI 转发至同一入口。提交要求 `expectedRevision` 和 `commandId`，保存不可变历史与原子当前版本；恢复产生新版本。媒体按 SHA-256 引用复用，入库与读取核验完整性；旧内嵌历史仍可读。`contentHash` 始终标识存储版本，未提交浏览器草稿不冒充服务端版本。
 
-前端支持 `?document=<id>` 打开共享工程，干净状态跟随远端更新；忙碌、有本地修改、离线或版本冲突时保留草稿，显式加载远端前备份本地内容。AI 使用类型化命令编辑实例、排序、地图碰撞与交互物行为，不执行任意脚本。`document-observe` 对保存版本做确定性渲染，返回 PNG、内容哈希、世界坐标变换和辅助层；这不是未保存页面截图。`document-simulate` 运行既有交互模拟器的有限事件，不证明 Godot 物理或关卡可达。详见[场景组装](scene-composer.md)。
+`document-kinds.mjs` 登记交互物实现；模型、命令和资产逻辑分别位于 `interactable-documents.mjs`、`interactable-document-commands.mjs`、`interactable-document-assets.mjs`。公共合同与命令工具维护版本、媒体和身份边界。`portableProject` 位于 `features/interactable-editor/portable-project.ts`。
 
-`SceneEditSession` 统一协调预览、保存准备、候选、采用与撤销；预览阻止远端替换，采用作为可撤销事务，撤销/重做仍经共享 CAS。`RequestJournal` 在 IndexedDB 原子保存原始请求与回执，供共享保存、协作、分层与图片编辑恢复；多页面不覆盖未确认请求，旧请求重放不改正文。个人视图不进入共享内容版本。
-
-网页默认导出与 `document-export` 使用相同的精确共享版本。显式本机草稿导出标记为 `local-snapshot`。两者都保存来源描述、展开内容哈希与源包 SHA-256，源包和 Godot 清单携带相同身份；原有 ZIP 入口保持兼容。输出仍进入场景导出目录并收录资产库。独立路线 A 提供背景生成、显式采用和共享场景命令；有界自动地图创建与扩展通过场景协作调度，Qwen 分层未开放。
-
-`features/scene-composer/links.mjs` 定义稳定实例联动、类型与有向无环检查；场景模拟器按 FIFO 分发至幂等状态设置器。`simulation-replay.mjs` 为 document-simulate 和 document-observe 共用有界输入事件与最终状态计算，后者同时渲染回放后图片和有效碰撞。导出场景附带 `scene_link_router.gd`，连接已有交互运行时的信号；不创建第二套运行时。前端联动表单、状态反馈与服务器验证共用模型。实际 Godot 4.7 引擎验证另保存包哈希、物理查询与原生渲染证据。
-
-`scene-workflows.mjs` 在同一 Bridge 中管理有界专家协作。`scene-workflow-contract/store/models/prompts/execution` 提供命令合同、快照与账本、提供方传输、角色上下文、统一执行和真实观察；`scene-workflow-generation/map` 提供新物件生成、原图创建、邻接模板扩图与确定性拼接。模型只返回提案；执行器使用候选专属文档与图片会话，复用共享保存、图片适配器、场景渲染与模拟。来源、方案、模型、额度、原请求、产物哈希和复核版本均持久化，读取任务不调度模型。地图扩展保留旧像素、世界坐标和碰撞，新增区域不自动推断碰撞。前端在采用时协调共享保存基线，避免旧草稿写回。范围与恢复见[场景专家协作](scene-collaboration.md)。
+前端通过 `?document=<id>` 打开共享工程；忙碌、有本地修改、离线或版本冲突时保留草稿。类型化命令编辑物件外观和行为，不执行任意脚本。`features/editor-documents/simulation-replay.mjs` 为交互物模拟提供有界输入事件、期望检查与最终状态，不证明真实音频、Godot 物理或游戏存档。图片采用只绑定指定物件，保留行为与其他状态槽。导出继续使用 `interactable-editor` 的 `export-godot`，共享文档不提供独立的观察或导出操作。详见[交互物](interactable-editor.md)。
 
 ## 资产与工程交接
 
-`asset-catalog.mjs` 按来源身份合并任务产物与原生候选，并从 manifest 的 sceneExportDirectory 收录完整场景导出；浏览器草稿不自动收录。场景保留每次导出的独立版本与两个 ZIP，不冒充生产任务。执行历史归档与资产可见性分离，资产保留创建时间和来源记录；历史搜索先过滤全量未归档记录，再按快照分页。清单描述资产，下载 ZIP 才交付文件。Sprite 导出同时提供 PNG 和单动作 Godot SpriteFrames 包，旧记录保留可选字段兼容。工程 Skill 优先消费现成包；它在授权目标项目按 CopyWorms 契约接入角色与地图，保留玩法计时、场景生命周期和第三方依赖。详见 [资产目录](asset-catalog.md) 与 [游戏工程](game-engineering.md)。
+`asset-catalog.mjs` 按来源身份合并任务产物、原生候选与已导入素材；浏览器草稿不自动收录。执行历史归档与资产可见性分离，资产保留创建时间和来源记录；历史搜索先过滤全量未归档记录，再按快照分页。清单描述资产，下载 ZIP 才交付文件。Sprite 导出同时提供 PNG 和单动作 Godot SpriteFrames 包，旧记录保留可选字段兼容。工程 Skill 优先消费现成包；它在授权目标项目按 CopyWorms 契约接入角色与交互物，保留玩法计时、目标工程生命周期和第三方依赖。详见 [资产目录](asset-catalog.md) 与 [游戏工程](game-engineering.md)。
 
 ## 执行步骤到前端的确认通道
 
@@ -240,15 +230,11 @@ MCP 0.9.0 的 workbench_present 通过共享 runtime 写入 workspace.presentati
 
 ## 内部素材联用
 
-当前支持从资产库直接选择可复用源文件，及地图、交互物与场景之间的内部移送；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
+当前支持从资产库直接选择可复用源文件，并将图片、动画和完整项目导入交互物编辑器；无需下载后再上传。导入不生成、不增加后台任务，保留版本和源文件；具体入口、默认辅助显示和升级方式见 [内部素材导入](internal-imports.md)。
 
 ## Godot 游戏交付层
 
-[Godot 交付](godot-delivery.md)在生产导出与外部 Agent 游戏工程之间建立可核对的交付记录。features/godot-export 统一包结构，lib/workbench/game-export 负责项目选择、收件、安装计划、备份与证据；网页、MCP 和 CLI 共享实现。外部 Agent 根据实际项目写接入代码；不新增通用网页 Agent 或地图生产 capability。状态与目录由 manifest.gameExport/workspace.gameExportDirectory 描述。
-
-完整地图工程通过人工编辑器保存到 `workspace.mapProjectDirectory`，源 ZIP 位于版本化 outputs 目录，IndexedDB 保留本地备份。持久化独立于生产任务，资产库 map 类型仅索引完整工程。协议、冲突恢复和源包格式见 [地图工具](map-stitcher.md)；`npm run test:map-stitcher` 包含完整源包往返、并发版本冲突及文件完整性检查。
-
-地图源包可带可选的 `preview.png`。Bridge 验证 PNG 像素与尺寸，作为同版本的显示附件保存；失败不阻断源包记录提交。资产预览接口校验工程版本和附件哈希，不调用合成器或图片服务。浏览器缓存只依赖地图文档中的画面数据。
+[Godot 交付](godot-delivery.md)在生产导出与外部 Agent 游戏工程之间建立可核对的交付记录。features/godot-export 统一包结构，lib/workbench/game-export 负责项目选择、收件、安装计划、备份与证据；网页、MCP 和 CLI 共享实现。外部 Agent 根据实际项目写接入代码；不新增通用网页 Agent。状态与目录由 manifest.gameExport/workspace.gameExportDirectory 描述。
 
 ### 资产回收站
 

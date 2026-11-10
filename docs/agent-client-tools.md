@@ -32,17 +32,15 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 | `workbench_get_asset_manifest` | 返回明确所选资产的交接清单，不复制文件 |
 | `workbench_get_result` | 读取 taskId 或 jobId 的结果与精确候选链接，不刷新生成 |
 | `workbench_read_artifact` | 读取任务登记图片；GIF 为首帧，不等于完整播放 |
-| `workbench_list_documents` | 分页发现共享场景与交互物工程 |
+| `workbench_list_documents` | 分页发现共享交互物工程 |
 | `workbench_get_document` | 读取当前或历史版本；metadataOnly 可省略素材正文 |
 | `workbench_create_document` | 从完整内容或模板创建共享工程 |
-| `workbench_save_document` | 按预期版本保存完整内容；AI 保存遵守锁定实例保护 |
+| `workbench_save_document` | 按预期版本保存完整内容 |
 | `workbench_apply_document_commands` | 单文档类型化事务；需要 expectedRevision 与 commandId |
 | `workbench_restore_document` | 将历史快照恢复为新版本，保留原历史 |
 | `workbench_validate_document` | 检查保存版本的结构、媒体与诊断 |
 | `workbench_simulate_document` | 执行类型化输入事件并检查交互结果，不改文档 |
 | `workbench_adopt_document_image` | 使用确切图片任务与 SHA-256，明确采用到指定工程 |
-| `workbench_export_document` | 导出明确保存版本的场景源包和 Godot 包 |
-| `workbench_observe_document` | 返回保存场景版本的 PNG、几何标注与资源证据 |
 | `workbench_inspect_image_target` | 发现或读取既有图片目标、源版本和候选 |
 | `workbench_resolve_image_region` | 按确切源版本解析区域；可显式保存命名区域 |
 | `workbench_prepare_part_context` / `workbench_request_part_suggestion` / `workbench_get_part_suggestion` | 准备并查看三张规划视图，明确请求一次视觉定位，或查询已有部件建议 |
@@ -50,12 +48,6 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 | `workbench_edit_image_region` | 执行本地配方或显式 ai-edit，保存独立候选。recompose-ai 可在原授权范围内复用已保存的生成响应 |
 | `workbench_apply_image_candidate` | 按目标版本、源哈希和锁采用确切候选 |
 | `workbench_get_image_edit` | 读取持久会话、候选及原任务身份 |
-| `workbench_get_scene_workflow_settings` | 读取场景专家模型与凭据是否可用，不返回 Key |
-| `workbench_list_scene_workflows` / `workbench_get_scene_workflow` | 用 nextOffset + snapshot 分页读取全部历史；读取准确任务的讨论、用量和检查，已启用跟随后展示其进度 |
-| `workbench_create_scene_workflow` | 在指定范围与额度内启动专家规划和可选候选制作 |
-| `workbench_execute_scene_workflow` / `workbench_revise_scene_workflow` | 执行确切方案或在原额度内请求局部修订 |
-| `workbench_pause_scene_workflow` / `workbench_resume_scene_workflow` | 安全边界暂停，或显式恢复已保存步骤 |
-| `workbench_observe_scene_workflow` / `workbench_adopt_scene_workflow` | 读取真实候选图片，或按原场景版本采用已检查候选 |
 
 启动工具改变本机进程状态；prepare/run 持久化任务；文档写入维护自己的版本。读取指导不创建任务或调用提供方，get_task 可刷新原有异步记录。读取完整操作语义时按[生产 Skill](../.agents/skills/2d-game-workbench/SKILL.md)选择主题。
 
@@ -63,26 +55,7 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 
 首次使用不熟悉的操作时 list/describe，之后可复用已确认的 schema。用户已经要求执行且输入充分时直接 run；需要校验并保存准备记录时可 prepare。讨论、浏览和等待执行授权时无需建立任务。跨能力工作使用各自实际 operation 和任务身份。
 
-共享文档、图片会话和版本化修改经 canonical Bridge 完成，沿用其 revision/hash 与 commandId 契约；详细字段分别见[场景](scene-composer.md)、[交互物](interactable-editor.md)和[图片编辑](image-editing.md)。
-
-跨步骤的场景规划可使用[场景专家协作](scene-collaboration.md)。协作任务有独立的工作流版本、制作依赖图和候选工作区，`get/list/observe` 不调度模型；创建、执行和修订必须在用户已授权范围与额度内。最终采用另外核对来源场景版本和确切候选哈希。
-
-## 场景地图分层
-
-| MCP 工具 | CLI / HTTP 操作 | 使用范围 |
-| --- | --- | --- |
-| `workbench_prepare_map_split` | `scene-split-prepare` | 从确切的场景版本建立候选。`auto` 与网页一键粗分相同，优先运行本机 SAM 自动蒙版，缺少环境时返回纯像素结果及原因。`local` 使用显式选区或纯像素粗分。`sam` 接受原比例窗口、框及提示点。`vision` 显式请求一次视觉服务定位，传 `useSam: true` 可在本机取轮廓。同一请求恢复时保留 commandId。 |
-| `workbench_get_map_split` | `scene-split-get` | 按 documentId 列出候选，或按 candidateId / candidateRevision 读取冻结版本、核验状态、对象、迁移匹配依据及冲突。includeSpecs 返回可修订的选区和显式匹配表。 |
-| `workbench_inspect_map_split` | `scene-split-inspect` | 读取地图基准、合成候选、物件、子片、归属蒙版或指定冲突侧。MCP 返回原生 PNG，支持地图原像素裁片及黑、白、彩色底。 |
-| `workbench_revise_map_split` | `scene-split-revise` | 对同一候选按版本替换 specs，或只 upsert/remove 指定对象。可传一对一 matches、逐项 resolutions，或单独记录核验过的 elementIds 及意见。改图与记录核验分开提交。 |
-| `workbench_adopt_map_split` | `scene-split-adopt` | 采用指定候选版本到原场景，传 expectedRevision、candidateRevision 和稳定 commandId。返回确切保存版本。 |
-| `workbench_edit_map_split_element` | `scene-split-patch` | 按 ID 修改已采用的物件位置、锁、显隐、可选碰撞及前后/效果片。贴图编辑使用已有图像会话的 `scene-split-part` 目标。 |
-
-选区声明、尺寸及字段限额见[分层规范](../lib/workbench/map-split-spec.mjs)。定位坐标使用地图画布左上角的原图像素，元素位置相对地图，子片位置相对元素。例如声明一个独立灯可使用 `{"id":"lamp","name":"上栈桥油灯","kind":"object","parts":[{"id":"art","plane":"back","selection":{"type":"polygon","points":[{"x":42,"y":10},{"x":58,"y":10},{"x":58,"y":40},{"x":42,"y":40}]}}]}`。可将 spec 放入 prepare 的 specs，或放入 revise 的 upsert；余图作为地表或背景保存。实际操作见[场景使用说明](scene-composer.md#场景地图整图分层)。
-
-包含 SAM 提示的修订先返回 `status: running` 和 `execution`（执行 ID、原 commandId、操作及基准候选版本），使用 `scene-split-get` 查询同一个 candidateId。完成后将 `candidate.revision` 作为下一次请求的 candidateRevision；运行中返回的 revision 仍是上一个已发布版本。同一候选运行期间不接受另一条修订命令。读取不会触发推理，临时查询失败可以重试。失败或进程中断后，沿用原 commandId 和原参数恢复本地修订；`includeSpecs` 会在可恢复时附上 `recoveryRequest`。视觉定位声明在本地分割前落盘，本地阶段失败后恢复只重做本地步骤；上游结果未知且没有定位记录时不重发付费请求。
-
-单个物件最多 128 个子片，跨多条同 ID 声明合并后也须符合此限额；完整候选通过场景校验后才发布 ready。碰撞归属增减保留已接管区域的物件局部轮廓，仅新增区域从地图坐标转换。同源修订保留删除瞬间的碰撞归属。换图冲突选择“当前”时保留本地轮廓、解除旧图索引，不接管新版中的同号区域；接管新版区域需明确提交新版归属。
+共享文档、图片会话和版本化修改经 canonical Bridge 完成，沿用其 revision/hash 与 commandId 契约；详细字段分别见[交互物](interactable-editor.md)和[图片编辑](image-editing.md)。
 
 ## 状态与异步任务
 
@@ -95,7 +68,7 @@ Server 还提供只读资源 `workbench://manifest`。工具数量和版本以�
 
 序列帧生成可能异步返回。此时调用 `workbench_get_task` 刷新原来的上游 job；不要再次调用 `workbench_run_task`。查询是幂等刷新，短暂轮询错误不会改写已有任务为虚假成功，也不会提交第二次生成。
 
-Image 2.6 同样先返回已持久化的 running taskId，再由后台进程提交和保存图片。使用同一 get_task/status 查询；进程退出或租约失效时提示 attention_required，不自动重试可能已计费的提交。任务完成后先检查图片，再明确采用；requiresAdoption=true 不代表已经修改地图、交互物或场景。
+Image 2.6 同样先返回已持久化的 running taskId，再由后台进程提交和保存图片。使用同一 get_task/status 查询；进程退出或租约失效时提示 attention_required，不自动重试可能已计费的提交。任务完成后先检查图片，再明确采用；requiresAdoption=true 不代表已经修改交互物。
 
 普通回复先说结果、准确作品链接与下一步；技术详情保留能力、操作、任务 ID、状态、错误或缺失配置及实际输出路径，需要排错时提供。不能把 `prepared`、`running` 或 `awaiting_configuration` 描述为完成。
 

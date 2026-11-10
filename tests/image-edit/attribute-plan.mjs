@@ -3,11 +3,11 @@ import {verifyCandidateCritic} from './candidate-critic.mjs';
 import {verifySoftReferences} from './soft-reference.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import {planScope,attributeDefaults} from '../../features/image-edit/attribute-plan.mjs';
-import {srgbToLinear,recolorIntrinsic,recolorSimple,assessIntrinsics} from '../../features/image-edit/intrinsic-recolor.mjs';
+import {recolorSimple} from '../../features/image-edit/color-map.mjs';
 import {createProject,createObject} from '../../features/interactable-editor/contract.mjs';
 import {createDocument} from '../../lib/workbench/editor-documents.mjs';
 import {imageEditRequest} from '../../lib/workbench/image-edits.mjs';
@@ -21,9 +21,6 @@ eq([...scope.mask],[1,0,1,0]);
 const fragmented=Uint8Array.from({length:512*512},(_,i)=>i%2);
 const exact=planScope(new Uint8Array(fragmented.length*4),512,512,fragmented);
 eq(exact.mask,fragmented);eq(exact.count,131072);eq(exact.spec,undefined);
-const a=new Float32Array(12),s=new Float32Array(12).fill(.5),r=new Float32Array(12),u=new Float32Array(12);
-for(let i=0;i<4;i++)for(let c=0;c<3;c++)a[i*3+c]=srgbToLinear(px[i*4+c]/255)*2;
-const layers={albedo:a,shading:s,residual:r,uncertainty:u};
 for(const [source,from,to,expected] of [
   [[255,0,0,255],'#ff0000','#0000ff',[0,0,255,255]],
   [[1,3,255,1],'#0103ff','#01037f',[1,3,127,1]],
@@ -32,11 +29,6 @@ for(const [source,from,to,expected] of [
 eq(recolorSimple(px,scope.mask,'#994c33','#334c99','luminance').pixels.slice(0,4),new Uint8Array([51,76,153,255]));
 eq(recolorSimple(px,scope.mask,'#994c33','#994c33','luminance').pixels,px);
 assert.throws(()=>recolorSimple(px,scope.mask,'#000000','#112233','luminance'),{code:'INVALID_IMAGE_EDIT'});
-eq(recolorIntrinsic(px,scope.mask,layers,'#994c33','#994c33').pixels,px);
-const recolored=recolorIntrinsic(px,scope.mask,layers,'#994c33','#334c99');
-eq(Array.from(recolored.pixels.slice(0,4)),[51,76,153,255]);eq(Array.from(recolored.pixels.slice(4,8)),[17,29,31,0]);eq(recolored.pixels[11],1);
-eq(assessIntrinsics(px,scope.mask,layers).eligible,true);u.fill(.9);eq(assessIntrinsics(px,scope.mask,layers).eligible,false);
-
 const manifest=await loadManifest(),root=repositoryRoot,storage=path.resolve(root,manifest.workspace.imageEditDirectory);
 assert(storage.includes('/test-runs/')||storage.includes('\\test-runs\\'));
 const request=(op,input)=>imageEditRequest(root,manifest,op,input);
@@ -116,37 +108,9 @@ try{
   edit=repair.edit;
 }finally{globalThis.fetch=nativeFetch;}
 
-// Known-layer fixture proves that the server consumes bound float layers, not only references.
-const analysisId='known-layer-fixture',out=path.join(storage,'analysis-data',sha(analysisId));await mkdir(out,{recursive:true});
-const files={};
-for(const name of ['albedo','shading','residual','uncertainty']){
-  const data=Buffer.alloc(1024*1024*12);
-  for(let i=0;i<1024*1024;i++)for(let c=0;c<3;c++)data.writeFloatLE(name==='albedo'?srgbToLinear(pixels[i*4+c]/255):name==='shading'?1:0,(i*3+c)*4);
-  await writeFile(path.join(out,name+'.f32'),data);files[name]={sha256:sha(data)};
-}
-await mkdir(path.join(storage,'analyses'),{recursive:true});await writeFile(path.join(storage,'analyses',sha(analysisId)+'.json'),JSON.stringify({analysisId,status:'completed',editId:edit.editId,baseSha256:sha(png),baseRgbaSha256:sha(pixels),width:1024,height:1024,receipt:{width:1024,height:1024,files,model:'known-fixture',revision:'synthetic'}}));
-const intrinsic=await completed(await request('image-edit',{...input,planRef:undefined,expectedEditRevision:edit.revision,commandId:'intrinsic',operation:{type:'intrinsic-recolor',analysisId,from:'#994c33',to:'#334c99',fallback:'stop'}}));
-eq(intrinsic.candidate.intrinsicEvidence.route,'intrinsic-delta');eq(intrinsic.candidate.diff.changedOutsideRegion,0);eq(intrinsic.candidate.diff.alphaChangedPixelCount,0);
-await reject(request('image-edit',{...input,planRef:undefined,expectedEditRevision:intrinsic.edit.revision,baseCandidateVersion:intrinsic.candidate.version,commandId:'stale-analysis',operation:{type:'intrinsic-recolor',analysisId,from:'#994c33',to:'#334c99',fallback:'stop'}}),'IMAGE_ANALYSIS_CONFLICT');
-eq(JSON.parse(await readFile(path.join(storage,'analyses',sha(analysisId)+'.json'),'utf8')).status,'completed');
-const reflective={type:'intrinsic-recolor',analysisId,from:'#994c33',to:'#334c99',surface:'reflective',fallback:'stop'};
-const decisionInput={...prepareInput,expectedEditRevision:intrinsic.edit.revision,operation:reflective,commandId:'reflective-stop-plan'};
-const stopped=(await request('image-plan-prepare',decisionInput)).plan;
-eq(stopped.recolorDecision.route,'stop');eq(stopped.recolorDecision.assessment.errorP90<.001,true);
-await reject(request('image-edit',{...input,expectedEditRevision:intrinsic.edit.revision,planRef:stopped.planRef,operation:reflective,commandId:'reflective-stop'}),'IMAGE_ANALYSIS_UNCERTAIN');
-eq((await request('image-plan-get',{planRef:stopped.planRef})).plan.consumedCommandId,undefined);
-const uncertainty=Buffer.alloc(1024*1024*12);for(let i=0;i<uncertainty.length;i+=4)uncertainty.writeFloatLE(.9,i);
-await writeFile(path.join(out,'uncertainty.f32'),uncertainty);
-const analysisFile=path.join(storage,'analyses',sha(analysisId)+'.json'),record=JSON.parse(await readFile(analysisFile,'utf8'));
-record.receipt.files.uncertainty.sha256=sha(uncertainty);await writeFile(analysisFile,JSON.stringify(record));
-const fallbackInput={...input,planRef:undefined,expectedEditRevision:intrinsic.edit.revision,commandId:'stop-uncertain',operation:{type:'intrinsic-recolor',analysisId,from:'#994c33',to:'#334c99',fallback:'stop'}};
-await reject(request('image-edit',fallbackInput),'IMAGE_ANALYSIS_UNCERTAIN');
-const fallback=await completed(await request('image-edit',{...fallbackInput,commandId:'explicit-fallback',operation:{...fallbackInput.operation,fallback:'simple'}}));
-eq(fallback.candidate.intrinsicEvidence.route,'simple-rgb-fallback');eq(fallback.candidate.diff.changedOutsideRegion,0);eq(fallback.candidate.diff.alphaChangedPixelCount,0);
-const selected={...reflective,fallback:'simple',fallbackMapping:'luminance'};
-const recoveredPlan=(await request('image-plan-prepare',{...decisionInput,expectedEditRevision:fallback.edit.revision,operation:selected,commandId:'luma-plan'})).plan;
-eq(recoveredPlan.recolorDecision.route,'simple-luminance-fallback');
-const luma=await completed(await request('image-edit',{...input,expectedEditRevision:fallback.edit.revision,planRef:recoveredPlan.planRef,operation:selected,commandId:'luma-candidate'}));
-eq(luma.candidate.intrinsicEvidence.route,recoveredPlan.recolorDecision.route);eq(luma.candidate.diff.alphaChangedPixelCount,0);eq(luma.candidate.diff.changedOutsideRegion,0);
-await verifySoftReferences({request,prepareInput,input,edit:luma.edit,analysisId,png,completed});
+// Luminance mapping keeps the same authorization and Alpha guarantees as RGB mapping.
+const luminance=await completed(await request('image-edit',{...input,planRef:undefined,expectedEditRevision:edit.revision,commandId:'luminance-candidate',operation:{...original,mapping:'luminance'}}));
+eq(luminance.candidate.recolorEvidence.route,'simple-luminance-control');
+eq(luminance.candidate.diff.alphaChangedPixelCount,0);eq(luminance.candidate.diff.changedOutsideRegion,0);
+await verifySoftReferences({request,prepareInput,input,edit:luminance.edit,png,completed});
 console.log(JSON.stringify({attributePlan:'passed',checks,mockedImageCalls:calls,realPaidCalls:0,namespace:process.env.WORKBENCH_TEST_RUN}));

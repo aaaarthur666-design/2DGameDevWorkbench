@@ -19,10 +19,9 @@
 | 角色原图生成、已有图片导入与移送 | `reference-art` · [角色原图](../docs/reference-art.md) |
 | 角色与动作：规划、分段检查、导出 | `motion` · [开放动作](guides/motion.md) |
 | 选帧修改、原版与备选比较 | `adjustments` · [动画调整](../docs/motion-adjustments.md) |
-| 背景、透明物品、整图生成 | `image-generation` · [图片素材](../docs/prop-art.md) |
+| 透明物品生成与整图编辑 | `image-generation` · [图片素材](../docs/prop-art.md) |
 | 已有图片的局部编辑与恢复 | `image-editing` · [图片编辑](../docs/image-editing.md) |
-| 交互物与共享场景 | `interactables` / `scenes` · [交互物](../docs/interactable-editor.md) / [场景](../docs/scene-composer.md) |
-| 地图网页操作 | `maps` · [地图编辑器](../docs/map-stitcher.md) |
+| 交互物与共享工程 | `interactables` · [交互物](../docs/interactable-editor.md) |
 | 查找、下载、交接已有资产 | `assets` · [资产目录](../docs/asset-catalog.md) |
 | Godot 代码与资源接入 | `engineering` / `delivery` · [工程 Skill](../.agents/skills/forge-game-engineering/SKILL.md) / [交付](../docs/godot-delivery.md) |
 | 展示作品、连接预览或页面跟随 | `presentation` · [预览协议](../docs/agent-preview-follow.md) |

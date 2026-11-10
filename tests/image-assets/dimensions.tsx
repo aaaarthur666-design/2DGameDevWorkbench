@@ -53,7 +53,7 @@ const until = async (predicate: () => boolean) => {
 };
 const assert = (condition: unknown, text: string) => { if (!condition) throw new Error(text); };
 const value = (label: string) => find<HTMLInputElement | HTMLSelectElement>(`[aria-label="${label}"]`).value;
-const history = async (id: string) => { await select('最近场景背景', id); await until(() => !document.body.textContent?.includes('正在读取所选任务与输出尺寸')); };
+const history = async (id: string) => { await select('最近透明物件', id); await until(() => !document.body.textContent?.includes('正在读取所选任务与输出尺寸')); };
 
 function Fixture() {
   const [status, setStatus] = useState('尚未运行');
@@ -62,7 +62,7 @@ function Fixture() {
     setStatus('运行中…');
     try {
       await until(() => document.querySelector('.image-assets-settings summary')?.textContent?.includes('已配置') === true);
-      await fill('场景背景描述', 'fixture dimensions only');
+      await fill('透明物件描述', 'fixture dimensions only');
       await select('图片输出尺寸', 'custom');
       await fill('自定义图片宽度', '1000'); await fill('自定义图片高度', '1000');
       const generate = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '生成一张图片')!;
@@ -81,12 +81,12 @@ function Fixture() {
       await history('preset-history'); assert(value('图片输出尺寸') === '1024x1536', 'Preset history must restore exact preset');
       await history('custom-history');
       assert(value('图片输出尺寸') === 'custom' && value('自定义图片宽度') === '2560' && value('自定义图片高度') === '1440', 'Custom history must restore exact width and height');
-      await history('missing-dimensions'); assert(value('图片输出尺寸') === '1536x1024', 'Missing dimensions reset to default rather than previous task');
+      await history('missing-dimensions'); assert(value('图片输出尺寸') === '1024x1024', 'Missing dimensions reset to default rather than previous task');
       await history('processed-history'); assert(value('自定义图片宽度') === '2560' && value('自定义图片高度') === '1280', 'Local processing reads real dimensions from result.json');
       await history('broken-result');
-      assert(value('图片输出尺寸') === '1536x1024', 'Unreadable result resets dimensions');
+      assert(value('图片输出尺寸') === '1024x1024', 'Unreadable result resets dimensions');
       assert(document.body.textContent?.includes('未能读取此任务的输出尺寸'), 'Unreadable result must explain the fallback');
-      await select('最近场景背景', 'slow-result');
+      await select('最近透明物件', 'slow-result');
       assert(generate.disabled, 'Generation must wait for historical dimensions');
       await history('preset-history'); await wait(400);
       assert(value('图片输出尺寸') === '1024x1536', 'Late result cannot overwrite a newer selection');
@@ -98,7 +98,7 @@ function Fixture() {
     <h1>图片输出尺寸 · 隔离回归</h1><p>真实 ImageAssetsPanel，内存任务与本地请求桩；不会生成实际素材。</p>
     <button id="run-dimension-checks" disabled={status === '运行中…'} onClick={() => void run()}>运行尺寸回归</button>
     <h2 id="dimension-test-status">{status}</h2><pre style={{ whiteSpace: 'pre-wrap' }}>{details}</pre>
-    <ImageAssetsPanel kind="background" name="尺寸测试" adoptionLabel="测试采用" beforeGenerate={async () => { beforeGenerateCalls++; }} onAdopt={async () => undefined} />
+    <ImageAssetsPanel kind="prop" name="尺寸测试" adoptionLabel="测试采用" beforeGenerate={async () => { beforeGenerateCalls++; }} onAdopt={async () => undefined} />
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Fixture />);

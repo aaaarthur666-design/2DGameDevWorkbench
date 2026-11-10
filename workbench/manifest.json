@@ -1,121 +1,288 @@
 {
   "schemaVersion": 1,
-  "editorModules": [
-    {
-      "id": "scene-composer",
-      "name": "场景组装",
-      "shortName": "场景组装",
-      "description": "将地图与交互物组装成完整的 2D 平台跳跃场景。",
-      "ui": {
-        "icon": "scene", "productionLine": "scene", "entryTitle": "场景组装",
-        "starterHint": "选择地图，拖入交互物，调整遮挡后导出 Godot 场景。",
-        "stages": ["导入素材", "摆放与遮挡", "保存与导出"],
-        "accent": "cyan", "status": "ready", "route": "/tools/scene-composer", "surface": "editor",
-        "capabilities": ["拖放与批量摆放", "右键遮挡与节点排序", "手动替换素材", "完整场景导出"]
-      }
-    }
-  ],
+  "editorModules": [],
   "workspace": {
     "name": "Forge — 2D game dev workbench",
-    "brand": { "name": "Forge", "tagline": "2D game dev workbench", "icon": "/favicon.svg?v=forge-play" },
+    "brand": {
+      "name": "Forge",
+      "tagline": "2D game dev workbench",
+      "icon": "/favicon.svg?v=forge-play"
+    },
     "assetTrashDirectory": "work/asset-trash",
     "importedAssetDirectory": "work/imported-assets",
     "packageImportDirectory": "work/asset-package-imports",
     "taskDirectory": "work/tasks",
-    "sceneExportDirectory": "work/scene-exports",
     "gameExportDirectory": "work/game-exports",
     "presentationDirectory": "work/presentation",
-
-    "mapProjectDirectory": "work/map-projects",
     "documentDirectory": "work/editor-documents",
     "imageEditDirectory": "work/image-edits",
-    "sceneWorkflowDirectory": "work/scene-workflows",
     "outputDirectory": "outputs",
-    "frontend": { "url": "http://localhost:3000", "healthPath": "/api/workbench/health" }
+    "frontend": {
+      "url": "http://localhost:3000",
+      "healthPath": "/api/workbench/health"
+    }
   },
-  "gameExport": { "version": 1, "engine": "Godot 4.7.x", "inbox": "forge_imports", "guide": "docs/godot-delivery.md", "states": ["awaiting_agent", "assets_installed", "integrated", "needs_attention"], "automaticAgentWake": false, "production": "existing-exports-only" },
+  "gameExport": {
+    "version": 1,
+    "engine": "Godot 4.7.x",
+    "inbox": "forge_imports",
+    "guide": "docs/godot-delivery.md",
+    "states": [
+      "awaiting_agent",
+      "assets_installed",
+      "integrated",
+      "needs_attention"
+    ],
+    "automaticAgentWake": false,
+    "production": "existing-exports-only"
+  },
   "assetImports": [
-    { "id": "map", "label": "地图", "kinds": ["map"], "targets": ["map-stitcher", "scene-composer"] },
-    { "id": "interactable", "label": "交互物项目", "kinds": ["interactable"], "targets": ["interactable-editor", "scene-composer"] },
-    { "id": "scene", "label": "完整场景", "kinds": ["scene"], "targets": ["scene-composer"] },
-    { "id": "image", "label": "外观原图", "kinds": ["prop", "character", "map"], "targets": ["interactable-editor"] },
-    { "id": "animation", "label": "动画帧", "kinds": ["animation"], "targets": ["interactable-editor"] }
+    {
+      "id": "interactable",
+      "label": "交互物项目",
+      "kinds": [
+        "interactable"
+      ],
+      "targets": [
+        "interactable-editor"
+      ]
+    },
+    {
+      "id": "image",
+      "label": "外观原图",
+      "kinds": [
+        "prop",
+        "character"
+      ],
+      "targets": [
+        "interactable-editor"
+      ]
+    },
+    {
+      "id": "animation",
+      "label": "动画帧",
+      "kinds": [
+        "animation"
+      ],
+      "targets": [
+        "interactable-editor"
+      ]
+    }
   ],
   "productionLines": [
-    { "id": "player", "name": "角色制作总览", "eyebrow": "CHARACTER / MOTION", "description": "让角色动起来。", "accent": "violet", "href": "/player", "summary": ["角色原图", "动作序列帧", "导出"] },
-    { "id": "scene", "name": "场景制作总览", "eyebrow": "SCENE / INTERACTION", "description": "制作地图和交互物，组装成完整场景。", "accent": "cyan", "href": "/scene", "summary": ["地图拼接", "交互物制作", "场景组装"] }
+    {
+      "id": "player",
+      "name": "角色制作总览",
+      "eyebrow": "CHARACTER / MOTION",
+      "description": "让角色动起来。",
+      "accent": "violet",
+      "href": "/player",
+      "summary": [
+        "角色原图",
+        "动作序列帧",
+        "导出"
+      ]
+    },
+    {
+      "id": "interactable",
+      "name": "交互物制作",
+      "eyebrow": "INTERACTABLE / BEHAVIOR",
+      "description": "制作物件外观，配置行为并导出交互物。",
+      "accent": "cyan",
+      "href": "/tools/interactable-editor",
+      "summary": [
+        "物品原图",
+        "交互行为",
+        "导出"
+      ]
+    }
   ],
   "agentAssets": {
     "role": "external-client",
-    "assetCatalog": { "schemaVersion": 1, "route": "/assets", "guide": "docs/asset-catalog.md", "sources": ["runtime-tasks", "sprite-pipeline", "map-projects", "scene-exports", "imported-packages"], "recycleBin": { "defaultScope": "active", "trashScope": "trashed", "preservesSourceFiles": true }, "browserDrafts": "not-indexed" },
+    "assetCatalog": {
+      "schemaVersion": 1,
+      "route": "/assets",
+      "guide": "docs/asset-catalog.md",
+      "sources": [
+        "runtime-tasks",
+        "sprite-pipeline",
+        "imported-packages"
+      ],
+      "recycleBin": {
+        "defaultScope": "active",
+        "trashScope": "trashed",
+        "preservesSourceFiles": true
+      },
+      "browserDrafts": "not-indexed"
+    },
     "conversationGuide": "workbench/conversation-guide.md",
     "guidanceTopics": [
-      { "id": "production", "title": "Asset workflow routing", "source": ".agents/skills/2d-game-workbench/SKILL.md" },
-      { "id": "reference-art", "title": "Character images and local import", "source": "docs/reference-art.md", "capabilityId": "reference-art" },
-      { "id": "motion", "title": "Open motion production and review", "source": "workbench/guides/motion.md", "capabilityId": "sprite-generator" },
-      { "id": "adjustments", "title": "Selected-frame alternatives", "source": "docs/motion-adjustments.md", "capabilityId": "sprite-generator" },
-      { "id": "image-generation", "title": "Backgrounds and transparent props", "source": "docs/prop-art.md", "capabilityId": "image-assets" },
-      { "id": "image-editing", "title": "Local and AI image edits", "source": "docs/image-editing.md" },
-      { "id": "interactables", "title": "Interactable authoring", "source": "docs/interactable-editor.md", "capabilityId": "interactable-editor" },
-      { "id": "scenes", "title": "Shared scene editing", "source": "docs/scene-composer.md" },
-      { "id": "maps", "title": "Map editor and browser workflow", "source": "docs/map-stitcher.md" },
-      { "id": "assets", "title": "Find and deliver existing assets", "source": "docs/asset-catalog.md" },
-      { "id": "engineering", "title": "Godot project integration", "source": ".agents/skills/forge-game-engineering/SKILL.md" },
-      {"id": "engineering-frames", "title": "Animation integration details", "source": ".agents/skills/forge-game-engineering/references/frames.md"},
-      {"id": "engineering-maps", "title": "Map package integration details", "source": ".agents/skills/forge-game-engineering/references/maps.md"},
-      {"id": "engineering-copyworms", "title": "CopyWorms-specific contracts", "source": ".agents/skills/forge-game-engineering/references/copyworms.md"},
-      {"id": "agent-clients", "title": "Client setup and guidance discovery", "source": "docs/agent-clients.md"},
-      {"id": "agent-tools", "title": "Tool index and task semantics", "source": "docs/agent-client-tools.md"},
-      {"id": "agent-validation", "title": "Client behavior validation", "source": "docs/agent-client-validation.md"},
-      { "id": "delivery", "title": "Install and integrate a selected export", "source": "docs/godot-delivery.md" },
-      { "id": "presentation", "title": "Preview and page following", "source": "docs/agent-preview-follow.md" },
-      { "id": "visual-review", "title": "Artwork judgment criteria", "source": "workbench/experts/2d-production-expert.md" },
-      { "id": "review-evaluation", "title": "Reviewer accuracy experiments", "source": "docs/sprite-review-evaluation.md" },
-      { "id": "scene-collaboration", "title": "Bounded scene expert collaboration", "source": "docs/scene-collaboration.md" },
-      { "id": "development", "title": "Workbench code and test routing", "source": "workbench/guides/development.md" },
-      { "id": "guidance-maintenance", "title": "Maintain and split Agent guidance", "source": "workbench/guides/guidance-maintenance.md" }
+      {
+        "id": "production",
+        "title": "Asset workflow routing",
+        "source": ".agents/skills/2d-game-workbench/SKILL.md"
+      },
+      {
+        "id": "reference-art",
+        "title": "Character images and local import",
+        "source": "docs/reference-art.md",
+        "capabilityId": "reference-art"
+      },
+      {
+        "id": "motion",
+        "title": "Open motion production and review",
+        "source": "workbench/guides/motion.md",
+        "capabilityId": "sprite-generator"
+      },
+      {
+        "id": "adjustments",
+        "title": "Selected-frame alternatives",
+        "source": "docs/motion-adjustments.md",
+        "capabilityId": "sprite-generator"
+      },
+      {
+        "id": "image-generation",
+        "title": "Transparent props and reference image editing",
+        "source": "docs/prop-art.md",
+        "capabilityId": "image-assets"
+      },
+      {
+        "id": "image-editing",
+        "title": "Local and AI image edits",
+        "source": "docs/image-editing.md"
+      },
+      {
+        "id": "interactables",
+        "title": "Interactable authoring",
+        "source": "docs/interactable-editor.md",
+        "capabilityId": "interactable-editor"
+      },
+      {
+        "id": "assets",
+        "title": "Find and deliver existing assets",
+        "source": "docs/asset-catalog.md"
+      },
+      {
+        "id": "engineering",
+        "title": "Godot project integration",
+        "source": ".agents/skills/forge-game-engineering/SKILL.md"
+      },
+      {
+        "id": "engineering-frames",
+        "title": "Animation integration details",
+        "source": ".agents/skills/forge-game-engineering/references/frames.md"
+      },
+      {
+        "id": "engineering-copyworms",
+        "title": "CopyWorms-specific contracts",
+        "source": ".agents/skills/forge-game-engineering/references/copyworms.md"
+      },
+      {
+        "id": "agent-clients",
+        "title": "Client setup and guidance discovery",
+        "source": "docs/agent-clients.md"
+      },
+      {
+        "id": "agent-tools",
+        "title": "Tool index and task semantics",
+        "source": "docs/agent-client-tools.md"
+      },
+      {
+        "id": "agent-validation",
+        "title": "Client behavior validation",
+        "source": "docs/agent-client-validation.md"
+      },
+      {
+        "id": "delivery",
+        "title": "Install and integrate a selected export",
+        "source": "docs/godot-delivery.md"
+      },
+      {
+        "id": "presentation",
+        "title": "Preview and page following",
+        "source": "docs/agent-preview-follow.md"
+      },
+      {
+        "id": "visual-review",
+        "title": "Artwork judgment criteria",
+        "source": "workbench/experts/2d-production-expert.md"
+      },
+      {
+        "id": "review-evaluation",
+        "title": "Reviewer accuracy experiments",
+        "source": "docs/sprite-review-evaluation.md"
+      },
+      {
+        "id": "development",
+        "title": "Workbench code and test routing",
+        "source": "workbench/guides/development.md"
+      },
+      {
+        "id": "guidance-maintenance",
+        "title": "Maintain and split Agent guidance",
+        "source": "workbench/guides/guidance-maintenance.md"
+      }
     ],
-    "sceneCollaboration": {
-      "version": 2,
-      "contract": "lib/workbench/scene-workflow-contract.mjs",
-      "guide": "docs/scene-collaboration.md",
-      "route": "/tools/scene-composer",
-      "phase": "asset-and-map-production",
-      "modelProviders": [
-        {
-          "id": "openai",
-          "name": "OpenAI",
-          "endpoint": "https://api.openai.com/v1/responses",
-          "endpointEnv": "SCENE_EXPERT_OPENAI_URL",
-          "keyEnv": "OPENAI_API_KEY",
-          "credentialAliases": [
-            "gpt-image-2.6",
-            "gpt-image-2"
-          ]
-        },
-        {
-          "id": "tokenhub",
-          "name": "TokenHub",
-          "endpoint": "https://tokenhub.tencentmaas.com/v1/chat/completions",
-          "endpointEnv": "SCENE_EXPERT_TOKENHUB_URL",
-          "keyEnv": "TOKENHUB_API_KEY",
-          "credentialAliases": [
-            "hunyuan-image-3"
-          ]
-        }
-      ]
+    "imageEditing": {
+      "schemaVersion": 1,
+      "contract": "lib/workbench/image-edit-contract.mjs",
+      "guide": "docs/image-editing.md",
+      "mode": "existing-image-edit",
+      "targetKinds": [
+        "interactable",
+        "image-task"
+      ],
+      "intentPreview": true,
+      "paletteMapMaxPairs": 64,
+      "attributePlans": true,
+      "softReferences": {
+        "kinds": [
+          "rgb"
+        ],
+        "requiresCleanCrop": true,
+        "reservedReferenceSlots": 2,
+        "qualityValidated": false
+      },
+      "visualReviewer": {
+        "provider": "openai",
+        "model": "gpt-5.4-2026-03-05",
+        "maxOutputTokens": 2048,
+        "timeoutSeconds": 90,
+        "reasoningEffort": "low"
+      },
+      "partPlanner": {
+        "provider": "openai",
+        "model": "gpt-5.4-2026-03-05",
+        "maxOutputTokens": 2048,
+        "timeoutSeconds": 90,
+        "reasoningEffort": "low"
+      },
+      "placementComparison": true,
+      "aiEditing": true,
+      "localRequiresPython": false,
+      "localRequiresKey": false
     },
-    "sceneMapSplit": {"schemaVersion":1,"guide":"docs/scene-composer.md#场景地图整图分层","contract":"lib/workbench/scene-split-contract.mjs","modes":["auto","local","vision","sam"],"webDefault":"auto","candidateReview":"unverified-until-explicit-check","adoption":"exact-scene-and-candidate-revision","sourceScope":"scene-owned","samMaxWindowEdge":1024,"engine":"Godot 4.7.x"},
-    "imageEditing": { "schemaVersion": 1, "contract": "lib/workbench/image-edit-contract.mjs", "guide": "docs/image-editing.md", "mode": "existing-image-edit", "targetKinds": ["map-layer", "interactable", "image-task", "scene-layer", "scene-instance", "scene-split-part"], "sceneTargets": "verified-source-snapshot-or-single-instance", "intentPreview": true, "paletteMapMaxPairs": 64, "metalPanelTrial": {"maxSelectionEdge": 1024, "optionalSegmenter": "SAM 2.1 Tiny"}, "attributePlans": true, "softReferences": {"kinds":["rgb","shading"],"requiresCleanCrop":true,"reservedReferenceSlots":2,"qualityValidated":false}, "visualReviewer": {"provider":"openai","model":"gpt-5.4-2026-03-05","maxOutputTokens":2048,"timeoutSeconds":90,"reasoningEffort":"low"}, "partPlanner": {"provider":"openai","model":"gpt-5.4-2026-03-05","maxOutputTokens":2048,"timeoutSeconds":90,"reasoningEffort":"low"}, "intrinsicRecolorTrial": {"optionalLocalPython": true, "model": "prs-eth/marigold-iid-lighting-v1-1", "maxEdge": 1536, "automaticDownload": false, "qualityCalibrated": false, "simpleMappings":["rgb","luminance"], "partAssessmentAtPlanTime":true, "cacheScope":"same-session-base-and-profile"}, "placementComparison": true, "aiEditing": true, "localRequiresPython": false, "localRequiresKey": false, "manualMapProductionBoundary": "unchanged" },
     "presentationGuide": "docs/agent-preview-follow.md",
     "skill": ".agents/skills/2d-game-workbench/SKILL.md",
-    "engineering": { "skill": ".agents/skills/forge-game-engineering/SKILL.md", "guide": "docs/game-engineering.md", "deliveryGuide": "docs/godot-delivery.md", "mode": "external-agent", "engine": "Godot 4.7.x", "source": "https://github.com/flxBurnOut/copyWorms", "createsTask": false },
+    "engineering": {
+      "skill": ".agents/skills/forge-game-engineering/SKILL.md",
+      "guide": "docs/game-engineering.md",
+      "deliveryGuide": "docs/godot-delivery.md",
+      "mode": "external-agent",
+      "engine": "Godot 4.7.x",
+      "source": "https://github.com/flxBurnOut/copyWorms",
+      "createsTask": false
+    },
     "expert": "workbench/experts/2d-production-expert.md",
-    "clientConfigs": [".mcp.json"],
+    "clientConfigs": [
+      ".mcp.json"
+    ],
     "mcpServer": {
       "transport": "stdio",
       "command": "node",
-      "args": ["scripts/workbench-mcp.mjs"],
+      "args": [
+        "scripts/workbench-mcp.mjs"
+      ],
       "tools": [
         "workbench_list_capabilities",
         "workbench_get_guidance",
@@ -148,34 +315,13 @@
         "workbench_validate_document",
         "workbench_simulate_document",
         "workbench_adopt_document_image",
-        "workbench_export_document",
-        "workbench_observe_document",
-        "workbench_list_scene_workflows",
-        "workbench_create_scene_workflow",
-        "workbench_get_scene_workflow",
-        "workbench_execute_scene_workflow",
-        "workbench_revise_scene_workflow",
-        "workbench_pause_scene_workflow",
-        "workbench_resume_scene_workflow",
-        "workbench_observe_scene_workflow",
-        "workbench_adopt_scene_workflow",
-        "workbench_get_scene_workflow_settings",
         "workbench_inspect_image_target",
-        "workbench_prepare_map_split",
-        "workbench_get_map_split",
-        "workbench_inspect_map_split",
-        "workbench_revise_map_split",
-        "workbench_adopt_map_split",
-        "workbench_edit_map_split_element",
         "workbench_resolve_image_region",
-        "workbench_suggest_panel_region",
         "workbench_prepare_part_context",
         "workbench_request_part_suggestion",
         "workbench_get_part_suggestion",
         "workbench_prepare_image_plan",
         "workbench_get_image_plan",
-        "workbench_analyze_image_attributes",
-        "workbench_get_image_analysis",
         "workbench_record_image_review",
         "workbench_prepare_candidate_check",
         "workbench_get_candidate_check",
@@ -189,58 +335,242 @@
     },
     "browserTools": [
       "list_workbench_capabilities",
-      "start_workbench_task",
-      "map_stitcher_read_summary",
-      "map_stitcher_set_view",
-      "map_stitcher_import_images",
-      "map_stitcher_generate_layer",
-      "map_stitcher_create_regions",
-      "map_stitcher_export"
-    ]
+      "start_workbench_task"
+    ],
+    "visionModels": {
+      "modelProviders": [
+        {
+          "id": "openai",
+          "name": "OpenAI",
+          "endpoint": "https://api.openai.com/v1/responses",
+          "endpointEnv": "SCENE_EXPERT_OPENAI_URL",
+          "keyEnv": "OPENAI_API_KEY",
+          "credentialAliases": [
+            "gpt-image-2.6",
+            "gpt-image-2"
+          ]
+        },
+        {
+          "id": "tokenhub",
+          "name": "TokenHub",
+          "endpoint": "https://tokenhub.tencentmaas.com/v1/chat/completions",
+          "endpointEnv": "SCENE_EXPERT_TOKENHUB_URL",
+          "keyEnv": "TOKENHUB_API_KEY",
+          "credentialAliases": [
+            "hunyuan-image-3"
+          ]
+        }
+      ]
+    }
   },
   "capabilities": [
     {
       "id": "image-assets",
-      "name": "场景图片生成",
-      "shortName": "图片素材",
+      "name": "图片生成",
+      "shortName": "图片生成",
       "description": "使用 GPT Image 2.6 生成或编辑图片；蒙版外像素由本地合成保留。process-image 使用现有素材做无费用局部合成与透明噪点清理。原图、派生图和来源分别保存，预览后单独采用。",
       "category": "production",
       "workflow": "workbench/workflows/image-assets-production.json",
       "ui": {
-        "icon": "reference", "productionLine": "scene", "entryTitle": "生成场景素材",
-        "starterHint": "生成完整背景或透明物件，检查图片后采用到编辑器。",
-        "stages": ["描述与参考图", "生成并检查", "采用到场景"],
-        "accent": "cyan", "status": "ready", "route": "/tools/map-stitcher", "surface": "editor", "embedded": true,
-        "capabilities": ["GPT Image 2.6", "透明 PNG 物件", "多参考图与蒙版编辑", "原图与来源记录"]
+        "icon": "reference",
+        "productionLine": "interactable",
+        "entryTitle": "生成物品素材",
+        "starterHint": "生成透明物品原图，检查后采用到交互物编辑器。",
+        "stages": [
+          "描述与参考图",
+          "生成并检查",
+          "采用到交互物"
+        ],
+        "accent": "cyan",
+        "status": "ready",
+        "route": "/tools/interactable-editor",
+        "surface": "editor",
+        "embedded": true,
+        "capabilities": [
+          "GPT Image 2.6",
+          "透明 PNG 物件",
+          "多参考图与蒙版编辑",
+          "原图与来源记录"
+        ]
       },
       "connector": {
-        "type": "local-adapter", "adapter": "image-assets", "providerSource": "map-stitcher",
-        "providerIds": ["gpt-image-2.6"], "defaultProvider": "gpt-image-2.6", "providerEnv": "IMAGE_ASSETS_PROVIDER"
+        "type": "local-adapter",
+        "adapter": "image-assets",
+        "defaultProvider": "gpt-image-2.6",
+        "providerEnv": "IMAGE_ASSETS_PROVIDER",
+        "providers": [
+          {
+            "id": "gpt-image-2.6",
+            "name": "GPT Image 2.6",
+            "model": "gpt-image-2.6-sunburst",
+            "protocol": "openai-images-edits",
+            "endpoint": "https://api.openai.com/v1/images/edits",
+            "generationEndpoint": "https://api.openai.com/v1/images/generations",
+            "generationEndpointEnv": "MAP_STITCHER_OPENAI_GENERATION_API_URL",
+            "endpointEnv": "MAP_STITCHER_OPENAI_API_URL",
+            "apiKeyEnv": "OPENAI_API_KEY",
+            "credentialAliases": [
+              "gpt-image-2.5",
+              "gpt-image-2"
+            ]
+          }
+        ]
       },
       "inputSchema": {
-        "type": "object", "required": ["operation"], "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "additionalProperties": false,
         "allOf": [
-          { "if": { "properties": { "operation": { "const": "process-image" } }, "required": ["operation"] }, "then": { "required": ["image"] }, "else": { "required": ["prompt"] } },
-          { "if": { "properties": { "operation": { "const": "edit-image" } }, "required": ["operation"] }, "then": { "required": ["image"] } },
-          { "if": { "required": ["preserveAlpha"] }, "then": { "properties": { "operation": { "const": "edit-image" } } } }
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "process-image"
+                }
+              },
+              "required": [
+                "operation"
+              ]
+            },
+            "then": {
+              "required": [
+                "image"
+              ]
+            },
+            "else": {
+              "required": [
+                "prompt"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "edit-image"
+                }
+              },
+              "required": [
+                "operation"
+              ]
+            },
+            "then": {
+              "required": [
+                "image"
+              ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "preserveAlpha"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "edit-image"
+                }
+              }
+            }
+          }
         ],
         "properties": {
-          "operation": { "type": "string", "enum": ["generate-background", "generate-prop", "edit-image", "process-image"] },
-          "prompt": { "type": "string", "minLength": 1, "maxLength": 12000, "description": "生成/编辑操作必填；process-image 不接受此字段且不调用模型。" },
-          "name": { "type": "string", "minLength": 1, "maxLength": 80 },
-          "provider": { "type": "string", "enum": ["gpt-image-2.6"] },
-          "kind": { "type": "string", "enum": ["background", "prop"], "description": "edit-image / process-image 的素材类型，默认 background；prop 校验透明 PNG，并默认清理 Alpha=1 的像素。" },
-          "width": { "type": "integer", "minimum": 16, "maximum": 3840, "description": "与 height 同时提供，16 的倍数，合计 655360–8294400 像素，比例 1:3–3:1。" },
-          "height": { "type": "integer", "minimum": 16, "maximum": 3840 },
-          "image": { "type": "string", "minLength": 1, "description": "edit-image的源图，或process-image的待处理图：仓库内 PNG/JPEG/WebP 路径或 base64 data:image；原始文件保留。process-image不接受provider/prompt/references/width/height，不缩放，最长边3840、最多8294400像素。" },
-          "references": { "type": "array", "maxItems": 8, "items": { "type": "string" }, "description": "最多 8 张仓库内图片路径或 base64 data:image。每张最多 40 MiB，总计最多 80 MiB。" },
-          "mask": { "type": "string", "minLength": 1, "description": "edit-image / process-image：同尺寸透明PNG，仅alpha=0可编辑，alpha=1–255区域从保护源图逐字节复制（解码sRGB/RGBA8），不允许缩放。process-image须同时给preserveFrom。" },
-          "preserveFrom": { "type": "string", "minLength": 1, "description": "仅process-image：保护源图，与mask成对提供。image为已有编辑候选；蒙版外取此源图。" },
-          "preserveAlpha": { "type": "boolean", "description": "仅edit-image：可选保留编辑基准图全部Alpha字节，由本地合成并校验，不依赖模型遵守。开启时不缩放，跳过透明噪点清理；未提供时沿用原处理策略。" },
-          "alphaCleanupThreshold": { "type": "integer", "minimum": 0, "maximum": 16, "description": "将0<Alpha<=阈值的像素RGBA归零；默认prop=1、background=0。0关闭。带蒙版仅清理alpha=0的可编辑区，绝不改保护区。" }
+          "operation": {
+            "type": "string",
+            "enum": [
+              "generate-prop",
+              "edit-image",
+              "process-image"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000,
+            "description": "生成/编辑操作必填；process-image 不接受此字段且不调用模型。"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "gpt-image-2.6"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "background",
+              "prop"
+            ],
+            "description": "edit-image / process-image 的素材类型，默认 background；prop 校验透明 PNG，并默认清理 Alpha=1 的像素。"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 3840,
+            "description": "与 height 同时提供，16 的倍数，合计 655360–8294400 像素，比例 1:3–3:1。"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 3840
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1,
+            "description": "edit-image的源图，或process-image的待处理图：仓库内 PNG/JPEG/WebP 路径或 base64 data:image；原始文件保留。process-image不接受provider/prompt/references/width/height，不缩放，最长边3840、最多8294400像素。"
+          },
+          "references": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string"
+            },
+            "description": "最多 8 张仓库内图片路径或 base64 data:image。每张最多 40 MiB，总计最多 80 MiB。"
+          },
+          "mask": {
+            "type": "string",
+            "minLength": 1,
+            "description": "edit-image / process-image：同尺寸透明PNG，仅alpha=0可编辑，alpha=1–255区域从保护源图逐字节复制（解码sRGB/RGBA8），不允许缩放。process-image须同时给preserveFrom。"
+          },
+          "preserveFrom": {
+            "type": "string",
+            "minLength": 1,
+            "description": "仅process-image：保护源图，与mask成对提供。image为已有编辑候选；蒙版外取此源图。"
+          },
+          "preserveAlpha": {
+            "type": "boolean",
+            "description": "仅edit-image：可选保留编辑基准图全部Alpha字节，由本地合成并校验，不依赖模型遵守。开启时不缩放，跳过透明噪点清理；未提供时沿用原处理策略。"
+          },
+          "alphaCleanupThreshold": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 16,
+            "description": "将0<Alpha<=阈值的像素RGBA归零；默认prop=1、background=0。0关闭。带蒙版仅清理alpha=0的可编辑区，绝不改保护区。"
+          }
         }
       },
-      "outputs": ["image", "rawImage", "rawSha256", "processingEvidence", "metadata", "sha256", "width", "height", "hasAlpha", "hasTransparency", "requiresAdoption", "usageEvidence"]
+      "outputs": [
+        "image",
+        "rawImage",
+        "rawSha256",
+        "processingEvidence",
+        "metadata",
+        "sha256",
+        "width",
+        "height",
+        "hasAlpha",
+        "hasTransparency",
+        "requiresAdoption",
+        "usageEvidence"
+      ]
     },
     {
       "id": "reference-art",
@@ -413,7 +743,20 @@
           "operation": {
             "type": "string",
             "enum": [
-              "plan-motion", "revise-motion", "get-motion", "generate-motion", "pause-motion", "resume-motion", "get-motion-stage", "review-motion-stage", "target-motion-stage", "repair-motion-stage", "review-motion-repair", "get-motion-adjustment", "create-motion-adjustment", "review-motion-adjustment",
+              "plan-motion",
+              "revise-motion",
+              "get-motion",
+              "generate-motion",
+              "pause-motion",
+              "resume-motion",
+              "get-motion-stage",
+              "review-motion-stage",
+              "target-motion-stage",
+              "repair-motion-stage",
+              "review-motion-repair",
+              "get-motion-adjustment",
+              "create-motion-adjustment",
+              "review-motion-adjustment",
               "create",
               "create-and-generate",
               "generate-existing",
@@ -429,53 +772,305 @@
             ],
             "description": "新动作优先 plan-motion；准备好方案后 generate-motion。轮询已返回 taskId 用 get_task，不重复 run。旧作业继续用原操作。"
           },
-          "openWorkId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
-          "expectedRevision": { "type": "integer", "minimum": 1 },
-          "planSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "stageIndex": { "type": "integer", "minimum": 0, "maximum": 3 },
-          "anchorFrame": { "type": "integer", "minimum": 0, "maximum": 63, "description": "可选的当前播放片段零基锚点索引；省略使用最后一帧。提前截取须实际检查并 acknowledgeTrim。" },
-          "acknowledgeTrim": { "type": "boolean", "description": "明确确认以所选真实帧结束本段；原始尾帧保留，不自动丢弃。" },
-          "stageToken": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "stageDecision": { "type": "string", "enum": ["accept", "reject"], "description": "实际查看片段与末姿势后裁决；模型通过不能代替 Agent 或用户检查。" },
-          "planningAuthorized": { "type": "boolean", "description": "仅在用户已授权规划模型调用时为 true。" },
-          "autoExecute": { "type": "boolean", "description": "用户已授权预算内直接制作时可启用；否则仅出方案。修改方案后需重新确认。" },
+          "openWorkId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "planSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stageIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "anchorFrame": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63,
+            "description": "可选的当前播放片段零基锚点索引；省略使用最后一帧。提前截取须实际检查并 acknowledgeTrim。"
+          },
+          "acknowledgeTrim": {
+            "type": "boolean",
+            "description": "明确确认以所选真实帧结束本段；原始尾帧保留，不自动丢弃。"
+          },
+          "stageToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stageDecision": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "description": "实际查看片段与末姿势后裁决；模型通过不能代替 Agent 或用户检查。"
+          },
+          "planningAuthorized": {
+            "type": "boolean",
+            "description": "仅在用户已授权规划模型调用时为 true。"
+          },
+          "autoExecute": {
+            "type": "boolean",
+            "description": "用户已授权预算内直接制作时可启用；否则仅出方案。修改方案后需重新确认。"
+          },
           "motionSpec": {
-            "type": "object", "required": ["character_id", "description"], "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "character_id",
+              "description"
+            ],
+            "additionalProperties": false,
             "properties": {
-              "character_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100 },
-              "description": { "type": "string", "minLength": 4, "maxLength": 2000 },
-              "ending": { "type": "string", "maxLength": 300 },
-              "return_to_reference": { "type": "boolean", "description": "仅当用户希望末帧回到原图姿势时为 true；默认 false，保持描述的终态。" },
-              "loop": { "type": "boolean" },
-              "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 60 },
-              "timing_mode": {"type":"string","enum":["auto","fixed"],"description":"auto 由方案安排节奏；fixed 必须遵守用户指定 FPS。"},
-              "review_protocol": {"type":"string","enum":["baseline","experts_v1"],"description":"新任务推荐 experts_v1：在基础检查后加入独立专家与有界争议复核，不自动采用或重生成。未声明协议但显式给出旧视觉预算的兼容请求沿用 baseline；已保存任务不升级。"},
-              "visual_structure": {"type":"object","required":["analysis_id","token"],"additionalProperties":false,"properties":{"analysis_id":{"type":"string","pattern":"^[0-9a-f]{32}$"},"token":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"description":"可选的已确认原图结构。使用页面中明确选择的结构，或现有 get-motion 返回的精确 spec.visual_structure；不能猜测标识或自动追加解析。冻结给规划专家，相关约束进入段级提示，不代表硬骨架控制。"},
-              "candidate_count": { "type": "integer", "minimum": 1, "maximum": 8 },
-              "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
-              "provider": { "type": "string", "enum": ["pixellab", "fixture"] },
-              "budget": { "type": "object", "additionalProperties": false, "properties": {
-                "max_planning_calls": { "type": "integer", "minimum": 4, "maximum": 16 },
-                "max_generation_calls": { "type": "integer", "minimum": 1, "maximum": 32 },
-                "max_review_calls": {"type":"integer","minimum":2,"maximum":200,"description":"experts_v1 每候选预留 5 ×（分段数 + 1）次；基础观察审核2次、独立意见2次、有争议最多再1次。baseline 为 2 ×（分段数 + 1）。修复后的复查和历史请求也计费，不能静默增加预算。"}
-              } }
+              "character_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_]*$",
+                "maxLength": 100
+              },
+              "description": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 2000
+              },
+              "ending": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "return_to_reference": {
+                "type": "boolean",
+                "description": "仅当用户希望末帧回到原图姿势时为 true；默认 false，保持描述的终态。"
+              },
+              "loop": {
+                "type": "boolean"
+              },
+              "fps": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 60
+              },
+              "timing_mode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "fixed"
+                ],
+                "description": "auto 由方案安排节奏；fixed 必须遵守用户指定 FPS。"
+              },
+              "review_protocol": {
+                "type": "string",
+                "enum": [
+                  "baseline",
+                  "experts_v1"
+                ],
+                "description": "新任务推荐 experts_v1：在基础检查后加入独立专家与有界争议复核，不自动采用或重生成。未声明协议但显式给出旧视觉预算的兼容请求沿用 baseline；已保存任务不升级。"
+              },
+              "visual_structure": {
+                "type": "object",
+                "required": [
+                  "analysis_id",
+                  "token"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "analysis_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "description": "可选的已确认原图结构。使用页面中明确选择的结构，或现有 get-motion 返回的精确 spec.visual_structure；不能猜测标识或自动追加解析。冻结给规划专家，相关约束进入段级提示，不代表硬骨架控制。"
+              },
+              "candidate_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "pixellab",
+                  "fixture"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "max_planning_calls": {
+                    "type": "integer",
+                    "minimum": 4,
+                    "maximum": 16
+                  },
+                  "max_generation_calls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 32
+                  },
+                  "max_review_calls": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 200,
+                    "description": "experts_v1 每候选预留 5 ×（分段数 + 1）次；基础观察审核2次、独立意见2次、有争议最多再1次。baseline 为 2 ×（分段数 + 1）。修复后的复查和历史请求也计费，不能静默增加预算。"
+                  }
+                }
+              }
             }
           },
-          "targetImageBase64": {"type":"string","minLength":4,"maxLength":2000000,"description":"已实际检查的透明 PNG 编码，与角色同尺寸；仅在当前方案尚未开始制作时绑定段末目标。"},
-          "clearTarget": {"type":"boolean","description":"显式取消本段目标图片；不会删除历史文件。"},
-          "repairStart": {"type":"integer","minimum":1,"maximum":62,"description":"内部替换窗口起始帧，零基。外观修复：128像素限2帧，64像素2至14个偶数帧；运动修复4至16个偶数帧。保留段首末帧。"},
-          "repairEnd": {"type":"integer","minimum":1,"maximum":62,"description":"内部替换窗口结束帧，包含此帧，零基。"},
-          "repairMode": {"type":"string","enum":["appearance","transition"]},
-          "adjustmentId": {"type":"string","pattern":"^[0-9a-f]{32}$","description":"独立修改任务。get-motion-adjustment 不带此字段时读取选帧上下文；需要 candidateIndex 与 expectedRevision，可选 stageIndex，省略为完整候选。"},
-          "adjustmentToken": {"type":"string","pattern":"^[0-9a-f]{64}$","description":"创建时使用 adjustmentContext.token；采用时使用 adjustment.preview_token，失败保留原版时使用 source_token。"},
-          "adjustmentStart": {"type":"integer","minimum":0,"maximum":63,"description":"用户明确选择的连续替换范围，零基起始。不能自动扩展；首末帧和分段锚点保留。"},
-          "adjustmentEnd": {"type":"integer","minimum":0,"maximum":63,"description":"零基结束帧，包含此帧。按上下文的模型帧数限制校验，不合适就先解释，不能多改未选帧。"},
-          "adjustmentRequest": {"type":"string","maxLength":1800,"description":"用户新要求原话，个人偏好有效，无需专家判错。留空才采用当前范围内的专家建议；用户要求优先，不得用 reviewNote 代替。"},
-          "adjustmentPreserveMotion": {"type":"boolean","description":"仅改外观时传 true：保留所选原帧姿态，只允许原图编辑；超出尺寸对应的外观编辑帧数限制则在模型调用前拒绝，不能改用动作重生成。只有用户希望改变动作时才传 false；仍不授权未要求的动作变化。省略时按用户目标选择方法，未要求的属性仍应保留。"},
-          "adjustmentRegions": {"type":"array","minItems":1,"maxItems":64,"description":"可选空间保护：仅在用户明确授权后提供每个选中帧的区域，按零基帧号排序并绑定原帧 SHA256；未涂选 RGBA 像素本地原样保留。不能直接把结构观察当成修改授权。与 adjustmentPreserveMotion=true 一起使用；省略时正常按原帧和文字要求编辑并复核，不要求涂选，也不能声称像素锁定。","items":{"type":"object","additionalProperties":false,"required":["frame","source_sha256","spans"],"properties":{"frame":{"type":"integer","minimum":0,"maximum":63},"source_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"spans":{"type":"array","minItems":1,"maxItems":8192,"items":{"type":"object","additionalProperties":false,"required":["start","length"],"properties":{"start":{"type":"integer","minimum":0,"maximum":16383},"length":{"type":"integer","minimum":1,"maximum":16384}}}}}}},
-          "adjustmentBudget": {"type":"object","additionalProperties":false,"properties":{"planning":{"type":"integer","minimum":1,"maximum":1},"generation":{"type":"integer","minimum":1,"maximum":1},"review":{"type":"integer","minimum":2,"maximum":5}},"description":"本次独立修改授权上限，默认1次理解、1次绘图和至多5次复核；不自动重试，不重置旧费用。"},
-          "repairAttempt": {"type":"integer","minimum":0,"maximum":1},
-          "generationAuthorized": {"type":"boolean","description":"本次额外修复已获授权；仍受当前任务剩余生成和复核预算限制。"},
+          "targetImageBase64": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 2000000,
+            "description": "已实际检查的透明 PNG 编码，与角色同尺寸；仅在当前方案尚未开始制作时绑定段末目标。"
+          },
+          "clearTarget": {
+            "type": "boolean",
+            "description": "显式取消本段目标图片；不会删除历史文件。"
+          },
+          "repairStart": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 62,
+            "description": "内部替换窗口起始帧，零基。外观修复：128像素限2帧，64像素2至14个偶数帧；运动修复4至16个偶数帧。保留段首末帧。"
+          },
+          "repairEnd": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 62,
+            "description": "内部替换窗口结束帧，包含此帧，零基。"
+          },
+          "repairMode": {
+            "type": "string",
+            "enum": [
+              "appearance",
+              "transition"
+            ]
+          },
+          "adjustmentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "description": "独立修改任务。get-motion-adjustment 不带此字段时读取选帧上下文；需要 candidateIndex 与 expectedRevision，可选 stageIndex，省略为完整候选。"
+          },
+          "adjustmentToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "创建时使用 adjustmentContext.token；采用时使用 adjustment.preview_token，失败保留原版时使用 source_token。"
+          },
+          "adjustmentStart": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63,
+            "description": "用户明确选择的连续替换范围，零基起始。不能自动扩展；首末帧和分段锚点保留。"
+          },
+          "adjustmentEnd": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63,
+            "description": "零基结束帧，包含此帧。按上下文的模型帧数限制校验，不合适就先解释，不能多改未选帧。"
+          },
+          "adjustmentRequest": {
+            "type": "string",
+            "maxLength": 1800,
+            "description": "用户新要求原话，个人偏好有效，无需专家判错。留空才采用当前范围内的专家建议；用户要求优先，不得用 reviewNote 代替。"
+          },
+          "adjustmentPreserveMotion": {
+            "type": "boolean",
+            "description": "仅改外观时传 true：保留所选原帧姿态，只允许原图编辑；超出尺寸对应的外观编辑帧数限制则在模型调用前拒绝，不能改用动作重生成。只有用户希望改变动作时才传 false；仍不授权未要求的动作变化。省略时按用户目标选择方法，未要求的属性仍应保留。"
+          },
+          "adjustmentRegions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "description": "可选空间保护：仅在用户明确授权后提供每个选中帧的区域，按零基帧号排序并绑定原帧 SHA256；未涂选 RGBA 像素本地原样保留。不能直接把结构观察当成修改授权。与 adjustmentPreserveMotion=true 一起使用；省略时正常按原帧和文字要求编辑并复核，不要求涂选，也不能声称像素锁定。",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "frame",
+                "source_sha256",
+                "spans"
+              ],
+              "properties": {
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 63
+                },
+                "source_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "spans": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8192,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "start",
+                      "length"
+                    ],
+                    "properties": {
+                      "start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 16383
+                      },
+                      "length": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 16384
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "adjustmentBudget": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "planning": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1
+              },
+              "review": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 5
+              }
+            },
+            "description": "本次独立修改授权上限，默认1次理解、1次绘图和至多5次复核；不自动重试，不重置旧费用。"
+          },
+          "repairAttempt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "generationAuthorized": {
+            "type": "boolean",
+            "description": "本次额外修复已获授权；仍受当前任务剩余生成和复核预算限制。"
+          },
           "characterId": {
             "type": "string",
             "minLength": 1,
@@ -581,7 +1176,16 @@
           "issueType": {
             "type": "string",
             "description": "repair_requested 必需。",
-          "enum": ["identity_drift", "clothing_error", "weapon_error", "limb_error", "pose_error", "alpha_background_error", "scale_baseline_error", "other"]
+            "enum": [
+              "identity_drift",
+              "clothing_error",
+              "weapon_error",
+              "limb_error",
+              "pose_error",
+              "alpha_background_error",
+              "scale_baseline_error",
+              "other"
+            ]
           },
           "providerJobId": {
             "type": "string",
@@ -603,172 +1207,6 @@
       ]
     },
     {
-      "id": "map-stitcher",
-      "agent": { "mode": "manual", "reason": "地图制作通过前端编辑器执行；当前仓库 MCP / Agent CLI 未开放该能力。用户明确要求网页操作时可使用宿主浏览器工具。" },
-      "name": "地图编辑",
-      "shortName": "地图编辑",
-      "description": "以 FrameRonin / Pixelwork v2 模型组合地图切片，编辑独立图片图层和矢量区域，并输出可恢复状态与引擎资源。",
-      "category": "production",
-      "workflow": "workbench/workflows/map-production.json",
-      "ui": {
-        "icon": "map",
-        "productionLine": "scene",
-        "entryTitle": "地图编辑",
-        "starterHint": "上传地图图片，或先生成中心原图，确认采用后向外扩图。",
-        "entryActions": [
-          { "label": "打开地图编辑器", "href": "/tools/map-stitcher" }
-        ],
-        "stages": ["地图拼接", "检查并导出"],
-        "accent": "cyan",
-        "status": "ready",
-        "route": "/tools/map-stitcher",
-        "surface": "editor",
-        "capabilities": ["六种图片视图", "四类区域绘制", "受控生成队列", "全部 PNG / PSD", "Pixelwork 状态与 Godot 恢复"]
-      },
-      "connector": {
-        "type": "local-adapter",
-        "adapter": "map-stitcher",
-        "providerEnv": "MAP_STITCHER_IMAGE_PROVIDER",
-        "providers": [
-          {
-            "id": "nano-banana",
-            "name": "Nano Banana 2",
-            "model": "gemini-3.1-flash-image",
-            "protocol": "gemini-generate-content",
-            "endpoint": "https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent",
-            "endpointEnv": "MAP_STITCHER_GEMINI_API_URL",
-            "apiKeyEnv": "GEMINI_API_KEY"
-          },
-          {
-            "id": "gpt-image-2.6",
-            "name": "GPT Image 2.6",
-            "model": "gpt-image-2.6-sunburst",
-            "protocol": "openai-images-edits",
-            "endpoint": "https://api.openai.com/v1/images/edits",
-            "generationEndpoint": "https://api.openai.com/v1/images/generations",
-            "generationEndpointEnv": "MAP_STITCHER_OPENAI_GENERATION_API_URL",
-            "endpointEnv": "MAP_STITCHER_OPENAI_API_URL",
-            "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialAliases": ["gpt-image-2.5", "gpt-image-2"]
-          },
-          {
-            "id": "gpt-image-2",
-            "name": "GPT Image 2",
-            "model": "gpt-image-2",
-            "protocol": "openai-images-edits",
-            "endpoint": "https://api.openai.com/v1/images/edits",
-            "generationEndpoint": "https://api.openai.com/v1/images/generations",
-            "generationEndpointEnv": "MAP_STITCHER_OPENAI_GENERATION_API_URL",
-            "endpointEnv": "MAP_STITCHER_OPENAI_API_URL",
-            "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialAliases": ["gpt-image-2.6", "gpt-image-2.5"]
-          },
-          {
-            "id": "hunyuan-image-3",
-            "name": "混元 Image 3.0",
-            "model": "hy-image-v3",
-            "protocol": "hunyuan-tokenhub-image",
-            "endpoint": "https://tokenhub.tencentmaas.com/v1/wand/hunyuan-image/v3-generation",
-            "endpointEnv": "MAP_STITCHER_HUNYUAN_API_URL",
-            "apiKeyEnv": "TOKENHUB_API_KEY",
-            "setupUrl": "https://console.cloud.tencent.com/tokenhub/apikey",
-            "usageNote": "支持地图原图与参考扩图。扩图接缝效果需检查；使用 TokenHub 在线推理 API Key。",
-            "artifactHostSuffixes": [".myqcloud.com"]
-          }
-        ]
-      },
-      "inputSchema": {
-        "type": "object",
-        "required": ["operation"],
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "type": "string",
-            "enum": ["compose", "generate-layer", "generate-origin"],
-            "description": "compose 本地拼接；generate-layer 按模板扩图；generate-origin 从提示词生成中心原图。"
-          },
-          "prompt": {
-            "type": "string",
-            "minLength": 1,
-            "description": "地图原图或扩图的提示词。"
-          },
-          "aspectRatio": { "type": "string", "enum": ["1:1", "3:2", "2:3"], "description": "generate-origin 的画幅比例，默认 1:1；保留模型返回的原始像素尺寸。" },
-          "provider": {
-            "type": "string",
-            "enum": ["nano-banana", "gpt-image-2.6", "gpt-image-2", "hunyuan-image-3"],
-            "description": "整体层扩图使用的官方图片模型。省略时使用已激活的 API 设置。"
-          },
-          "images": {
-            "type": "array",
-            "minItems": 1,
-            "items": { "type": "string" },
-            "description": "compose 使用的仓库内图片路径或 data:image URL，按行优先排列。"
-          },
-          "image": {
-            "type": "string",
-            "minLength": 1,
-            "description": "generate-layer 的 data:image 扩图模板。仅 Alpha 为 0 的像素可填充，其余像素由服务端原样保留；输出保持模板尺寸和比例。"
-          },
-          "tile": {
-            "type": "object",
-            "description": "generate-layer 的 FrameRonin 卡片几何信息。"
-          },
-          "layer": {
-            "type": "string",
-            "enum": ["overall"],
-            "description": "外部图片 API 仅生成整体层；独立地表需上传，物件可由真实黑白参考在本地提取。"
-          },
-          "mask_mode": {
-            "type": "string",
-            "enum": ["black", "white"],
-            "description": "旧客户端兼容字段；可编辑范围由 image 的透明通道确定，不按黑白颜色判断。"
-          },
-          "columns": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 256,
-            "description": "输出地图列数。"
-          },
-          "rows": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 256,
-            "description": "可选输出地图行数。"
-          },
-          "tileSize": {
-            "type": "integer",
-            "minimum": 4,
-            "maximum": 2048,
-            "description": "单个地图块的像素尺寸。"
-          },
-          "checkSeams": {
-            "type": "boolean",
-            "description": "是否执行边界衔接检查。"
-          },
-          "regions": {
-            "type": "array",
-            "items": { "type": "object" },
-            "description": "需要写入状态和引擎交付包的区域标注。"
-          },
-          "stateFormat": {
-            "type": "string",
-            "enum": ["pixelwork-v2"],
-            "description": "可恢复编辑状态的格式。"
-          },
-          "engineTargets": {
-            "type": "array",
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "enum": ["godot"]
-            },
-            "description": "需要生成的 Godot 引擎交付包。"
-          }
-        }
-      },
-      "outputs": ["generatedOrigin", "generatedLayer", "stitchedMap", "seamReport", "statePackage", "regionAnnotations", "godotPackage", "metadata"]
-    },
-    {
       "id": "interactable-editor",
       "name": "交互物编辑",
       "shortName": "交互物编辑",
@@ -777,10 +1215,13 @@
       "workflow": "workbench/workflows/interactable-production.json",
       "ui": {
         "icon": "interactable",
-        "productionLine": "scene",
+        "productionLine": "interactable",
         "entryTitle": "交互物编辑",
         "starterHint": "准备物件外观素材，在交互物工具中新建查看、切换、拾取或序列物件。",
-        "stages": ["配置物件", "预览并导出"],
+        "stages": [
+          "配置物件",
+          "预览并导出"
+        ],
         "accent": "cyan",
         "status": "ready",
         "route": "/tools/interactable-editor",
@@ -1903,7 +2344,10 @@
           },
           "targetProfile": {
             "type": "string",
-            "enum": ["generic", "copyworms"],
+            "enum": [
+              "generic",
+              "copyworms"
+            ],
             "default": "generic",
             "description": "generic exports a standalone kit; copyworms adds input, actor and EventBus integration for copyWorms."
           }

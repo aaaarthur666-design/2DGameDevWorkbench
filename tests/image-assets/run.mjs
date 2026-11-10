@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { findCapability, loadManifest, persistTask, readTask, refreshTask, repositoryRoot, runConnector, validateInput } from '../../lib/workbench/runtime.mjs';
 import { getPublicImageGenerationSettings, resolveImageGenerationProvider } from '../../lib/workbench/image-generation-settings.mjs';
 import { imageSha256, inspectImageBytes, readImageAssetSource, validateImageAssetDimensions } from '../../lib/workbench/adapters/image-assets-source.mjs';
+import { validateImageAssetsInput } from '../../lib/workbench/adapters/image-assets.mjs';
 import { imageUsageEvidence, requestOpenAIImage } from '../../lib/workbench/adapters/openai-image-provider.mjs';
 
 const manifest = await loadManifest();
@@ -36,7 +37,7 @@ async function finish(task) {
   }
   throw new Error('mock image task did not finish');
 }
-async function run(input) { return finish((await runConnector(manifest, capability, { operation: 'generate-background', prompt: '森林营地', ...input })).task); }
+async function run(input) { return finish((await runConnector(manifest, capability, { operation: 'generate-prop', prompt: '独立灯笼', ...input })).task); }
 
 try {
   process.env.OPENAI_API_KEY = 'test-image-secret';
@@ -61,9 +62,12 @@ try {
     return Response.json({ data: [{ b64_json: bytes.toString('base64') }], quality: 'high', usage: { input_tokens: 110, output_tokens: 200, total_tokens: 310, input_tokens_details: { text_tokens: 100, image_tokens: 10, extra: 'test-image-secret' }, unknown: 'test-image-secret' } }, { headers: { 'x-request-id': 'req_test_usage' } });
   };
 
-  assert.equal(capability.connector.providerSource, 'map-stitcher');
+  assert.equal(capability.connector.providerSource, undefined);
+  assert.ok(Array.isArray(capability.connector.providers));
+  assert.ok(validateInput(capability, { operation: 'generate-background', prompt: 'unsupported background' }).length);
+  assert.ok(validateImageAssetsInput({ operation: 'generate-background', prompt: 'unsupported background' }).length);
   assert.equal(getPublicImageGenerationSettings(capability.connector).providers[0].model, 'gpt-image-2.6-sunburst');
-  assert.equal(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-background').endpoint, 'http://127.0.0.1:9012/v1/images/generations');
+  assert.equal(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-prop').endpoint, 'http://127.0.0.1:9012/v1/images/generations');
   process.env.MAP_STITCHER_OPENAI_GENERATION_API_URL = 'http://127.0.0.1:9012/custom-generations';
   assert.match(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-prop').endpoint, /custom-generations$/);
   delete process.env.MAP_STITCHER_OPENAI_GENERATION_API_URL;
@@ -71,7 +75,7 @@ try {
   assert.deepEqual(validateInput(capability, { operation: 'edit-image', prompt: 'fixture', image: dataUrl(source), preserveAlpha: true }), []);
   for (const invalidAlpha of [{ operation: 'generate-prop', prompt: 'fixture', preserveAlpha: true }, { operation: 'process-image', image: dataUrl(source), preserveAlpha: false }, { operation: 'edit-image', prompt: 'fixture', image: dataUrl(source), preserveAlpha: 'true' }]) assert.ok(validateInput(capability, invalidAlpha).length);
   for (const invalid of [{ prompt: ' ' }, { width: 128, height: 128 }, { width: 1000, height: 1000 }, { width: 1024 }, { references: Array(9).fill('x') }, { image: 'x' }, { apiKey: 'do-not-store' }, { provider: 'qwen' }, { operation: 'edit-image' }])
-    assert.ok(validateInput(capability, { operation: 'generate-background', prompt: 'x', ...invalid }).length, JSON.stringify(invalid));
+    assert.ok(validateInput(capability, { operation: 'generate-prop', prompt: 'x', ...invalid }).length, JSON.stringify(invalid));
   for (const size of [[3840, 3840], [4096, 1024], [512, 512], [3072, 768]]) assert.throws(() => validateImageAssetDimensions(...size));
   assert.deepEqual(validateImageAssetDimensions(1536, 864), { width: 1536, height: 864, size: '1536x864' });
 
@@ -123,18 +127,18 @@ try {
   assert.equal(JSON.stringify(prop).includes('test-image-secret'), false);
 
   const beforeEvidenceFailure = calls.length;
-  await assert.rejects(requestOpenAIImage(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-background'), {
+  await assert.rejects(requestOpenAIImage(resolveImageGenerationProvider(capability.connector, 'gpt-image-2.6', 'generate-prop'), {
     prompt: 'fixture evidence failure', dimensions: { size: '1024x1024' },
     onResponseMetadata: async () => { throw new Error('test-image-secret disk failure'); },
   }), error => error.submissionUnknown === true && !error.message.includes('test-image-secret'));
   assert.equal(calls.length, beforeEvidenceFailure + 1, 'Evidence persistence failure never retries the paid submission.');
 
-  const background = await run({ width: 1536, height: 864, references: [dataUrl(reference)] });
-  assert.equal(background.status, 'completed', background.error);
+  const referencedProp = await run({ width: 1536, height: 864, references: [dataUrl(reference)] });
+  assert.equal(referencedProp.status, 'completed', referencedProp.error);
   assert.equal(calls.at(-1).url, 'http://127.0.0.1:9012/v1/images/edits');
   assert.equal(calls.at(-1).body.getAll('image[]').length, 1);
   assert.equal(calls.at(-1).body.has('mask'), false);
-  assert.deepEqual(await readFile(artifact(background, 'reference-01.png')), reference);
+  assert.deepEqual(await readFile(artifact(referencedProp, 'reference-01.png')), reference);
   const edited = await run({ operation: 'edit-image', kind: 'prop', image: dataUrl(source), references: [dataUrl(reference)], mask: dataUrl(source), width: 1024, height: 1024 });
   assert.equal(edited.status, 'completed', edited.error);
   assert.equal(calls.at(-1).body.getAll('image[]').length, 2);
@@ -172,20 +176,12 @@ try {
   assert.equal(keptMetadata.processing.alphaCleanup.threshold, 0);
   mode = 'success';
 
-  const map = findCapability(manifest, 'map-stitcher');
-  const expanded = (await runConnector(manifest, map, {
-    operation: 'generate-layer', provider: 'gpt-image-2.6', image: dataUrl(source), prompt: 'extend forest',
-    tile: { key: '1,0' }, layer: 'overall', mask_mode: 'white',
-  })).task;
-  assert.equal(expanded.status, 'completed', expanded.error);
-  assert.equal(calls.at(-1).fields.model, 'gpt-image-2.6-sunburst');
-  const maskBytes = Buffer.from(await calls.at(-1).body.get('mask').arrayBuffer());
-  assert.equal((await inspectImageBytes(maskBytes)).hasFullyTransparentPixels, true);
-  const composite = await sharp(await readFile(artifact(expanded, 'generated-layer.png'))).raw().toBuffer();
-  const original = await sharp(source).raw().toBuffer();
-  for (let offset = 0; offset < original.length; offset += 4) {
-    if (original[offset + 3] > 0) assert.ok(original.subarray(offset, offset + 4).equals(composite.subarray(offset, offset + 4)));
-  }
+  const opaqueReferenceEdit = await run({ operation: 'edit-image', image: dataUrl(source), prompt: 'Adjust the large reference image' });
+  assert.equal(opaqueReferenceEdit.status, 'completed', opaqueReferenceEdit.error);
+  assert.equal(calls.at(-1).fields.background, 'opaque');
+  const opaqueReferenceResult = JSON.parse(await readFile(artifact(opaqueReferenceEdit, 'result.json'), 'utf8'));
+  assert.equal(opaqueReferenceResult.kind, 'background');
+  assert.equal(opaqueReferenceResult.width, 1024);
 
   for (const input of [
     { references: ['https://example.test/image.png'] },

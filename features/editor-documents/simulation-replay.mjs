@@ -15,7 +15,6 @@ export function createInteractableSimulation(content) {
   return simulation;
 }
 export function simulationInstanceState(simulation, instanceId) {
-  if (typeof simulation.getLinkState === 'function') return simulation.getLinkState(instanceId);
   const instance = simulation.objects.find(instance => instance.id === instanceId);
   if (!instance) return null;
   const appearance = stateAppearance(instance.definition, instance.state);
@@ -24,10 +23,9 @@ export function simulationInstanceState(simulation, instanceId) {
 }
 export function replaySimulationEvents(simulation, input) {
   const parsed = simulationEventsSchema.parse(input);
-  const sceneLog = Array.isArray(simulation.eventLog);
   const eventLog = []; let eventCount = 0;
   const originalEmit = simulation.emit;
-  if (!sceneLog) simulation.emit = function (...args) {
+  simulation.emit = function (...args) {
     originalEmit.apply(this, args); eventCount++;
     if (eventLog.length < 1000) eventLog.push(structuredClone(this.events[0]));
   };
@@ -50,8 +48,7 @@ export function replaySimulationEvents(simulation, input) {
       step.time = simulation.time;
       steps.push(step);
     }
-  } finally { if (!sceneLog) simulation.emit = originalEmit; }
-  const events = sceneLog ? simulation.eventLog : eventLog;
-  const total = sceneLog ? simulation.eventCount : eventCount;
-  return { simulation, steps, events, eventCount: total, truncated: total > events.length, states: simulation.objects.map(instance => ({ instanceId: instance.id, definitionId: instance.definition.definitionId, state: { ...instance.state }, ...simulationInstanceState(simulation, instance.id), cooldown: instance.cooldown, inRange: instance.inRange })), linkAttempts: simulation.linkAttempts || 0, linkDiagnostics: simulation.linkDiagnostics || [] };
+  } finally { simulation.emit = originalEmit; }
+  const events = eventLog, total = eventCount;
+  return { simulation, steps, events, eventCount: total, truncated: total > events.length, states: simulation.objects.map(instance => ({ instanceId: instance.id, definitionId: instance.definition.definitionId, state: { ...instance.state }, ...simulationInstanceState(simulation, instance.id), cooldown: instance.cooldown, inRange: instance.inRange })), linkAttempts: 0, linkDiagnostics: [] };
 }

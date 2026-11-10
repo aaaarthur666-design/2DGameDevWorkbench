@@ -1,6 +1,6 @@
 export type Parameters = { fps?: number; loop?: boolean; definitionIds?: string[] };
 export type Candidate = {
-  id: string; kind: string; mapType?: string; label: string;
+  id: string; kind: string; label: string;
   status: 'editable' | 'material' | 'needs-input' | 'incomplete';
   recoverable: string[]; warnings: string[]; missing: string[];
   requiredParameters: { key: keyof Parameters; label: string }[];

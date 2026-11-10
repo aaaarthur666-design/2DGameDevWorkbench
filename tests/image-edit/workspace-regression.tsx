@@ -38,7 +38,7 @@ const editPayloads: { constraints: { preserveAlpha: boolean }; commandId: string
 try {
   const original = await fixturePixels([110, 81, 30, 255]), candidate = await fixturePixels([22, 132, 144, 255]);
   const originalUrl = `data:image/png;base64,${original.imageBase64}`, candidateUrl = `data:image/png;base64,${candidate.imageBase64}`;
-  const target: ImageTargetRef = { kind: 'scene-instance', documentId: 'workspace-fixture', instanceId: 'gate', slot: 'visual' };
+  const target: ImageTargetRef = { kind: 'interactable', documentId: 'workspace-fixture', definitionId: 'gate', slot: 'visual' };
   let currentTarget: ImageTargetInfo = { targetId: 'imgtarget:workspace-fixture', targetRef: target, revision: 1, sha256: original.sha256, rgbaSha256: original.rgbaSha256, width: 8, height: 4, editable: true, locked: false, kind: 'prop', name: '本机浏览器回归素材', aiEdit: { supported: true, provider: 'fixture-no-provider', width: 8, height: 4, minPixels: 1, maxPixels: 32, maxEdge: 8, dimensionStep: 1, maxAspectRatio: 3, maxReferences: 8, maxImageBytes: 1024, maxTotalImageBytes: 8192, constraints: { preserveOutsideRegion: true, preserveDimensions: true, preserveAlpha: true } } };
   const sessions = new Map<string, ImageEditSession>([['edit-original', { editId: 'edit-original', revision: 1, target: structuredClone(currentTarget), source: { sha256: original.sha256, rgbaSha256: original.rgbaSha256 }, candidates: [{ version: 'candidate-teal', status: 'completed', operation: { type: 'pixel-patch' }, baseCandidateVersion: 'source', createdAt: new Date().toISOString() }], adoptions: [] }]]);
   window.fetch = async (input, init) => {
@@ -76,7 +76,7 @@ try {
   history.replaceState({ fixtureRouterState: 'retained' }, '', '?document=workspace-fixture&imageEdit=edit-original&imageCandidate=candidate-teal#gate');
   const render = (editId: string, candidateVersion: string) => root.render(<ImageEditWorkspace target={target} initialEditId={editId} initialCandidateVersion={candidateVersion} onNavigationChange={writeImageEditNavigation} onAdopt={async () => {}} onClose={() => root.render(null)} renderContext={src => <img data-fixture-preview src={src} alt="版本同步回归预览" />} />);
   render('edit-original', 'candidate-teal');
-  await until(() => !!checkbox('场景上下文')); checkbox('场景上下文')!.click();
+  await until(() => !!checkbox('摆放上下文')); checkbox('摆放上下文')!.click();
   const previewSource = () => document.querySelector<HTMLImageElement>('[data-fixture-preview]')?.getAttribute('src');
   await until(() => previewSource() === candidateUrl);
   check(blobCalls === 0, 'Saved candidate appears without Canvas.toBlob');

@@ -6,7 +6,7 @@ export type AssetLocation = {
   snapshot: string;
   asset: string;
 };
-const kinds = new Set(['', 'character', 'prop', 'animation', 'map', 'map-image', 'interactable', 'scene']);
+const kinds = new Set(['', 'character', 'prop', 'animation', 'interactable']);
 export function readAssetLocation(search: string): AssetLocation {
   const params = new URLSearchParams(search);
   const offset = Number(params.get('offset') || 0);

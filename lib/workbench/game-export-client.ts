@@ -31,7 +31,7 @@ export const deliveryStates: Record<string, string> = {
   needs_attention: '接入需要处理',
 };
 export const deliveryKinds: Record<string, string> = {
-  scene: '完整场景', map: '地图', interactable: '交互物', animation: '角色动画',
+  interactable: '交互物', animation: '角色动画',
 };
 
 async function read<T>(path: string, signal?: AbortSignal): Promise<T> {

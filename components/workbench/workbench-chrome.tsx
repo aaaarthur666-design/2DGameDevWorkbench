@@ -104,12 +104,7 @@ export function WorkbenchChrome({ children }: { children: ReactNode }) {
               <Layers3 size={15} />
               制作记录
             </button>
-            {capabilityModule.productionLine === 'scene' && (
-              <a className="wb-button wb-ghost" href="/scene">
-                场景流程
-                <ArrowRight size={14} />
-              </a>
-            )}
+
           </div>
         </section>
       )}

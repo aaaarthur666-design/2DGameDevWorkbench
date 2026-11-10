@@ -47,8 +47,6 @@ const states: Record<string, string> = {
   needs_attention: '接入需要处理',
 };
 const kinds: Record<string, string> = {
-  scene: '完整场景',
-  map: '地图',
   interactable: '交互物',
   animation: '角色动画',
 };

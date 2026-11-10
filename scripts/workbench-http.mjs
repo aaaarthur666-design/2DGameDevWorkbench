@@ -35,7 +35,6 @@ import {
 } from '../lib/workbench/image-generation-settings.mjs';
 
 import { referenceServiceRequest } from '../lib/workbench/adapters/reference-art.mjs';
-import { exportSceneRequest } from '../lib/workbench/scene-export.mjs';
 import { frontendHeartbeat } from '../lib/workbench/preview-follow.mjs';
 
 import {randomUUID} from 'node:crypto';
@@ -47,7 +46,6 @@ import {requestBinary, endpointUrl, bearerHeaders} from '../lib/workbench/adapte
 const gameExportToken=randomUUID();
 const requireGameToken=request=>{if(request.headers['x-forge-game-token']!==gameExportToken)throw new Error('项目导出会话已失效，请关闭导出窗口后重试。');};
 
-import { readMapProject, saveMapProjectRequest } from '../lib/workbench/map-projects.mjs';
 import { documentRequest, readDocumentMedia, uploadDocumentMedia } from '../lib/workbench/editor-documents.mjs';
 import { MAX_DOCUMENT_MEDIA_BYTES } from '../lib/workbench/document-media.mjs';
 import { inspectAssetPackage, commitAssetPackages, readAssetPackageCommit, readAssetPackagePreview } from '../lib/workbench/asset-packages.mjs';
@@ -106,7 +104,7 @@ const server = http.createServer(async (request, response) => {
           const documentId = decodeURIComponent(parts[0]);
           if (parts.length === 1 && request.method === 'GET') {
             operation = 'document-get'; input = { documentId, ...(url.searchParams.has('revision') ? { revision: Number(url.searchParams.get('revision')) } : {}), ...(['metadata', 'metadataOnly'].some(key => url.searchParams.get(key) === 'true') ? { metadataOnly: true } : {}) };
-          } else if (parts.length === 2 && request.method === 'POST' && ['apply', 'save', 'restore', 'observe', 'validate', 'simulate', 'adopt-image', 'export'].includes(parts[1])) {
+          } else if (parts.length === 2 && request.method === 'POST' && ['apply', 'save', 'restore', 'validate', 'simulate', 'adopt-image'].includes(parts[1])) {
             operation = `document-${parts[1]}`; input = { ...await readJsonBody(request, 350 * 1024 * 1024), documentId };
           }
         }
@@ -239,7 +237,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/v1/assets/preview') {
       const assetId = url.searchParams.get('assetId');
       if (!assetId || assetId.length > 500) throw new Error('Invalid assetId.');
-      const preview = await readAssetPreview(await loadManifest(), assetId, url.searchParams.get('projectRevision') ?? undefined);
+      const preview = await readAssetPreview(await loadManifest(), assetId);
       response.writeHead(200, {
         'Content-Type': preview.mime,
         'Cache-Control': 'no-store',
@@ -248,40 +246,12 @@ const server = http.createServer(async (request, response) => {
       response.end(preview.bytes);
       return;
     }
-    if (
-      request.method === 'POST' &&
-      url.pathname === '/v1/scene-composer/export'
-    ) {
-      try {
-        sendJson(
-          response,
-          200,
-          await exportSceneRequest(request, repositoryRoot),
-        );
-      } catch (error) {
-        sendJson(response, 400, { error: error.message });
-      }
-      return;
-    }
     if (request.method === 'POST' && url.pathname === '/v1/frontend/heartbeat') {
       try {
         sendJson(response, 200, await frontendHeartbeat(repositoryRoot, await loadManifest(), await readJsonBody(request)));
       } catch (error) {
         sendJson(response, 400, { error: error.message });
       }
-      return;
-    }
-    if (url.pathname.startsWith('/v1/map-stitcher/projects/') && ['GET', 'PUT'].includes(request.method)) {
-      try {
-        const id = decodeURIComponent(url.pathname.slice('/v1/map-stitcher/projects/'.length));
-        if (request.method === 'PUT') sendJson(response, 200, await saveMapProjectRequest(request, repositoryRoot, id));
-        else {
-          const { bytes, record } = await readMapProject(repositoryRoot, await loadManifest(), id);
-          response.writeHead(200, { 'Content-Type': 'application/zip', 'Cache-Control': 'no-store',
-            'X-Map-Revision': String(record.revision), 'X-Content-Type-Options': 'nosniff' });
-          response.end(bytes);
-        }
-      } catch (error) { sendJson(response, error.status || 400, { error: error.message }); }
       return;
     }
     if (request.method === 'POST' && url.pathname.startsWith('/v1/agent/')) {
@@ -417,39 +387,6 @@ const server = http.createServer(async (request, response) => {
         snapshot: url.searchParams.get('snapshot') || undefined,
         refresh,
       }));
-      return;
-    }
-    if (
-      request.method === 'GET' &&
-      url.pathname === '/v1/map-stitcher/settings'
-    ) {
-      const manifest = await loadManifest();
-      const capability = findCapability(manifest, 'map-stitcher');
-      sendJson(
-        response,
-        200,
-        getPublicImageGenerationSettings(capability.connector),
-      );
-      return;
-    }
-    if (
-      request.method === 'POST' &&
-      url.pathname === '/v1/map-stitcher/settings'
-    ) {
-      const body = await readJsonBody(request);
-      const manifest = await loadManifest();
-      const capability = findCapability(manifest, 'map-stitcher');
-      try {
-        sendJson(
-          response,
-          200,
-          updateImageGenerationSettings(capability.connector, body),
-        );
-      } catch (error) {
-        sendJson(response, 400, {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/v1/tasks') {

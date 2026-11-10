@@ -45,7 +45,7 @@ export function SharedDocumentPicker({ open, kind, currentId, disabled = false, 
   return <Dialog open={open} onOpenChange={value => { if (!value && !selection.current) onClose(); }}>
     <DialogContent style={{ maxWidth: 720, maxHeight: '85dvh', overflowY: 'auto' }}>
       <DialogHeader>
-        <DialogTitle>打开服务端共享{kind === 'scene' ? '场景' : '交互物工程'}</DialogTitle>
+        <DialogTitle>打开服务端共享交互物工程</DialogTitle>
         <DialogDescription>这里列出当前连接的 Forge 服务保存的工程，同一服务中的工程可在其他浏览器打开。切换前会保存当前草稿，保留本机未同步修改并检查共享版本冲突。</DialogDescription>
       </DialogHeader>
       <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>

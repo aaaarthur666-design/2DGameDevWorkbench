@@ -2,8 +2,7 @@ import '../helpers/runtime-workspace.mjs';
 import assert from 'node:assert/strict';
 import { RequestJournal } from '../../features/editor-documents/request-journal.mjs';
 import { DocumentSyncController } from '../../features/editor-documents/sync-controller.mjs';
-import { createScene } from '../../features/scene-composer/model.mjs';
-import { sharedSceneContent } from '../../features/scene-composer/shared-content.mjs';
+import { createProject, normalizeProject } from '../../features/interactable-editor/contract.mjs';
 import { createDocument, saveDocument, getDocument } from '../../lib/workbench/editor-documents.mjs';
 import { loadManifest, repositoryRoot as root } from '../../lib/workbench/runtime.mjs';
 
@@ -22,7 +21,7 @@ const store = {
     return work;
   },
 };
-const journal = (scope = 'scene-workflow', documentId = 'journal-scene') => new RequestJournal({ scope, documentId, store });
+const journal = (scope = 'image-edit', documentId = 'journal-project') => new RequestJournal({ scope, documentId, store });
 const first = { operation: 'adopt', input: { commandId: 'first', workId: 'work', expectedRevision: 4, candidateRevision: 2, candidateHash: 'a'.repeat(64) } };
 const second = { operation: 'adopt', input: { ...first.input, commandId: 'second' } };
 const a = journal(), b = journal();
@@ -43,17 +42,17 @@ await assert.rejects(() => a.complete(original), /已变化/);
 assert.deepEqual((await a.pending()).request, second, 'late completion cannot erase the next request');
 await b.complete(second, 'rejected');
 await assert.rejects(() => a.begin(first), /不同的请求/);
-assert.equal(await journal('scene-split').pending(), null, 'operation families retain independent identities');
+assert.equal(await journal('independent-operation').pending(), null, 'operation families retain independent identities');
 
 // The same durable log restores an uncertain save even after a newer local edit
 // and a new controller instance. Both commits retain their own CAS identities.
 const manifest = await loadManifest();
-let current = createScene('Journal sync'), cache, loseReply = false;
-current.id = 'journal-document';
+let current = createProject(), cache, loseReply = false;
+current.projectId = 'journal-document';
 const calls = [];
 const api = {
-  read: () => getDocument(root, manifest, { documentId: current.id }),
-  metadata: () => getDocument(root, manifest, { documentId: current.id, metadataOnly: true }),
+  read: () => getDocument(root, manifest, { documentId: current.projectId }),
+  metadata: () => getDocument(root, manifest, { documentId: current.projectId, metadataOnly: true }),
   create: async (kind, content, commandId) => {
     calls.push({ commandId, content: structuredClone(content), expectedRevision: 0 });
     return createDocument(root, manifest, { kind, content, commandId });
@@ -66,9 +65,9 @@ const api = {
   },
 };
 const make = () => new DocumentSyncController({
-  id: current.id, kind: 'scene', current: () => current, busy: () => false,
-  journal: journal('document-sync:scene', current.id),
-  prepare: sharedSceneContent, saveLocal: async () => {}, applyRemote: async next => { current = next; },
+  id: current.projectId, kind: 'interactable', current: () => current, busy: () => false,
+  journal: journal('document-sync:interactable', current.projectId),
+  prepare: normalizeProject, saveLocal: async () => {}, applyRemote: async next => { current = next; },
   backupLocal: async () => 'backup', readCache: async () => cache, writeCache: async value => { cache = structuredClone(value); }, api,
 });
 let controller = make();
@@ -85,7 +84,7 @@ assert.notEqual(calls.at(-1).commandId, pending.commandId);
 assert.equal(calls.at(-1).expectedRevision, 2);
 assert.equal((await api.read()).document.content.name, 'New local draft');
 assert.equal((await api.read()).document.revision, 3);
-assert.equal(await journal('document-sync:scene', current.id).pending(), null);
+assert.equal(await journal('document-sync:interactable', current.projectId).pending(), null);
 
 current = { ...current, name: 'Must persist before sending' };
 storageFailure = true;
@@ -102,10 +101,10 @@ controller.dispose();
 // discard the identity needed to confirm that same rejected request.
 current = { ...current, name: 'Rejected request receipt' };
 let rejectReceipt = true;
-const rejectionJournal = journal('rejected-sync', current.id);
+const rejectionJournal = journal('rejected-sync', current.projectId);
 const rejectionController = new DocumentSyncController({
-  id: current.id, kind: 'scene', current: () => current, busy: () => false,
-  prepare: sharedSceneContent, saveLocal: async () => {}, applyRemote: async () => {}, backupLocal: async () => 'backup',
+  id: current.projectId, kind: 'interactable', current: () => current, busy: () => false,
+  prepare: normalizeProject, saveLocal: async () => {}, applyRemote: async () => {}, backupLocal: async () => 'backup',
   readCache: async () => cache, writeCache: async value => { cache = value; },
   journal: { pending: () => rejectionJournal.pending(), begin: request => rejectionJournal.begin(request), respond: (request, result) => rejectionJournal.respond(request, result),
     complete: async (...args) => { if (rejectReceipt) throw new Error('receipt quota'); return rejectionJournal.complete(...args); } },

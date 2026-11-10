@@ -190,7 +190,7 @@ export function AssetImportPicker({
         </div>
         {!loading && !visible.length && (
           <p>
-            没有匹配的适用素材，可调整搜索条件或在资产库导入素材包。外观原图需要先在交互物编辑器配置行为，才能作为交互物加入场景。
+            没有匹配的适用素材，可调整搜索条件或在资产库导入素材包。选用外观或动画后，可在交互物编辑器配置行为并导出。
           </p>
         )}
         <div className="wb-tool-links">

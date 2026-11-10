@@ -45,9 +45,9 @@
    Scope by the mounted surface so SSR and client navigation agree, and leave
    other capability pages and the shared dialogs intact. */
 .wb-app:has([data-map-editor]) > .wb-header,
-.wb-app:has([data-scene-composer], [data-sprite-editor]) > .wb-header,
-.wb-app:has([data-scene-composer], [data-sprite-editor]) > .wb-tool-context,
-.wb-app:has([data-scene-composer], [data-sprite-editor]) > .wb-status,
+.wb-app:has([data-sprite-editor]) > .wb-header,
+.wb-app:has([data-sprite-editor]) > .wb-tool-context,
+.wb-app:has([data-sprite-editor]) > .wb-status,
 .wb-app:has([data-map-editor]) > .wb-tool-context,
 .wb-app:has([data-map-editor]) > .wb-status {
   display: none;
@@ -56,7 +56,7 @@
   overflow: hidden;
   background: none;
 }
-.wb-app:has([data-scene-composer], [data-sprite-editor]) > .wb-route {
+.wb-app:has([data-sprite-editor]) > .wb-route {
   overflow: hidden;
   background: none;
 }

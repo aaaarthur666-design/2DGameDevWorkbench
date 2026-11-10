@@ -10,9 +10,7 @@ import sharp from 'sharp';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { createProject, createObject } from '../../features/interactable-editor/contract.mjs';
-import { createScene,replaceMap } from '../../features/scene-composer/model.mjs';
 import { loadManifest, repositoryRoot } from '../../lib/workbench/runtime.mjs';
-import {atomic,recordFile} from '../../lib/workbench/image-edit-store.mjs';
 
 const manifest = await loadManifest();
 const portServer = net.createServer(); portServer.listen(0, '127.0.0.1'); await once(portServer, 'listening');
@@ -73,22 +71,6 @@ try {
   const fromCli = await cli('image-session-get', { editId: edited.edit.editId }); check(fromCli.code, 0); check(JSON.parse(fromCli.stdout).edit.candidates[0].taskId, edited.taskId);
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ['scripts/workbench-mcp.mjs'], env, stderr: 'pipe' }));
   const tools = await client.listTools();
-  for (const name of ['workbench_prepare_map_split','workbench_get_map_split','workbench_inspect_map_split','workbench_revise_map_split','workbench_adopt_map_split','workbench_edit_map_split_element']) {
-    check(tools.tools.some(tool=>tool.name===name),true);
-  }
-  const splitScene=createScene('共享分层传输');
-  replaceMap(splitScene,{name:'图块',origin:{x:0,y:0},offset:{x:0,y:0},collisions:[],warnings:[],source:'data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==',
-    layers:[{id:'map_overall',name:'地图',source:`data:image/png;base64,${png.toString('base64')}`,width:8,height:8,locked:true,hidden:false,included:true}]});
-  const documentId=splitScene.id;
-  check((await post('document-create',{kind:'scene',documentId,content:splitScene,commandId:'create-split-scene'})).status,200);
-  const splitInput={documentId,expectedRevision:1,commandId:'split-once',specs:[{id:'lamp',name:'灯',parts:[{id:'art',selection:{type:'rect',x:1,y:1,width:5,height:5}}]}]};
-  const prepared=await post('scene-split-prepare',splitInput);
-  check(prepared.body.candidate.status,'ready');
-  const candidateId=prepared.body.candidate.candidateId;
-  const splitView=await client.callTool({name:'workbench_inspect_map_split',arguments:{documentId,candidateId,candidateRevision:1,view:'element',elementId:'lamp'}});
-  check(splitView.content.some(block=>block.type==='image' && block.mimeType==='image/png'),true);
-  check((await cli('scene-split-get',{documentId,candidateId})).code,0);
-  check((await client.callTool({name:'workbench_adopt_map_split',arguments:{documentId,candidateId,candidateRevision:1,expectedRevision:1,commandId:'adopt-split'}})).structuredContent?.revision,2);
   for (const name of ['workbench_prepare_part_context','workbench_request_part_suggestion','workbench_get_part_suggestion'])
     check(tools.tools.some(tool=>tool.name===name),true);
   const context = await client.callTool({name:'workbench_prepare_part_context',arguments:{...guard,editId:edited.edit.editId,
@@ -104,13 +86,6 @@ try {
   check(plainPlan.structuredContent.images.map(v=>v.role),['writable-area','clean-crop']);
   check(plainPlan.content.filter(v=>v.type==='image').length,2);
   check(plainPlan.structuredContent.plan.previewPng,undefined);
-  const analysisId='transport-analysis',roles=['albedo','shading','residual','uncertainty'];
-  const analysisFile=recordFile(path.resolve(repositoryRoot,manifest.workspace.imageEditDirectory),'analyses',analysisId);
-  await atomic(repositoryRoot,analysisFile,{analysisId,status:'completed',previews:Object.fromEntries(roles.map(role=>[role,png.toString('base64')]))});
-  const layers=await client.callTool({name:'workbench_get_image_analysis',arguments:{analysisId}});
-  check(layers.structuredContent.images.map(v=>v.role),roles);
-  check(layers.content.filter(v=>v.type==='image').length,4);
-  check(layers.structuredContent.analysis.previews,undefined);
   const softPlan=await client.callTool({name:'workbench_prepare_image_plan',arguments:{...planInput,softReference:{kind:'rgb'}}});
   check(softPlan.isError,undefined);
   check(softPlan.content.filter(v=>v.type==='image').length,3);

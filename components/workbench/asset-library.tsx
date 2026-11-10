@@ -17,7 +17,6 @@ type Asset = {
   kind: string;
   origin?: string;
   attachmentOnly?: boolean;
-  mapType?: 'project' | 'image';
   statusLabel: string;
   availability: string;
   previewKind?: string;
@@ -34,12 +33,6 @@ type Asset = {
   files?: { key: string; path: string; available: boolean; sha256?: string }[];
   readiness?: { issues: string[]; godotPackageAvailable?: boolean };
   revision?: string;
-  sceneRevision?: number;
-  sceneId?: string;
-  exportId?: string;
-  instanceCount?: number;
-  materialCount?: number;
-  tileCount?: number;
   createdAt?: string;
   history?: { taskId: string; operation: string; createdAt: string; status: string; viewPath: string }[];
 };
@@ -54,9 +47,7 @@ const labels: Record<string, string> = {
   character: '角色原图',
   prop: '物品原图',
   animation: '动画',
-  map: '地图',
   interactable: '交互物',
-  scene: '完整场景',
 };
 
 export function AssetLibrary() {
@@ -143,8 +134,7 @@ export function AssetLibrary() {
           scope,
           offset: String(page.offset),
           limit: '24',
-          ...(kind ? { kind: kind === 'map-image' ? 'map' : kind } : {}),
-          ...(kind === 'map' ? { mapType: 'project' } : kind === 'map-image' ? { mapType: 'image' } : {}),
+          ...(kind ? { kind } : {}),
           ...(page.snapshot ? { snapshot: page.snapshot } : {}),
         });
     void (async () => {
@@ -224,16 +214,9 @@ export function AssetLibrary() {
   }
   function preview(a: Asset) {
     const previewKey = `${a.id}:${a.updatedAt}`;
-    const map = a.origin === 'map-project';
-    const frameStyle = map ? {
-      aspectRatio: '16 / 9', width: '100%',
-      backgroundColor: 'var(--theme-canvas)',
-      backgroundImage: 'conic-gradient(from 90deg, transparent 25%, var(--wb-line) 0 50%, transparent 0 75%, var(--wb-line) 0)',
-      backgroundSize: '16px 16px', borderRadius: 12,
-    } : {};
     return a.previewKind !== 'none' && a.availability === 'available' && !failedPreviews.includes(previewKey) ? (
       <img
-        src={`${a.previewUrl}${map ? `&version=${encodeURIComponent(a.updatedAt || '')}` : ''}`}
+        src={a.previewUrl}
         alt={
           a.candidateIndex ? `${a.title} · 候选 ${a.candidateIndex}` : a.title
         }
@@ -241,23 +224,19 @@ export function AssetLibrary() {
         onError={() => setFailedPreviews((keys) => keys.includes(previewKey) ? keys : [...keys, previewKey])}
         style={{
           width: '100%',
-          height: map ? 'auto' : assetId ? 350 : 170,
+          height: assetId ? 350 : 170,
           maxHeight: assetId ? 420 : undefined,
           objectFit: 'contain',
           imageRendering: 'pixelated',
           background: 'var(--theme-canvas)',
           borderRadius: 12,
-          ...frameStyle,
         }}
       />
     ) : (
-      <div style={{ minHeight: 120, display: 'grid', placeItems: 'center', ...frameStyle }}>
+      <div style={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
         {a.availability === 'missing'
           ? '文件暂不可读取'
-          : map ? '暂无预览 · 打开并保存后更新'
-          : a.kind === 'scene'
-            ? '完整场景 · 源包与 Godot 包'
-            : '交互逻辑 · 在编辑器查看'}
+          : '交互逻辑 · 在编辑器查看'}
       </div>
     );
   }
@@ -323,21 +302,13 @@ export function AssetLibrary() {
             </h2>
             {asset.trashedAt && <p className="wb-notice">已移入回收站 · {new Date(asset.trashedAt).toLocaleString('zh-CN')}</p>}
             {preview(asset)}
-            {asset.origin === 'map-project' && (
-              <p>
-                {asset.tileCount ?? '未知'} 个地图块 · 最后保存 {asset.updatedAt ? new Date(asset.updatedAt).toLocaleString('zh-CN') : '未知'}
-                {asset.previewKind === 'image' && <a className="wb-button" href={asset.previewUrl} target="_blank" rel="noreferrer">放大预览</a>}
-              </p>
-            )}
+
             <p>
-              {asset.kind === 'map' ? asset.mapType === 'project' || asset.origin === 'map-project' ? '地图工程' : '地图原图 / 历史素材' : labels[asset.kind]} · {asset.statusLabel}
+              {labels[asset.kind]} · {asset.statusLabel}
               {asset.frameCount ? ` · ${asset.frameCount} 帧` : ''}
               {asset.width ? ` · ${asset.width} × ${asset.height}` : ''}
-              {asset.sceneRevision !== undefined ? ` · 场景版本 ${asset.sceneRevision}` : ''}
             </p>
-            {asset.kind === 'scene' && (
-              <p>包含 {asset.materialCount ?? '未知'} 件场景素材、{asset.instanceCount ?? '未知'} 个实例。可直接继续组装，也可下载源包备份。</p>
-            )}
+
             {asset.readiness?.issues.map((message) => (
               <p className="wb-notice" key={message}>
                 {message}
@@ -345,17 +316,14 @@ export function AssetLibrary() {
             ))}
             <div className="wb-tool-links">
               <button className="wb-button" disabled={managing || exporting} onClick={() => { setNotice(''); setPending({ operation: asset.trashedAt ? 'restore' : 'trash', assets: [asset] }); }}>{asset.trashedAt ? '恢复到资产库' : '移入回收站'}</button>
-              {asset.origin === 'map-project' && asset.editorPath && <a className="wb-button" href={editorHref(asset.editorPath, asset.id)}>继续编辑地图</a>}
               {!asset.trashedAt && !asset.attachmentOnly && asset.kind === 'character' && <a className="wb-button" href={importLink('reference-art', 'image', asset.id)}>用作角色参考</a>}
               {!asset.trashedAt && asset.availability === 'available' && asset.id.startsWith('image:') && <button className="wb-button" onClick={() => setLocalEditTask(asset.id.slice('image:'.length))}>局部调整图片</button>}
-              {asset.kind === 'map' && <><a className="wb-button" href={importLink('map-stitcher','map',asset.id)}>导入地图编辑器</a><a className="wb-button" href={importLink('scene-composer','map',asset.id)}>用于制作场景</a></>}
-              {asset.kind === 'interactable' && <><a className="wb-button" href={importLink('interactable-editor','interactable',asset.id)}>编辑交互物项目</a><a className="wb-button" href={importLink('scene-composer','interactable',asset.id)}>加入场景</a></>}
-              {asset.kind === 'scene' && <a className="wb-button" href={importLink('scene-composer','scene',asset.id)}>继续组装此场景</a>}
-              {!asset.attachmentOnly && ['prop','character','map'].includes(asset.kind) && asset.origin !== 'map-project' && asset.mapType !== 'project' && <a className="wb-button" href={importLink('interactable-editor','image',asset.id)}>用于交互物外观</a>}
+              {asset.kind === 'interactable' && <a className="wb-button" href={importLink('interactable-editor','interactable',asset.id)}>编辑交互物项目</a>}
+              {!asset.attachmentOnly && ['prop','character'].includes(asset.kind) && <a className="wb-button" href={importLink('interactable-editor','image',asset.id)}>用于交互物外观</a>}
               {asset.kind === 'animation' && <a className="wb-button" href={importLink('interactable-editor','animation',asset.id)}>用于交互物动画</a>}
-              {asset.origin !== 'imported-package' && asset.editorPath && !['map','interactable','scene'].includes(asset.kind) && (
+              {asset.origin !== 'imported-package' && asset.editorPath && asset.kind !== 'interactable' && (
                 <a className="wb-button" href={editorHref(asset.editorPath, asset.id)}>
-                  {asset.kind === 'map' ? '继续编辑地图' : '在原工具中打开'}
+                  在原工具中打开
                 </a>
               )}
               <button
@@ -363,15 +331,13 @@ export function AssetLibrary() {
                 disabled={exporting}
                 onClick={() => void downloadAssets([asset.id])}
               >
-                {exporting ? '正在打包…' : asset.origin === 'map-project' ? '下载编辑源文件（ZIP）' : '下载素材（ZIP）'}
+                {exporting ? '正在打包…' : '下载素材（ZIP）'}
               </button>
             </div>
-            {asset.origin === 'map-project' && asset.editorPath && <a className="wb-button" href={editorHref(asset.editorPath, asset.id)}>在地图编辑器导出 Godot</a>}
-            {asset.origin !== 'map-project' && (asset.origin !== 'imported-package' || asset.readiness?.godotPackageAvailable) && ['map','scene','interactable','animation'].includes(asset.kind) && asset.revision && <button className="wb-button wb-primary" onClick={()=>offerGodotExport({name:asset.title,assetId:asset.id,revision:asset.revision})}>导出到游戏项目</button>}
+            {(asset.origin !== 'imported-package' || asset.readiness?.godotPackageAvailable) && ['interactable','animation'].includes(asset.kind) && asset.revision && <button className="wb-button wb-primary" onClick={()=>offerGodotExport({name:asset.title,assetId:asset.id,revision:asset.revision})}>导出到游戏项目</button>}
             <details style={{ marginTop: 20 }}>
               <summary>来源文件与版本</summary>
               <p>创建时间：{asset.createdAt ? new Date(asset.createdAt).toLocaleString() : '未知'}</p>
-              {asset.exportId && <p>场景导出记录：{asset.exportId}</p>}
               <p>版本指纹：{asset.revision}</p>
               {asset.files?.map((f) => (
                 <p key={f.key}>
@@ -432,10 +398,9 @@ export function AssetLibrary() {
               <option value="">全部类型</option>
               {Object.entries(labels).map(([id, label]) => (
                 <option key={id} value={id}>
-                  {id === 'map' ? '地图工程' : label}
+                  {label}
                 </option>
               ))}
-              <option value="map-image">地图原图 / 历史素材</option>
             </select>
             <button className="wb-button" type="submit">
               查找
@@ -493,14 +458,12 @@ export function AssetLibrary() {
                       {a.candidateIndex ? ` · 候选 ${a.candidateIndex}` : ''}
                     </h2>
                     <p>
-                      {a.kind === 'map' ? a.mapType === 'project' || a.origin === 'map-project' ? '地图工程' : '地图原图 / 历史素材' : labels[a.kind]} ·{' '}
+                      {labels[a.kind]} ·{' '}
                       {a.availability === 'missing'
                         ? '文件缺失'
                         : a.statusLabel}
                       {a.frameCount ? ` · ${a.frameCount} 帧` : ''}
-                      {a.sceneRevision !== undefined ? ` · 场景版本 ${a.sceneRevision}` : ''}
                     </p>
-                    {a.kind === 'map' && <p>{a.tileCount ?? '未知'} 个地图块 · {a.updatedAt ? new Date(a.updatedAt).toLocaleString('zh-CN') : '保存时间未知'}</p>}
                     <div className="wb-tool-links">
                       <label>
                         <input

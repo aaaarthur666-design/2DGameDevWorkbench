@@ -14,7 +14,7 @@ async function blobDataUrl(blob, mime) {
   return `data:${mime};base64,${btoa(chunks.join(''))}`;
 }
 
-// Only boundary operations touch bytes. Scene edits, history and fingerprints
+// Only boundary operations touch bytes. Document edits, history and fingerprints
 // carry stable references; durable blobs also make local drafts usable offline.
 export class DocumentMediaCache {
   constructor({ store, fetch: request = globalThis.fetch, createObjectURL = blob => URL.createObjectURL(blob), revokeObjectURL = url => URL.revokeObjectURL(url) }) {
@@ -60,7 +60,7 @@ export class DocumentMediaCache {
     const reference = documentMediaReference(await digest(await blob.arrayBuffer()), mime);
     if (!this.entries.has(reference)) {
       const entry = await this.verify(blob, reference);
-      // Persist before exposing the reference to a scene or request journal.
+      // Persist before exposing the reference to a document or request journal.
       await this.store.write(parseDocumentMediaReference(reference).key, blob);
       this.entries.set(reference, { ...entry, url: this.createObjectURL(blob) });
     }
@@ -78,10 +78,10 @@ export class DocumentMediaCache {
       }
       if (!mediaTypeMatches(reference, slot.mime)) throw new Error('媒体引用类型与声明不匹配。');
       const entry = await this.get(reference);
-      if (slot.width && (slot.width !== entry.width || slot.height !== entry.height)) throw new Error('媒体尺寸与场景声明不匹配。');
+      if (slot.width && (slot.width !== entry.width || slot.height !== entry.height)) throw new Error('媒体尺寸与文档声明不匹配。');
       if (slot.owner.generation && parseDocumentMediaReference(reference).sha256 !== slot.owner.generation.sha256) throw new Error('生成素材的来源哈希不匹配。');
       if (!counted.has(reference)) { total += entry.blob.size; counted.add(reference); }
-      if (total > MAX_BYTES) throw new Error('场景媒体超过 256 MB。');
+      if (total > MAX_BYTES) throw new Error('文档媒体超过 256 MB。');
       slot.owner[slot.key] = reference;
     }
     return next;

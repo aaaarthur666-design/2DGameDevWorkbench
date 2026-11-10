@@ -1,6 +1,6 @@
 ---
 name: 2d-game-workbench
-description: Create, edit, inspect and deliver Forge artwork, animations, interactables and scenes through the project tools. Use forge-game-engineering for Godot project code and asset integration.
+description: Create, edit, inspect and deliver Forge artwork, animations and interactables through the project tools. Use forge-game-engineering for Godot project code and asset integration.
 ---
 
 # Forge asset production
@@ -14,12 +14,10 @@ Complete the user's requested asset workflow using the shared workbench runtime.
 | Character image or existing PNG import | reference-art generate / import, then transfer when an animation reference is needed | [Reference art](../../../docs/reference-art.md) · reference-art |
 | New or continuing animation | sprite-generator plan-motion and its saved work/checkpoints | [Motion workflow](../../../workbench/guides/motion.md) · motion |
 | Change selected animation frames | get-motion-adjustment → create-motion-adjustment → inspect → review-motion-adjustment | [Alternatives](../../../docs/motion-adjustments.md) · adjustments |
-| Background, transparent prop or whole-image generation | image-assets; PixelLab props can use reference-art subject=prop | [Image assets](../../../docs/prop-art.md) · image-generation |
+| Transparent prop generation or whole-image editing | image-assets; PixelLab props can use reference-art subject=prop | [Image assets](../../../docs/prop-art.md) · image-generation |
 | Local or AI changes to an existing saved image | inspect_image_target → resolve_image_region → edit_image_region → inspect → apply_image_candidate | [Image editing](../../../docs/image-editing.md) · image-editing |
-| Interactable behavior or shared scene | template / saved document → typed commands → inspect → requested save/export | [Interactables](../../../docs/interactable-editor.md) / [Scenes](../../../docs/scene-composer.md) · interactables / scenes |
+| Interactable behavior or shared project | template / saved document → typed commands → inspect → requested save/export | [Interactables](../../../docs/interactable-editor.md) · interactables |
 | Existing artwork, downloads or handoff | list_assets → exact get_asset/get_result; list_tasks for execution history | [Asset catalog](../../../docs/asset-catalog.md) · assets |
-| Scene production with expert planning, new artwork or automatic map creation/extension | create_scene_workflow → inspect candidate/review → adopt within the agreed scope and budgets | [Scene collaboration](../../../docs/scene-collaboration.md) · scene-collaboration |
-| Map canvas, region editing or manual stitching | Current editor; use host browser tools when the user requests webpage operation | [Map editor](../../../docs/map-stitcher.md) · maps |
 | Delivery to a game | Exact existing export and selected project, then the engineering Skill | [Delivery](../../../docs/godot-delivery.md) · delivery |
 
 The server exposes workbench_get_guidance({topic}) for these documents, including clients without repository file access. Tool names in the table are abbreviated; discover their current names and schema before using an unfamiliar operation.
@@ -36,7 +34,7 @@ Prefer the project's MCP tools. Reuse discovered schemas during the session; ref
 
 Resolve real character, asset and task identities from context or discovery. Check environment readiness only for services the task needs; start an installed offline service when appropriate. A conflicting service calls for diagnosis rather than repeated startup.
 
-Use the user's existing authorization throughout the agreed workflow. Routine parameters and internal IDs are implementation choices. prepare_task optionally validates and saves a preparation record for authorized work; read-only discussion needs no production record. The selected capability schema determines which operations the MCP/CLI supports. Direct map-stitcher adapter operations remain outside that surface; bounded automatic map creation/extension is available through scene-workflow tools. Read the collaboration guide and freeze the map policy, production providers and quotas before creation. Explicit webpage work and authorized feature development remain available.
+Use the user's existing authorization throughout the agreed workflow. Routine parameters and internal IDs are implementation choices. prepare_task optionally validates and saves a preparation record for authorized work; read-only discussion needs no production record. The selected capability schema determines which operations the MCP/CLI supports. Explicit webpage work and authorized feature development remain available.
 
 ## Preserve the work's identity
 

@@ -66,7 +66,7 @@ export function useSharedDocument<T>({ id, kind, value, enabled, automatic = tru
     const current = controller.current;
     if (!enabled || !automatic || !current) return;
     const url = new URL(location.href);
-    url.searchParams.set(kind === 'scene' ? 'scene' : 'project', id);
+    url.searchParams.set('project', id);
     if (url.searchParams.has('document') && url.searchParams.get('document') !== id)
       url.searchParams.delete('document');
     history.replaceState(null, '', url.pathname + url.search);

@@ -52,7 +52,7 @@ export function SharedWorkbenchNavigation({ compact = false }: { compact?: boole
       </DropdownMenuTrigger>
       <DropdownMenuContent className="wb-workspace-menu">
         {workspaceGroups.map((group) => <DropdownMenuGroup key={group.id}>
-          <DropdownMenuLabel data-active={current.group?.id === group.id}>{group.id === 'player' ? '角色制作' : '场景制作'}</DropdownMenuLabel>
+          <DropdownMenuLabel data-active={current.group?.id === group.id}>{group.id === 'player' ? '角色制作' : '交互物制作'}</DropdownMenuLabel>
           <DropdownMenuItem aria-current={wb.pathname === group.href ? 'page' : undefined} data-active={current.group?.id === group.id} onClick={() => void wb.navigate(group.href)}>{group.name}</DropdownMenuItem>
           {group.tools.map((tool) => <DropdownMenuItem key={tool.id} aria-current={current.tool?.id === tool.id ? 'page' : undefined} onClick={() => void wb.navigate(tool.href)}><ModuleIcon icon={tool.icon} className="size-4" />{tool.name}</DropdownMenuItem>)}
         </DropdownMenuGroup>)}

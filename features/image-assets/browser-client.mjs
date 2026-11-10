@@ -18,7 +18,6 @@ export async function imageAssetJson(url, init, request = fetch) {
 
 export function imageAssetKind(task) {
   if (task?.capabilityId !== 'image-assets') return undefined;
-  if (task.input?.operation === 'generate-background') return 'background';
   if (task.input?.operation === 'generate-prop') return 'prop';
   if (['edit-image', 'process-image'].includes(task.input?.operation))
     return task.input.kind === 'prop' ? 'prop' : 'background';
@@ -88,7 +87,7 @@ export async function readImageAsset(taskId, kind, request = fetch) {
     task, imagePath, bytes, width: result.width, height: result.height,
     kind, generation: { sourceTaskId: taskId, sha256 },
     provider: result.provider, model: result.model,
-    name: String(task.input?.name || (kind === 'prop' ? '透明物件' : '场景背景')).slice(0, 80),
+    name: String(task.input?.name || (kind === 'prop' ? '透明物件' : '参考图片')).slice(0, 80),
   };
 }
 

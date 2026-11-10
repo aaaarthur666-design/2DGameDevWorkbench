@@ -21,19 +21,19 @@ const server = await createTestViteServer({
         calls.push({ method: request.method, pathname: url.pathname, search: url.search });
         if (request.method !== 'GET') { send({ error: 'Fixture is read-only' }, 405); return; }
         if (mode === 'error') { send({ error: '验收：共享服务暂不可读' }, 503); return; }
-        const kind = url.searchParams.get('kind') || 'scene', offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 100);
-        const documents = Array.from({ length: 238 }, (_, index) => ({ id: `${kind}-${index}`, kind, revision: 1, name: `${kind === 'scene' ? '共享场景' : '共享交互物'} ${index}`, createdAt: '2026-10-29T12:00:00Z', updatedAt: '2026-10-30T12:00:00Z', viewPath: '/ignored-remote-path' }));
+        const kind = url.searchParams.get('kind') || 'interactable', offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 100);
+        const documents = Array.from({ length: 238 }, (_, index) => ({ id: `${kind}-${index}`, kind, revision: 1, name: `共享交互物 ${index}`, createdAt: '2026-10-29T12:00:00Z', updatedAt: '2026-10-30T12:00:00Z', viewPath: '/ignored-remote-path' }));
         const result = { documents: documents.slice(offset, offset + limit), total: documents.length, nextOffset: offset + limit < documents.length ? offset + limit : null };
         if (mode === 'slow') setTimeout(() => { if (!response.destroyed) send(result); }, 1500); else send(result);
         return;
       }
       if (url.pathname.startsWith('/api/workbench/')) { send({ tasks: [], jobs: [], works: [], request: null }); return; }
-      if (url.pathname === '/tools/scene-composer') request.url = `/tests/editor-documents/library.html${url.search}`;
+      if (url.pathname === '/tools/interactable-editor') request.url = `/tests/editor-documents/library.html${url.search}`;
       next();
     });
   } }],
   server: { host: '127.0.0.1', port: 0 },
 });
 await server.listen();
-console.log(`Shared projects fixture: http://127.0.0.1:${server.httpServer.address().port}/tools/scene-composer`);
+console.log(`Shared projects fixture: http://127.0.0.1:${server.httpServer.address().port}/tools/interactable-editor`);
 process.on('SIGINT', async () => { await server.close(); process.exit(0); });

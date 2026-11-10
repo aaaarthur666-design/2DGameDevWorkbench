@@ -3,16 +3,13 @@ import manifest from '@/workbench/manifest.json';
 import { readWorkspaceDraft, saveWorkspaceDraft } from './browser-store';
 
 export type ImportPurpose =
-  | 'map'
   | 'interactable'
-  | 'scene'
   | 'image'
   | 'animation';
 export type LibraryAsset = {
   id: string;
   kind: string;
   origin?: string;
-  mapType?: 'project' | 'image';
   attachmentOnly?: boolean;
   title: string;
   revision?: string;
@@ -55,7 +52,7 @@ export function purposesFor(asset: LibraryAsset, purposes: ImportPurpose[]) {
   return manifest.assetImports.filter(
     (rule) =>
       !asset.attachmentOnly && purposes.includes(rule.id as ImportPurpose) &&
-      rule.kinds.includes(asset.kind) && (asset.origin !== 'map-project' && asset.mapType !== 'project' || rule.id === 'map'),
+      rule.kinds.includes(asset.kind),
   );
 }
 export function importLink(
@@ -176,27 +173,6 @@ export async function loadLibraryAsset(
   }
   return { purpose, asset: metadata.asset, files };
 }
-export async function mapImportFile(bundle: ImportBundle): Promise<File> {
-  const file = bundle.files[0].file;
-  if (!file.type.startsWith('image/')) return file;
-  // An image-only map becomes a center tile; it has no invented collision polygons.
-  const zip = new JSZip();
-  zip.file('map.png', await file.arrayBuffer());
-  zip.file(
-    'map_stitch_state.json',
-    JSON.stringify({
-      format: 'pixelwork-map-stitch-state',
-      version: 2,
-      source: { path: 'map.png', fileName: file.name, type: file.type },
-      tiles: {},
-    }),
-  );
-  return new File(
-    [await zip.generateAsync({ type: 'blob' })],
-    'pixelwork-state.zip',
-    { type: 'application/zip' },
-  );
-}
 export function clearImportQuery() {
   const url = new URL(location.href);
   for (const key of ['importAsset', 'importPurpose', 'handoff'])
@@ -204,8 +180,8 @@ export function clearImportQuery() {
   history.replaceState(history.state, '', url);
 }
 export async function storeEditorHandoff(
-  target: 'scene-composer' | 'interactable-editor' | 'map-stitcher',
-  purpose: 'map' | 'interactable',
+  target: 'interactable-editor',
+  purpose: 'interactable',
   payload: unknown,
 ) {
   const key = 'import-' + crypto.randomUUID();
@@ -222,7 +198,7 @@ export async function readEditorHandoff(target: string) {
     throw new Error('内部移送身份无效。');
   const record = await readWorkspaceDraft<{
     target: string;
-    purpose: 'map' | 'interactable';
+    purpose: 'interactable';
     payload: unknown;
   }>(key);
   if (!record || record.target !== target)

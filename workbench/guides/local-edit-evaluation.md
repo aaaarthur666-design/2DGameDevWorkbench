@@ -34,7 +34,7 @@ node scripts/image-edit-evaluation.mjs report work/example/frozen
 
 执行器有独占锁；已完成记录只读跳过，已有意图没有结果时禁止重新提交。进程崩溃后先检查 `intent.json`、`receipt.json` 和其中的原 task/edit 身份，通过现有任务状态与会话读取恢复。不要删除意图或预算预留后重跑。`awaiting_configuration` 且无派发证据属于明确未提交；留存原记录并记录核对依据后才解除预留。修改执行工具后另建批次，记录差异，不能将旧提供方返回当成新代码生成的结果。
 
-P2C 四组配对使用[独立执行脚本](../../scripts/image-edit-evaluation/p2c.mjs)，每组含 RGB 对照和分层明暗两个候选。执行时核对冻结协议、额度和绑定到冻结输入哈希的授权文件。返回档位不符时按回执记账，将该配对标为无效并停止。续跑及送评前都会重新检查档位。协议、输入图、账本和评审材料随批次保存在本机。
+历史 P2C 曾比较 RGB 与分层明暗参考，协议和研究结论留在 [new-arch 记录](https://github.com/aaaarthur666-design/2DGameDevWorkbench/blob/new-arch/workbench/guides/local-edit-evaluation.md)。其独立执行脚本保留供历史证据处理；论文分支不提供分层分析或分层换色。历史材料与新批次分开，不因工具裁剪把旧提供方返回记作新实验。
 
 ## 历史回放
 

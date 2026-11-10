@@ -1,10 +1,10 @@
 # 导出到游戏项目与 WorkBuddy 接入
 
-此流程交付已制作的资产，不创建地图、不生成新美术，也不把一个资源包冒充完整游戏。用户选择自己的 Godot 项目，Forge 写入交付包，外部 Agent 按该项目现有代码完成接入。打包和安装都不调用模型 API。
+此流程交付已制作的资产，不生成新美术，也不把一个资源包冒充完整游戏。用户选择自己的 Godot 项目，Forge 写入交付包，外部 Agent 按该项目现有代码完成接入。打包和安装都不调用模型 API。
 
 ## 用户操作
 
-1. 地图、交互物、场景组装中点击“导出 Godot”，在统一窗口选择项目。第一次可点“选择项目…”在页面内浏览文件夹，找到游戏后点“使用这个项目”；也可粘贴项目根目录的绝对路径。导出后记住该项目，可随时更换。
+1. 在交互物编辑器点击“导出 Godot”，在统一窗口选择项目。第一次可点“选择项目…”在页面内浏览文件夹，找到游戏后点“使用这个项目”；也可粘贴项目根目录的绝对路径。导出后记住该项目，可随时更换。
 2. 点击“导出到此项目”。包和记录保存在所选项目的 `forge_imports/<delivery-id>/`，状态为“等待 WorkBuddy 接入”。不需要用户解压、复制资源、删除示例项目或修改 `res://`。
 3. 在正在使用的 WorkBuddy 会话说“接入刚导出的资源”，或点击“复制给 WorkBuddy”。如果当前会话已经获准执行这项游戏接入工作，Agent 可直接继续，不应再次要求同样的授权。
 4. WorkBuddy 读取交付、检查项目、安装资源并接好场景与脚本。窗口中的“刷新接入进度”显示接入结果；代码接入和引擎验收分别报告。
@@ -25,12 +25,9 @@
 
 | 类型 | 导入项目的资源目录 | 接入契约 |
 | --- | --- | --- |
-| 地图 | `forge_maps/map-<内容标识>/` | 地图场景、图像、世界坐标碰撞、区域清单；自动修正全部 `res://`，区域辅助脚本不重复注册全局类 |
 | 角色动画 | `forge_sprites/<角色>/<作业与候选>/` | 原样保留 SpriteFrames、PNG、显式帧顺序、FPS、loop、锚点和候选；每包一个动作 |
 | 交互物 | `addons/workbench_interaction/`，或显式 CopyWorms 配置目录 | 选中的物件场景、素材、定义、源项目和共享运行时；保留对象 ID |
-| 完整场景 | `scenes/<scene-id>/` 与共享交互运行时 | 保留地图原点、偏移、碰撞、实例变换与遮挡；已有一个运行时和 `ActorSlot` |
 
-旧 Frame Ronin 地图包仍可交付：转换器去掉示例 `project.godot`，移入独立目录并修正资源引用，不改图片或碰撞坐标。标准地图包可继续通过地图编辑器和场景组装器导入，嵌入的 `source_state.zip` 用于完整恢复。工程 `stage_assets.py map` 同时接受旧格式与新格式。
 
 上限为 256 MB 压缩或解压内容、6000 个文件。路径越界、链接、大小写重名、缺失引用、未知根目录和项目配置文件都会拒绝。标准化只转换导出包，不改生产源文件。交付的包与版本不可变；相同项目的同一份标准包复用交付，不新增重复记录。
 
@@ -46,10 +43,8 @@
 
 ### 按资产完成脚本接入
 
-- **地图：** 找到目标关卡的真实 SceneBuilder 或场景挂载点，通过已存在的 Builder 生命周期实例化 `entryScenes`；可复用工程 Skill 的 `map_mount.gd`。移动完整地图根节点，保留局部碰撞坐标与世界原点；不拆散图片与碰撞。重新进入关卡不重复挂载、不残留旧节点。地图替换时保留原有玩家、镜头、关卡逻辑与生成物之外的脚本。
 - **角色动作：** 查找当前角色的 `Sprite`/AnimatedSprite2D 及控制器映射，使用 `sprite_frames_merge.gd` 的 `merge_clips(existing, incoming)` 生成新的合并资源，只更新此次动作。保留其他动作、控制器、朝向、脚底偏移、碰撞和攻击时序。QA 的关键帧索引不是伤害触发点，不从索引推导玩法。
-- **交互物：** 普通包每关一个 InteractionRuntime；完整场景已自带，不再重复添加。沿用用户已经选择的 generic/copyworms 配置。generic 的靠近检测将实际人物物理节点加入 `interaction_actor`，匹配 detection mask；不能重建人物控制器。读取物件定义以及现有库存/任务/供电系统，通过 `picked_up`、`toggled`、`interaction_finished` 等实际信号接入。信号携带 context Dictionary，不能猜参数。使用已有信号或 EventBus，连接前检查是否已经连接，避免重复触发。
-- **完整场景：** 按目标工程现有的场景入口（如 Builder）实例化场景。若项目契约允许，将原玩家接到 `ActorSlot` 并保留全局位置；若移动会破坏现有 NodePath/生命周期，则保留原玩家挂载，依据包内 actorZIndex 调整排序并连好检测。不要为满足一个固定挂载位置而破坏角色控制。场景实例 ID 保留，地图图片不能替代可交互节点。
+- **交互物：** 每关使用一个 InteractionRuntime，不重复添加。沿用用户已经选择的 generic/copyworms 配置。generic 的靠近检测将实际人物物理节点加入 `interaction_actor`，匹配 detection mask；不能重建人物控制器。读取物件定义以及现有库存/任务/供电系统，通过 `picked_up`、`toggled`、`interaction_finished` 等实际信号接入。信号携带 context Dictionary，不能猜参数。使用已有信号或 EventBus，连接前检查是否已经连接，避免重复触发。
 - **业务逻辑：** 静态图片不能凭空变成背包/任务系统。已有策划明确“电池拾取增加库存、开关接通点亮灯塔”时，在实际项目的对应管理器/关卡脚本中补最小连接，并验收重复拾取、重入和存档行为。没有对应玩法授权时不发明新系统。
 
 自定义集成代码放在目标游戏既有脚本目录或其外层关卡中，不放入会被更新的生成目录。原始包和旧版本保留在 `forge_imports`；不删除用户从其他渠道导入的旧资源。一次任务跨多个包时，每份交付各自校验，整体联调后分别记录实际接入结果。
@@ -64,7 +59,7 @@
 | `workbench_install_game_export` | `install-game-export` | 校验后安装资源，备份可更新文件，不改项目配置或编写玩法 |
 | `workbench_complete_game_export` | `complete-game-export` | 保存 Agent 的接入结果及证据，不运行引擎 |
 
-CLI 对应 `npm run workbench -- agent <共享操作> --input <输入文件> --json`。MCP/CLI 与网页共用 `lib/workbench/game-export.mjs`，它们不新增生产 capability 或生产任务。地图、场景制作边界保持手动；此流程仅消费已导出的文件。
+CLI 对应 `npm run workbench -- agent <共享操作> --input <输入文件> --json`。MCP/CLI 与网页共用 `lib/workbench/game-export.mjs`，它们不新增生产 capability 或生产任务。此流程仅消费已导出的文件。
 
 网页接口位于 `/api/workbench/game-export/`，代理至本机 `/v1/game-export/`。`settings` 返回已选择项目和本次服务会话令牌；`browse` 只读列出一层文件夹并识别 project.godot，不启动系统弹窗；旧 `pick` 立即提示重开窗口；`select` 校验手输路径；`package` 读取已有包；`deliver` 写入包。写操作要求同源页面和令牌；链接/目录冲突在本机再次检查。用户在网页选择项目，不需要把私人目录提交到仓库。
 
@@ -74,7 +69,7 @@ CLI 对应 `npm run workbench -- agent <共享操作> --input <输入文件> --j
 
 ## 验收
 
-运行 `npm run test:game-export` 检查四类格式、路径修正、文件完整性、同名冲突、备份、幂等、交付篡改、目录链接、HTTP 和 MCP。结合 `test:map-stitcher`、`test:scene-composer`、`test:interactable`、`test:interactable-http`、`test:asset-import`、`test:assets`、`test:engineering` 及清单/壳层回归。浏览器应实际完成选择项目、导出、关闭重开记住路径、仅下载 ZIP、查看接入进度及新地图包回导。
+运行 `npm run test:game-export` 检查角色动画与交互物格式、路径修正、文件完整性、同名冲突、备份、幂等、交付篡改、目录链接、HTTP 和 MCP。结合 `test:interactable`、`test:interactable-http`、`test:asset-import`、`test:assets`、`test:engineering` 及清单/壳层回归。浏览器应实际完成选择项目、导出、关闭重开记住路径、仅下载 ZIP、查看接入进度及动画/交互物资源加载。
 
 包导出、资源安装、代码接入、引擎执行、视觉验收和完整游戏验收是不同证据。Godot 4.7.x 行为需要实际 4.7.x 执行；只有另一版本时明确记录，不升级目标项目或把该结果当成 4.7.x 验收。
 

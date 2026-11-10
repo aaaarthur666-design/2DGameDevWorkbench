@@ -1,6 +1,5 @@
 // Thin, DOM-free adapter over the independently distributed SpritePipeline core.
 import { MAX_PALETTE_PAIRS } from './edit-intent.mjs';
-import { metalPanelOperationSchema, paintMetalPanel } from './metal-panel.mjs';
 import {
   diffRgbaSummary,
   floodFillRgba,
@@ -16,7 +15,7 @@ export {
 } from '../../Tools/SpritePipeline/sprite_pipeline/static/pixel_editor_core.js';
 
 export const LOCAL_EDIT_LIMITS = Object.freeze({ maxEdge: 3840, maxPixels: 8_294_400, maxPolygonPoints: 1024, maxMaskRuns: 65_536, sharedChangeListPixels: 65_536, maxPatchBytes: 512 * 1024 });
-const operations = new Set(['metal-panel', 'palette-map', 'clean-alpha', 'replace-color', 'fill', 'erase', 'translate', 'restore-region', 'pixel-patch']);
+const operations = new Set(['palette-map', 'clean-alpha', 'replace-color', 'fill', 'erase', 'translate', 'restore-region', 'pixel-patch']);
 const fail = message => { throw Object.assign(new Error(message), { code: 'INVALID_IMAGE_EDIT' }); };
 
 function dimensions(pixels, width, height) {
@@ -172,14 +171,7 @@ export function applyLocalOperation({ pixels, width, height, mask, operation, re
   const output = new Uint8ClampedArray(pixels);
   const effectiveMask = new Uint8Array(mask);
   const type = operation.type;
-  if (type === 'metal-panel') {
-    const parsed = metalPanelOperationSchema.safeParse(operation);
-    if (!parsed.success) fail('金属板反光参数无效。');
-    const frame = rectangle(operation.frame, width, height), selected = selection.bounds;
-    if (selected.x < frame.x || selected.y < frame.y || selected.x + selected.width > frame.x + frame.width || selected.y + selected.height > frame.y + frame.height)
-      fail('板面选区超出反光参考框。');
-    paintMetalPanel(output, width, mask, operation);
-  } else if (type === 'clean-alpha') {
+  if (type === 'clean-alpha') {
     fields(operation, ['type', 'threshold']);
     const threshold = integer(operation.threshold ?? 1, 0, 16, 'threshold');
     for (let index = 0; index < count; index++) if (mask[index] && pixels[index * 4 + 3] > 0 && pixels[index * 4 + 3] <= threshold) output.fill(0, index * 4, index * 4 + 4);
@@ -273,5 +265,5 @@ export function applyLocalOperation({ pixels, width, height, mask, operation, re
   let alphaPreserved = true;
   for (let index = 0; index < count; index++) if (pixels[index * 4 + 3] !== output[index * 4 + 3]) { alphaPreserved = false; break; }
   return { pixels: output, effectiveMask, changedPixelCount: summary.count, bounds: summary.bbox, alphaPreserved,
-    supportedConstraints: { preserveDimensions: true, preserveOutsideEffectiveMask: true, preserveAlpha: type === 'metal-panel' || type === 'palette-map' || type === 'replace-color' || (type === 'clean-alpha' && (operation.threshold ?? 1) === 0) || (type === 'pixel-patch' && alphaPreserved), regionScope: type === 'translate' ? 'source-and-destination' : 'selected-region' } };
+    supportedConstraints: { preserveDimensions: true, preserveOutsideEffectiveMask: true, preserveAlpha: type === 'palette-map' || type === 'replace-color' || (type === 'clean-alpha' && (operation.threshold ?? 1) === 0) || (type === 'pixel-patch' && alphaPreserved), regionScope: type === 'translate' ? 'source-and-destination' : 'selected-region' } };
 }

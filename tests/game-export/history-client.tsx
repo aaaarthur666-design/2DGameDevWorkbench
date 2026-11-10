@@ -8,15 +8,15 @@ import '../../components/workbench/workbench.css';
 const fixtures: GameDelivery[] = Array.from({ length: 25 }, (_, index) => ({
   deliveryId: `delivery-${index.toString(16).padStart(32, '0')}`,
   title: `验收交付 ${index + 1}`,
-  kind: index === 0 ? 'scene' : 'animation',
+  kind: index === 0 ? 'interactable' : 'animation',
   status: index === 0 ? 'integrated' : index === 1 ? 'needs_attention' : 'awaiting_agent',
   project: { name: '示例游戏', path: '/fixture-only/unavailable-game' },
   createdAt: new Date(Date.UTC(2026, 0, 25 - index)).toISOString(),
   updatedAt: new Date(Date.UTC(2026, 1, 25 - index)).toISOString(),
   inboxPath: `/fixture-only/unavailable-game/forge_imports/${index}`,
   packageSha256: 'a'.repeat(64), packageId: `test-${index}`,
-  package: { kind: index === 0 ? 'scene' : 'animation', details: { animation: 'idle', frameCount: 8, fps: 12, loop: true } },
-  integration: index === 0 ? { summary: '已接入门与拉杆，保存了验收结果。', files: [{ path: 'scenes/castle.tscn', sha256: 'a'.repeat(64) }], engine: { status: 'passed', version: '4.7.1', baselineValidated: true, evidence: '此内容仅为界面测试数据。' } } : index === 1 ? { summary: '示例：接线需要继续处理。', engine: { status: 'failed', evidence: '示例错误：节点路径已变化。' } } : null,
+  package: { kind: index === 0 ? 'interactable' : 'animation', details: { animation: 'idle', frameCount: 8, fps: 12, loop: true } },
+  integration: index === 0 ? { summary: '已接入门与拉杆，保存了验收结果。', files: [{ path: 'addons/workbench_interaction/packages/fixture/door.tscn', sha256: 'a'.repeat(64) }], engine: { status: 'passed', version: '4.7.1', baselineValidated: true, evidence: '此内容仅为界面测试数据。' } } : index === 1 ? { summary: '示例：接线需要继续处理。', engine: { status: 'failed', evidence: '示例错误：节点路径已变化。' } } : null,
 }));
 const requests: string[] = [];
 let failNextList = false;

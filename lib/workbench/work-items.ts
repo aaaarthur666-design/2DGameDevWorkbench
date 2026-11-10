@@ -118,7 +118,7 @@ export function taskWorkItems(
   )) {
     const input = task.input || {};
     const moduleId = task.capabilityId === 'image-assets'
-      ? input.operation === 'generate-prop' || input.kind === 'prop' ? 'interactable-editor' : 'map-stitcher'
+      ? 'interactable-editor'
       : task.capabilityId;
     const capabilityModule = modules.find((m) => m.id === moduleId);
     if (!capabilityModule) continue;

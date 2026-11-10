@@ -6,15 +6,15 @@ import {
 } from '../../features/image-assets/browser-client.mjs';
 import { readImagePropAsset, applyPropArt } from '../../features/interactable-editor/prop-art.mjs';
 import { createProject } from '../../features/interactable-editor/contract.mjs';
-import { createMapProjectPackage, readMapProjectPackage } from '../../features/map-stitcher/project-package.mjs';
-import { mapProjectFixture } from '../helpers/map-project.mjs';
+import { buildGodotPackage } from '../../features/interactable-editor/godot-builder.mjs';
+import { readSourcePackage } from '../../features/interactable-editor/source-package.mjs';
 
 const png = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: '#00000000' } })
   .composite([{ input: await sharp({ create: { width: 40, height: 60, channels: 4, background: '#f6b63f' } }).png().toBuffer(), left: 480, top: 470 }]).png().toBuffer();
 const sha256 = createHash('sha256').update(png).digest('hex');
 let taskId = 'image-prop-fixture', kind = 'prop', status = 'completed', tamper = false, width = 1024, transparent = true, local = false;
 const calls = [];
-const task = () => ({ id: taskId, capabilityId: 'image-assets', status, input: { operation: local ? 'process-image' : kind === 'prop' ? 'generate-prop' : 'generate-background', ...(local ? { kind } : {}), name: '宝箱' }, outputs: [`outputs/image-assets/${taskId}/image.png`, `outputs/image-assets/${taskId}/result.json`] });
+const task = () => ({ id: taskId, capabilityId: 'image-assets', status, input: { operation: local ? 'process-image' : kind === 'prop' ? 'generate-prop' : 'edit-image', ...(local || kind !== 'prop' ? { kind } : {}), name: '宝箱' }, outputs: [`outputs/image-assets/${taskId}/image.png`, `outputs/image-assets/${taskId}/result.json`] });
 const request = async (url, options) => {
   calls.push([url, options?.method || 'GET']);
   if (url.startsWith('/api/workbench/tasks/')) return Response.json({ task: task() });
@@ -24,6 +24,7 @@ const request = async (url, options) => {
   throw new Error(`Unexpected request: ${url}`);
 };
 assert.equal(imageAssetKind(task()), 'prop');
+assert.equal(imageAssetKind({ capabilityId: 'image-assets', input: { operation: 'generate-background' } }), undefined);
 assert.match(imageAssetPath(task()), /image\.png$/);
 const image = await readImageAsset(taskId, 'prop', request);
 assert.deepEqual(image.generation, { sourceTaskId: taskId, sha256 });
@@ -64,11 +65,10 @@ await assert.rejects(readImageAsset(taskId, 'background', request), /已完成/)
 assert(calls.every(([, method]) => method === 'GET'), 'adoption never submits generation');
 assert.match(await imageReferenceUpload(new File([png], 'ref.png', { type: 'image/png' })), /^data:image\/png;base64,/);
 await assert.rejects(imageReferenceUpload(new File(['no'], 'ref.svg', { type: 'image/svg+xml' })), /PNG/);
-const { draft } = await mapProjectFixture(png);
-draft.snapshot.tiles[0].images.overall.generation = image.generation;
-const archive = await createMapProjectPackage(draft);
-const restored = await readMapProjectPackage(archive);
-assert.deepEqual(restored.draft.snapshot.tiles[0].images.overall.generation, image.generation);
-draft.snapshot.tiles[0].images.overall.generation = { ...image.generation, sha256: '0'.repeat(64) };
-await assert.rejects(createMapProjectPackage(draft), /已变化/);
-console.log('Image-assets frontend adoption: variable-size transparent props, exact task/type, SHA and dimensions, target guards, reference uploads and map provenance roundtrip passed. No paid generation.');
+const archive = await buildGodotPackage({ project: adopted });
+const restored = await readSourcePackage(archive.bytes);
+assert.deepEqual(restored.assets.find(item => item.id === asset.id).generation, image.generation);
+const changed = structuredClone(adopted);
+changed.assets.find(item => item.id === asset.id).generation.sha256 = '0'.repeat(64);
+await assert.rejects(buildGodotPackage({ project: changed }), /已变化/);
+console.log('Image-assets frontend adoption: variable-size transparent props, exact task/type, SHA and dimensions, target guards, reference uploads and interactable provenance roundtrip passed. No paid generation.');

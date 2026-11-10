@@ -4,14 +4,14 @@ import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { loadManifest, persistTask, repositoryRoot } from '../../lib/workbench/runtime.mjs';
-import { SceneWorkflowStore } from '../../lib/workbench/scene-workflow-store.mjs';
+import { storage, sessionFile, saveSession } from '../../lib/workbench/image-edit-store.mjs';
 
-async function verifyCommit(file, save) {
+async function verifyCommit(file, save, lockMs = 650) {
   await save('running');
   const original = fs.rename;
   const status = async () => JSON.parse(await fs.readFile(file, 'utf8')).status;
   let failures = 0;
-  const lockedUntil = Date.now() + 650;
+  const lockedUntil = Date.now() + lockMs;
   try {
     fs.rename = async (from, to) => {
       if (to === file && Date.now() < lockedUntil) {
@@ -45,8 +45,7 @@ if (process.platform === 'win32') {
   const id = 'commit-fixture';
   const file = path.resolve(repositoryRoot, manifest.workspace.taskDirectory, id + '.json');
   await verifyCommit(file, status => persistTask(manifest, { id, status }));
-  const store = new SceneWorkflowStore(repositoryRoot, manifest);
-  const sceneFile = path.join(store.directory(id), 'task.json');
-  await verifyCommit(sceneFile, status => store.write(sceneFile, { id, status }));
-  console.log('Windows task and scene snapshot recovery: transient lock, readable prior state and non-retryable failure passed. No provider calls.');
+  const directory = storage(repositoryRoot, manifest);
+  await verifyCommit(sessionFile(directory, id), status => saveSession(repositoryRoot, directory, { editId: id, status }), 250);
+  console.log('Windows task and image session snapshot recovery: transient lock, readable prior state and non-retryable failure passed. No provider calls.');
 } else console.log('Windows commit recovery: not applicable on this platform.');

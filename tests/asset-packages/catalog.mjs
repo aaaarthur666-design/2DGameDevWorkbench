@@ -5,11 +5,7 @@ import JSZip from 'jszip';
 import sharp from 'sharp';
 import { createHash } from 'node:crypto';
 import { createImportFixtures } from '../asset-import/fixtures.mjs';
-import { mapProjectFixture } from '../helpers/map-project.mjs';
 import { loadManifest, repositoryRoot } from '../../lib/workbench/runtime.mjs';
-import { saveMapProject } from '../../lib/workbench/map-projects.mjs';
-import { readMapProjectPackage } from '../../features/map-stitcher/project-package.mjs';
-import { readScenePackage } from '../../features/scene-composer/package.mjs';
 import { createObject } from '../../features/interactable-editor/contract.mjs';
 import { buildAssetArchive, buildAssetImport, getAsset, listAssets, manageAssets, readAssetPreview, readAssetGodotPackage } from '../../lib/workbench/asset-catalog.mjs';
 import { inspectAssetPackage, commitAssetPackages } from '../../lib/workbench/asset-packages.mjs';
@@ -20,13 +16,11 @@ const sourceRun = process.env.WORKBENCH_TEST_RUN;
 const fixture = await createImportFixtures();
 let closed = false;
 try {
-  const project = await mapProjectFixture(await sharp(fixture.png).resize(16, 16).png().toBuffer());
-  await saveMapProject(repositoryRoot, fixture.manifest, project.draft.id, 0, project.bytes);
-  const ids = [...Object.values(fixture.ids), `map-project:${project.draft.id}`];
+  const ids = Object.values(fixture.ids);
   const download = await buildAssetArchive(fixture.manifest, { assetIds: ids });
   const zip = await JSZip.loadAsync(download.bytes);
   const manifest = JSON.parse(await zip.file('forge-assets.json').async('string'));
-  assert.equal(manifest.entries.length, 7, 'six kinds plus distinct map project/image');
+  assert.equal(manifest.entries.length, 4, 'four retained asset kinds');
   assert.equal(manifest.entries.find((entry) => entry.kind === 'animation').metadata.loop, false);
   const animationMetadata = manifest.entries.find((entry) => entry.kind === 'animation').metadata;
   animationMetadata.frameDurations = [1, 2.5];
@@ -42,14 +36,14 @@ try {
   const destination = await loadManifest();
   assert.equal((await listAssets(destination, {})).total, 0);
   const inspected = await inspectAssetPackage(repositoryRoot, destination, { bytes: sourceBytes, filename: 'forge-assets.zip' });
-  assert.equal(inspected.candidates.length, 7);
+  assert.equal(inspected.candidates.length, 4);
   assert(inspected.candidates.every((candidate) => candidate.status !== 'incomplete'), JSON.stringify(inspected.candidates));
   const request = { commandId: 'catalog-roundtrip', selections: inspected.candidates.map((candidate) => ({ inspectionId: inspected.inspectionId, candidateId: candidate.id, parameters: {} })) };
   const committed = await commitAssetPackages(repositoryRoot, destination, request);
-  assert.equal(committed.importedCount, 7);
+  assert.equal(committed.importedCount, 4);
   assert.deepEqual(await commitAssetPackages(repositoryRoot, destination, request), committed);
   const catalog = await listAssets(destination, { limit: 100 });
-  assert.equal(catalog.total, 7);
+  assert.equal(catalog.total, 4);
   assert(catalog.assets.every((asset) => asset.origin === 'imported-package' && asset.engineValidated === false));
   assert.equal(catalog.coverage.nativeAvailable, false);
   assert.equal(catalog.coverage.runtimeRecords, 0);
@@ -60,28 +54,18 @@ try {
     assert.equal(asset.status, 'saved');
     assert.equal(asset.readiness.godotPackageAvailable, false, 'fixture has no authoritative Godot package');
     await assert.rejects(readAssetGodotPackage(destination, { assetId: asset.id, revision: asset.revision }), /Godot 包/);
-    const purpose = record.kind === 'map' ? 'map' : record.kind === 'interactable' ? 'interactable' : record.kind === 'scene' ? 'scene' : record.kind === 'animation' ? 'animation' : 'image';
+    const purpose = record.kind === 'interactable' ? 'interactable' : record.kind === 'animation' ? 'animation' : 'image';
     const reuse = await buildAssetImport(destination, { assetId: asset.id, revision: asset.revision, purpose });
     const importedZip = await JSZip.loadAsync(reuse.bytes);
     const info = JSON.parse(await importedZip.file('import.json').async('string'));
     assert.equal(info.editableCopy.sourceAssetId, asset.id);
     const sourceFile = await importedZip.file(info.files[0].path).async('nodebuffer');
-    if (record.kind === 'map' && record.mapType === 'project') {
-      const copy = await readMapProjectPackage(sourceFile);
-      assert.notEqual(copy.draft.id, project.draft.id);
-      assert.deepEqual(copy.draft.snapshot, (await readMapProjectPackage(project.bytes)).draft.snapshot);
-      assert.deepEqual(copy.draft.pending, project.draft.pending);
-      assert((await readAssetPreview(destination, asset.id)).bytes.length);
-    } else if (record.kind === 'interactable') {
+    if (record.kind === 'interactable') {
       const copy = JSON.parse(sourceFile);
       assert.notEqual(copy.projectId, fixture.project.projectId);
       assert.equal(copy.objects[0].definitionId, fixture.object.definitionId);
       assert.deepEqual(copy.objects[0].behavior, fixture.object.behavior);
       assert((await readAssetPreview(destination, asset.id)).bytes.length);
-    } else if (record.kind === 'scene') {
-      const copy = await readScenePackage(sourceFile);
-      assert.notEqual(copy.id, fixture.scene.id);
-      assert.deepEqual(copy.map.collisions, fixture.scene.map.collisions);
     } else if (record.kind === 'animation') {
       assert.equal(info.asset.fps, 12); assert.equal(info.asset.loop, false);
       assert.deepEqual(info.asset.frameDurations, [1, 2.5]);
@@ -103,16 +87,14 @@ try {
     }
   }
   const imagePage = await listAssets(destination, { purposes: 'image', limit: 1 });
-  assert.equal(imagePage.total, 3, 'server filters eligible pictures before pagination');
+  assert.equal(imagePage.total, 2, 'server filters eligible pictures before pagination');
   assert.equal(imagePage.assets.length, 1);
   const next = await listAssets(destination, { purposes: ['image'], limit: 2, offset: 1, snapshot: imagePage.snapshot });
-  assert.equal(next.assets.length, 2); assert.equal(next.nextOffset, null);
-  const projected = await listAssets(destination, { purposes: 'image', mapType: 'project' });
-  assert.equal(projected.total, 0, 'map projects cannot masquerade as image sources');
+  assert.equal(next.assets.length, 1); assert.equal(next.nextOffset, null);
   const downloaded = await buildAssetArchive(destination, { assetIds: records.map((record) => record.id) });
   const again = await JSZip.loadAsync(downloaded.bytes);
   const againManifest = JSON.parse(await again.file('forge-assets.json').async('string'));
-  assert.equal(againManifest.entries.length, 7);
+  assert.equal(againManifest.entries.length, 4);
   const animationAgain = againManifest.entries.find((entry) => entry.kind === 'animation').metadata;
   assert.deepEqual(animationAgain.frameDurations, [1, 2.5]);
   assert.deepEqual(animationAgain.anchor, [64, 120]);
@@ -122,12 +104,12 @@ try {
   assert(inspectedAgain.candidates.every((candidate) => candidate.status !== 'incomplete'), JSON.stringify(inspectedAgain.candidates));
   const reused = await commitAssetPackages(repositoryRoot, destination, { commandId: 'reexport-reimport', selections: inspectedAgain.candidates.map((candidate) => ({ inspectionId: inspectedAgain.inspectionId, candidateId: candidate.id, parameters: {} })) });
   assert.equal(reused.importedCount, 0, 'redownloading/importing unchanged sources must reuse their content');
-  assert.equal(reused.reusedCount, 7);
+  assert.equal(reused.reusedCount, 4);
   await manageAssets(destination, { operation: 'trash', assetIds: records.map((record) => record.id) });
   assert.equal((await listAssets(destination, {})).total, 0);
-  assert.equal((await listAssets(destination, { scope: 'trashed' })).total, 7);
+  assert.equal((await listAssets(destination, { scope: 'trashed' })).total, 4);
   await manageAssets(destination, { operation: 'restore', assetIds: records.map((record) => record.id) });
-  assert.equal((await listAssets(destination, {})).total, 7);
+  assert.equal((await listAssets(destination, {})).total, 4);
   const multi = structuredClone(fixture.project);
   multi.objects.push(createObject('toggle'));
   const objectSelection = await inspectAssetPackage(repositoryRoot, destination, { bytes: Buffer.from(JSON.stringify(multi)), filename: 'multi-object.json' });
@@ -153,7 +135,7 @@ try {
   const engineAsset = (await getAsset(destination, { assetId: engineCommit.assets[0].id })).asset;
   assert.equal(engineAsset.readiness.godotPackageAvailable, true);
   assert.deepEqual((await readAssetGodotPackage(destination, { assetId: engineAsset.id, revision: engineAsset.revision })).bytes, engineBytes);
-  console.log('Catalog roundtrip passed: seven assets/six kinds, fresh isolated workspace, offline files/previews/downloads/trash, exact playback, editable identity copies, source byte hashes, and filtering before pagination.');
+  console.log('Catalog roundtrip passed: four assets/four kinds, fresh isolated workspace, offline files/previews/downloads/trash, exact playback, editable identity copies, source byte hashes, and filtering before pagination.');
 } finally {
   process.env.WORKBENCH_TEST_RUN = sourceRun;
   if (!closed) await fixture.close();

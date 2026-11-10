@@ -38,12 +38,8 @@ export function ContextHelp() {
   const { tool, name } = currentWorkbenchPage(wb.pathname);
   const help = tool?.id === 'sprite-generator'
     ? '选择角色并描述动作，确认方案后开始制作。最近动作只列出当前动作流程；顶部“制作记录”可查看各工具作品。'
-    : tool?.id === 'map-stitcher'
-      ? '新建地图工程，生成或打开地图原图，也可从资产库选用地图。添加图块和区域后，下载源文件备份或导出 Godot。'
       : tool?.id === 'interactable-editor'
         ? '新建或打开工程，先添加物件外观，再配置状态、行为和碰撞。已有图片、动画和交互物项目可从资产库选用。'
-        : tool?.id === 'scene-composer'
-          ? '新建或打开场景，先从资产库选用地图和交互物，再摆放实例、配置联动并导出。打开源工程可继续编辑。'
           : tool?.id === 'reference-art'
             ? '描述角色外观并生成原图，检查后采用。已有角色原图也可直接进入角色动画制作。'
             : wb.pathname === '/assets'

@@ -151,15 +151,15 @@ try {
     throw new Error('Prepared task could not be read back.');
   }
 
-  const beforeManual = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
+  const beforeUnknown = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
   assert(!capabilities.structuredContent.capabilities.some((c) => c.id === 'map-stitcher'));
   for (const name of ['workbench_prepare_task', 'workbench_run_task', 'workbench_describe_capability']) {
     const blocked = await client.callTool({ name, arguments: { capabilityId: 'map-stitcher', ...(name === 'workbench_describe_capability' ? {} : { input: { operation: 'compose' } }) } });
     assert(blocked.isError);
-    assert.match(blocked.content[0].text, /manual frontend/);
+    assert.match(blocked.content[0].text, /Unknown capability/);
   }
-  const afterManual = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
-  assert.deepEqual(afterManual.structuredContent, beforeManual.structuredContent);
+  const afterUnknown = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
+  assert.deepEqual(afterUnknown.structuredContent, beforeUnknown.structuredContent);
   for (const kind of ['inspect', 'toggle', 'pickup', 'sequence']) {
     const candidate = await client.callTool({ name: 'workbench_interactable_template', arguments: { kind } });
     assert(!candidate.isError);
@@ -169,7 +169,7 @@ try {
   assert(!template.isError);
   assert.equal(template.structuredContent.createsTask, false);
   assert.equal(template.structuredContent.project.objects[0].behavior.kind, 'toggle');
-  assert.deepEqual((await client.callTool({ name: 'workbench_list_tasks', arguments: {} })).structuredContent, beforeManual.structuredContent);
+  assert.deepEqual((await client.callTool({ name: 'workbench_list_tasks', arguments: {} })).structuredContent, beforeUnknown.structuredContent);
   const project = template.structuredContent.project;
   project.objects[0].content.prompt = '按 E 开门';
   const saved = await client.callTool({ name: 'workbench_run_task', arguments: { capabilityId: 'interactable-editor', input: { operation: 'save-project', project } } });

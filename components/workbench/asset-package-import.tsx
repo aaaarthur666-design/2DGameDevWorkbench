@@ -7,7 +7,7 @@ import { publishEditorSession, removeEditorSession } from '@/lib/workbench/edito
 import { packageSelectionKey as keyFor, packageSelections, remainingPackageChoices, type Parameters, type Inspection, type Submission, type Receipt } from '@/lib/workbench/asset-package-selection';
 const recoveryKey = 'forge-package-import-recovery-v1';
 const statuses = { editable: '可完整编辑', material: '仅素材可用', 'needs-input': '需要补充信息', incomplete: '文件不完整' };
-const kinds: Record<string, string> = { character: '角色原图', prop: '物品原图', animation: '动画', map: '地图', interactable: '交互物', scene: '场景' };
+const kinds: Record<string, string> = { character: '角色原图', prop: '物品原图', animation: '动画', interactable: '交互物' };
 
 function PackageCandidatePreview({ url, frames, fps, loop, durations }: { url: string; frames: number; fps?: number; loop?: boolean; durations?: number[] }) {
   const [frame, setFrame] = useState(0);
@@ -161,7 +161,7 @@ export function AssetPackageImport({ onClose, onImported }: { onClose: () => voi
           {inspection.candidates.map(candidate => {
             const key = keyFor(inspection.inspectionId, candidate.id), value = choices[key] || {};
             return <fieldset key={key} disabled={disabled || candidate.status === 'incomplete'} style={{ padding: '16px 0', borderBottom: '1px solid var(--wb-line)' }}>
-              <label><input type="checkbox" checked={selected.includes(key)} onChange={event => toggle(key, event.target.checked)} /> {candidate.label} · {candidate.mapType === 'project' ? '地图工程' : kinds[candidate.kind] || candidate.kind} · {statuses[candidate.status]}</label>
+              <label><input type="checkbox" checked={selected.includes(key)} onChange={event => toggle(key, event.target.checked)} /> {candidate.label} · {kinds[candidate.kind] || candidate.kind} · {statuses[candidate.status]}</label>
               {candidate.previewUrl && <PackageCandidatePreview key={candidate.previewUrl + String(value.fps) + String(value.loop)} url={candidate.previewUrl} frames={candidate.frameCount || candidate.metadata?.frameCount || 1} fps={value.fps} loop={value.loop} durations={candidate.metadata?.frameDurations} />}
               <p>{candidate.recoverable.join('；')}</p>
               {candidate.duplicate && <p>{candidate.duplicate.exact ? '相同素材已存在，将复用已有资产。' : '同来源存在不同内容，将保留原件并创建副本。'}</p>}

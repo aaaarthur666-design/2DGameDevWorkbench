@@ -65,7 +65,7 @@ export function AgentFollow() {
         if (!request || stopped || document.visibilityState !== 'visible' || request.expiresAt < Date.now()) return;
         const target = new URL(request.viewPath, location.origin);
         const routes = ['/', '/advanced', manifest.agentAssets.assetCatalog.route, ...manifest.productionLines.map((p) => p.href),
-          ...manifest.capabilities.map((c) => c.ui.route), ...manifest.editorModules.map((m) => m.ui.route)];
+          ...manifest.capabilities.map((c) => c.ui.route)];
         if (target.origin !== location.origin || !routes.includes(target.pathname)) throw new Error('Invalid page target');
         active = true; store(KEY + '.active', 'true');
         setStep(request);

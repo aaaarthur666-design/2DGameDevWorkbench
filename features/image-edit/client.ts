@@ -3,24 +3,18 @@ import type { PixelSpan } from './pixel-controller.mjs';
 import type { Interactable } from '../interactable-editor/contract.mjs';
 
 export type ImageTargetRef =
-  | { kind: 'map-layer'; projectId: string; tileKey: string; layer: 'overall' | 'surface' | 'object' | 'black' | 'white' }
   | { kind: 'interactable'; documentId: string; definitionId: string; slot?: 'visual' | 'toggle-state' | 'sequence-entry'; index?: number }
-  | { kind: 'image-task'; taskId: string }
-  | { kind: 'scene-layer'; documentId: string; layerId: string }
-  | { kind: 'scene-split-part'; documentId: string; elementId: string; partId: string; window?: { x:number; y:number; width:number; height:number } }
-  | { kind: 'scene-instance'; documentId: string; instanceId: string; slot?: 'visual' | 'toggle-state' | 'sequence-entry'; index?: number };
+  | { kind: 'image-task'; taskId: string };
 export interface ImageTargetInfo {
   targetId: string; targetRef: ImageTargetRef; revision: number | string; sha256: string; rgbaSha256: string;
   width: number; height: number; editable: boolean; locked: boolean; kind: 'prop' | 'background'; name: string;
   placement?: { width: number; height: number; x: number; y: number; flipH: boolean; flipV: boolean };
   slotFingerprint?: string; readOnlyReason?: string; source?: Record<string, unknown>; willStopDefaultAnimations?: boolean;
-  scope?: 'single-instance' | 'scene-snapshot-layer' | 'scene-split-part'; affectedInstanceIds?: string[]; sharedInstanceCount?: number;
-  sourceEntry?: { kind?: string; documentId?: string; layerId?: string; sourceField?: string; filename?: string; format?: string; sha256?: string; viewPath?: string; action?: string };
   aiEdit?: { supported: boolean; reason?: string; code?: string; provider: string; model?: string; width: number; height: number; minPixels: number; maxPixels: number; maxEdge: number; dimensionStep: number; maxAspectRatio: number; maxReferences: number; maxImageBytes: number; maxTotalImageBytes: number; constraints: { preserveOutsideRegion: true; preserveDimensions: true; preserveAlpha: boolean }; alphaPreservation?: 'copy-edit-base-alpha' };
 }
 export interface ImageAdoptionReceipt {
   target: ImageTargetInfo; revision: number | string; currentRevision: number | string; replayed?: boolean;
-  adoption: { status: 'adopted' | 'saved_variant'; targetId?: string; sourceTaskId?: string; sha256: string; revision?: number | string; commandId: string; documentId?: string; definitionId?: string; slot?: string; index?: number; assetId?: string; sourceChanged?: boolean; previewInvalidated?: boolean; scope?: 'single-instance' | 'scene-snapshot-layer' | 'scene-split-part'; affectedInstanceIds?: string[]; sharedInstanceCount?: number };
+  adoption: { status: 'adopted' | 'saved_variant'; targetId?: string; sourceTaskId?: string; sha256: string; revision?: number | string; commandId: string; documentId?: string; definitionId?: string; slot?: string; index?: number; assetId?: string; sourceChanged?: boolean; previewInvalidated?: boolean };
 }
 export interface ImageEditContextLayer { id?: string; url: string; x?: number; y?: number; width: number; height: number; opacity?: number; target?: boolean }
 export interface ImagePixels {
@@ -29,8 +23,8 @@ export interface ImagePixels {
 }
 export interface ImageCandidate {
   visualReviewRefs?:string[];
-  attributePlan?: {planRef:string;part:string;policy:Record<string,string>;successCriteria:string[];referenceManifest?:{slot:number;role:'user-reference'|'rgb-control'|'diffuse-shading'|'clean-crop';width:number;height:number}[]};
-  intrinsicEvidence?: {route:string;clippedChannels:number;assessment?:{eligible:boolean;errorP90:number;uncertaintyP90:number}};
+  attributePlan?: {planRef:string;part:string;policy:Record<string,string>;successCriteria:string[];referenceManifest?:{slot:number;role:'user-reference'|'rgb-control'|'clean-crop';width:number;height:number}[]};
+  recolorEvidence?: {route:string;clippedChannels:number;changedPixels:number};
   reviews?: {verdict:string;reviewer:string;reviewerType:string;targetAchieved:boolean|null;preservedContent:boolean|null;boundaryAndAlpha:boolean|null}[];
   version: string; taskId?: string; status: string; createdAt: string; error?: string; derivedState?: boolean;
   operation: { type: string }; sha256?: string; rgbaSha256?: string; baseCandidateVersion?: string; previewPath?: string;
@@ -41,7 +35,6 @@ export interface ImageCandidate {
 export interface ImageCandidateDiff { changedPixelCount: number; changedOutsideRegion: number; alphaChangedPixelCount: number }
 export interface ImageEditSession {
   partContexts?: {partRef:string;baseCandidateVersion:string;expectedEditRevision:number}[];
-  analyses?:{analysisId:string;baseCandidateVersion:string;baseSha256:string}[];
   editId: string; revision: number; target: ImageTargetInfo; source: { sha256: string; rgbaSha256: string };
   comparison?: { editId: string; baseCandidateVersion: string; candidateVersion: string; targetRevision: number | string;
     baseSha256: string; candidateSha256: string; width: number; height: number; viewport: { x: number; y: number; width: number; height: number };
@@ -58,7 +51,6 @@ export interface ImageInspection extends Partial<ImagePixels> {
   historyOnly?: boolean;
 }
 export type ImageLocalOperation =
-  | import('./metal-panel.mjs').MetalPanelOperation
   | { type: 'clean-alpha'; threshold: number }
   | { type: 'palette-map'; pairs: { from: string; to: string }[] }
   | { type: 'replace-color'; from: string; to: string }
@@ -69,9 +61,8 @@ export type ImageLocalOperation =
   | { type: 'pixel-patch'; baseRgbaSha256: string; spans: { startPixel: number; beforeRgbaBase64: string; afterRgbaBase64: string }[] };
 export type ImageAiOperation = { type: 'ai-edit'; prompt: string; references?: string[] };
 type ImageRecomposeOperation = { type: 'recompose-ai'; candidateVersion: string; rawSha256: string };
-export type RecolorSurface = 'diffuse'|'reflective'|'emissive'|'translucent'|'unknown';
 export type SimpleColorMapping = 'rgb'|'luminance';
-export type ImageAttributeOperation = {type:'intrinsic-recolor';analysisId:string;from:string;to:string;fallback:'stop'|'simple';surface?:RecolorSurface;fallbackMapping?:SimpleColorMapping} | {type:'color-map';from:string;to:string;mapping?:SimpleColorMapping};
+export type ImageAttributeOperation = {type:'color-map';from:string;to:string;mapping?:SimpleColorMapping};
 export type ImageEditOperation = ImageLocalOperation | ImageAiOperation | ImageAttributeOperation | ImageRecomposeOperation;
 export interface ImageAiReference { id: string; name: string; source: string; bytes: number }
 export const IMAGE_AI_REFERENCE_LIMITS = Object.freeze({ count: 8, perImageBytes: 30 * 1024 * 1024, totalBytes: 32 * 1024 * 1024 });
@@ -161,17 +152,13 @@ export function mergeImageWorkspaceRefresh<TController>(current: ImageWorkspaceS
 export interface ImageSessionBootstrap { commandId: string; createInput?: ReturnType<typeof imageSessionInput>; editId?: string }
 export function imageTargetEquals(left: ImageTargetRef, right: ImageTargetRef) {
   const normalize = (ref: ImageTargetRef) => {
-    const normalized = ref.kind === 'scene-split-part' && ref.window
-      ? { ...ref, window: [ref.window.x, ref.window.y, ref.window.width, ref.window.height] }
-      : ['interactable', 'scene-instance'].includes(ref.kind)
-        ? { ...ref, slot: 'slot' in ref ? ref.slot || 'visual' : 'visual' }
-        : ref;
+    const normalized = ref.kind === 'interactable' ? { ...ref, slot: ref.slot || 'visual' } : ref;
     return JSON.stringify(Object.entries(normalized).filter(([, value]) => value !== undefined).sort(([first], [second]) => first.localeCompare(second)));
   };
   return normalize(left) === normalize(right);
 }
-export function imageSlotChoices(object: Interactable, scene = false) {
-  const choices: { value: string; slot: 'visual' | 'toggle-state' | 'sequence-entry'; index?: number; label: string; available: boolean; reason?: string }[] = [{ value: 'visual', slot: 'visual', label: '默认图片', available: !!object.visual.assetId && !(scene && (object.visual.idleAnimation || object.visual.focusAnimation)), reason: !object.visual.assetId ? '没有静态源图片' : scene && (object.visual.idleAnimation || object.visual.focusAnimation) ? '场景默认外观使用动画，只读' : undefined }];
+export function imageSlotChoices(object: Interactable) {
+  const choices: { value: string; slot: 'visual' | 'toggle-state' | 'sequence-entry'; index?: number; label: string; available: boolean; reason?: string }[] = [{ value: 'visual', slot: 'visual', label: '默认图片', available: !!object.visual.assetId, reason: !object.visual.assetId ? '没有静态源图片' : undefined }];
   const entries = object.behavior.kind === 'toggle' ? object.behavior.states : object.behavior.kind === 'sequence' ? object.behavior.entries : [];
   entries.forEach((entry, index) => {
     const slot = object.behavior.kind === 'toggle' ? 'toggle-state' : 'sequence-entry';
@@ -179,33 +166,6 @@ export function imageSlotChoices(object: Interactable, scene = false) {
     choices.push({ value: `${slot}:${index}`, slot, index, label: `${slot === 'toggle-state' ? `${index ? 'B' : 'A'} 状态` : `第 ${index + 1} 步`} · ${entry.name}${entry.appearance.assetId ? '' : '（继承默认图）'}`, available: hasImage && !animated, reason: animated ? '此状态使用动画，只读' : !hasImage ? '没有静态源图片' : undefined });
   });
   return choices;
-}
-export function validateSceneImageReceipt(target: ImageTargetRef, receipt: ImageAdoptionReceipt) {
-  if (!['scene-instance', 'scene-layer','scene-split-part'].includes(target.kind) || !imageTargetEquals(target, receipt.target.targetRef) || typeof receipt.revision !== 'number' || receipt.currentRevision !== receipt.revision) throw new Error('已采用结果与选中的场景图片或共享版本不匹配。');
-  if (target.kind === 'scene-instance' && (receipt.adoption.scope !== 'single-instance' || receipt.adoption.affectedInstanceIds?.length !== 1 || receipt.adoption.affectedInstanceIds[0] !== target.instanceId)) throw new Error('实例采用作用域不匹配，未替换本机场景。');
-}
-export interface ImageSourceActionState { busy: boolean; pending: boolean; pixelDirty: boolean; aiDraftDirty: boolean; referencesLoading: boolean }
-export function imageSourceActionBlockReason(state: ImageSourceActionState, opensEditor: boolean) {
-  if (state.busy || state.pending || state.referencesLoading) return '请等待当前请求或参考图读取完成，再打开或下载源包。';
-  if (opensEditor && (state.pixelDirty || state.aiDraftDirty)) return '请先保存笔划并提交 AI 草稿，或关闭调整窗口并确认舍弃未保存内容，再打开源包。';
-  return '';
-}
-export async function performImageSourceAction(target: ImageTargetInfo, state: ImageSourceActionState, opensEditor: boolean, action: (target: ImageTargetInfo) => void | Promise<void>) {
-  const reason = imageSourceActionBlockReason(state, opensEditor);
-  if (reason) throw new Error(reason);
-  await action(target);
-}
-/** Verify the exact snapshot bytes that will be handed off, rather than a newer metadata label. */
-export async function verifiedSceneImageSource(target: ImageTargetInfo, snapshot: { id: string; revision: number | string; content: { map: { source: string; layers: { id: string }[] } | null } }) {
-  const ref = target.targetRef, entry = target.sourceEntry, map = snapshot.content.map;
-  if (ref.kind !== 'scene-layer' || !map || ref.documentId !== snapshot.id || entry?.documentId !== snapshot.id || entry.layerId !== ref.layerId || entry.kind !== 'embedded-map-source' || entry.sourceField !== 'map.source' || !map.layers.some(layer => layer.id === ref.layerId)) throw new Error('源包所属场景或图层不匹配；请关闭调整窗口并刷新宿主场景。');
-  if (target.revision !== snapshot.revision || !entry.sha256 || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw new Error('源包版本与当前宿主场景不一致；请关闭调整窗口并刷新宿主场景。');
-  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=\r\n]+)$/.exec(map.source);
-  if (!match) throw new Error('宿主未持有可验证的嵌入源包；请刷新宿主场景。');
-  const binary = atob(match[2]), bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-  if (await rgbaHash(bytes) !== entry.sha256) throw new Error('嵌入源包内容已变化，与当前图片来源证据不一致；请关闭调整窗口并刷新宿主场景。');
-  return { source: map.source, blob: new Blob([bytes], { type: match[1] }) };
 }
 export async function openImageSession(target: ImageTargetRef, attempt: ImageSessionBootstrap, create?: (input: ReturnType<typeof imageSessionInput>) => Promise<{ edit: ImageEditSession }>) {
   if (attempt.editId) {

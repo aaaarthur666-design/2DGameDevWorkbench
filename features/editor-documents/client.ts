@@ -1,4 +1,4 @@
-export type DocumentKind = 'scene' | 'interactable';
+export type DocumentKind = 'interactable';
 export interface SharedDocument<T = unknown> {
   id: string;
   kind: DocumentKind;
