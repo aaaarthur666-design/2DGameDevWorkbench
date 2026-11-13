@@ -9,6 +9,7 @@ from ..errors import ConflictError, ValidationHarnessError
 from ..models import CandidateStatus, utc_now
 from ..vision_evidence import image_part, raster
 from .review_inputs import prop_review_context, review_dimensions, observation_content, audit_content
+from .state_chain import confirmed_state, transition
 
 
 def checked_plan(job):
@@ -31,19 +32,24 @@ class Checkpoints:
             raise ValidationHarnessError('此任务没有对应的分段检查点')
         return self.s._candidate(job, index).plan_execution.stages[stage]
 
+    def snapshot_bytes(self, job_id, source):
+        try:
+            data = self.s.store.resolve_job_path(job_id, source['path']).read_bytes()
+        except FileNotFoundError as exc:
+            raise ConflictError('已确认的姿势快照缺失，停止后续生成') from exc
+        if hashlib.sha256(data).hexdigest() != source['sha256']:
+            raise ConflictError('已确认的姿势快照发生变化，停止后续生成')
+        return data
+
     def accepted_frames(self, job, index, stage):
         run = self.run_record(job, index, stage)
         if run.state != 'accepted' or not run.accepted:
             raise ConflictError('前一片段尚未确认，不能将未经检查的姿势传入下一段')
-        data = []
-        for item in run.accepted['frames']:
-            path = self.s.store.resolve_job_path(job.job_id, item['path'])
-            payload = path.read_bytes()
-            if hashlib.sha256(payload).hexdigest() != item['sha256']:
-                raise ConflictError('已确认的姿势快照发生变化，停止后续生成')
-            data.append(payload)
+        data = [self.snapshot_bytes(job.job_id, item) for item in run.accepted['frames']]
         if not data or hashlib.sha256(data[-1]).hexdigest() != run.accepted['anchor_sha256']:
             raise ConflictError('实际姿势锚点与已确认片段不一致')
+        if run.state_checkpoint and self.snapshot_bytes(job.job_id, run.state_checkpoint) != data[-1]:
+            raise ConflictError('已确认的状态帧与过渡末帧不一致')
         return data
 
     def input_frame(self, job, index, stage):
@@ -53,6 +59,16 @@ class Checkpoints:
         if hashlib.sha256(data).hexdigest() != job.reference_sha256:
             raise ConflictError('原始参考图已改变')
         return data
+
+    def state_image(self, job, index, stage):
+        if not checked_plan(job) or not job.request.open_plan.plan.quality.interactable:
+            raise ValidationHarnessError('仅交互物作业登记状态图')
+        run = self.run_record(job, index, stage)
+        if run.accepted:
+            return self.accepted_frames(job, index, stage)[-1]
+        if run.state_checkpoint:
+            return self.snapshot_bytes(job.job_id, run.state_checkpoint)
+        raise ConflictError('本段尚无已确认状态图')
 
     def evidence(self, job, index, stage):
         from .execution import PlanGeneration
@@ -94,7 +110,9 @@ class Checkpoints:
             self.accepted_frames(job, index, stage)
             if run.accepted['token'] != evidence['token']:
                 raise ConflictError('片段原始内容已改变，已采用记录不能用于新内容')
-        return {**evidence, 'stage_index': stage, 'candidate_index': index, 'state': run.state,
+        edge = transition(job.request.open_plan.plan, stage)
+        return {**evidence, **({'transition': edge, 'state_image': confirmed_state(job.request.open_plan.plan, stage, run)} if edge else {}),
+                'stage_index': stage, 'candidate_index': index, 'state': run.state,
                 'definition': job.request.open_plan.plan.stages[stage].model_dump(mode='json'),
                 'fps': job.action.fps, 'review': run.review, 'accepted': run.accepted, 'state_checkpoint': run.state_checkpoint, 'repairs':run.repairs}
 
@@ -112,7 +130,7 @@ class Checkpoints:
         if run.state != 'complete': return
         evidence = self.evidence(job,index,stage)
         from .motion_evidence import measurements
-        prop_context = prop_review_context(job.request.open_plan)
+        prop_context = prop_review_context(job.request.open_plan, stage)
         metrics = measurements([self.s.store.resolve_job_path(job_id,f['path']).read_bytes() for f in evidence['frames']],job.action.fps, prop_context.get('interactable'),
             (self.s.store.job_dir(job_id) / 'input/reference.png'))
         from .prop_measurements import tracked_measurements, guard_measurements
@@ -212,9 +230,7 @@ class Checkpoints:
             if pinned and decision != 'reject':
                 if end != pinned['frame'] or evidence['frames'][end]['sha256'] != pinned['sha256']:
                     raise ConflictError('已确认的状态帧与所选锚点不一致')
-                payload = self.s.store.resolve_job_path(job_id, pinned['path']).read_bytes()
-                if hashlib.sha256(payload).hexdigest() != pinned['sha256']:
-                    raise ConflictError('已确认的状态帧快照发生变化')
+                self.snapshot_bytes(job_id, pinned)
             if decision == 'accept' and end < len(evidence['frames'])-1 and not acknowledge_trim:
                 raise ValidationHarnessError('选择提前到达的姿势时，须明确确认截取范围；原始尾帧会完整保留')
             if evidence['token'] != token:
@@ -251,7 +267,7 @@ class Checkpoints:
                 self.s._atomic_write_bytes(path, data)
                 with self.s.store.locked_job(job_id) as current:
                     self.run_record(current,index,stage).state_checkpoint = {
-                        'frame': end, 'raw_index': frame['raw_index'], 'sha256': frame['sha256'], 'token': token,
+                        **frame, 'frame': end, 'token': token,
                         'path': path.relative_to(self.s.store.job_dir(job_id)).as_posix(), 'note': note.strip(),
                         'reviewer': reviewer, 'accepted_at': utc_now(), 'acknowledge_warnings': acknowledge}
                     current.plan_control.enabled = False

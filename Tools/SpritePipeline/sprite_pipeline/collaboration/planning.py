@@ -155,7 +155,11 @@ transition (usable ordered movement to that state) and fixed_parts (preserved
 stationary appearance). For motion.support describe fixed mounting, for drive
 the changing component, and for orientation the prop view. Do not invent an
 actor, anatomy, equipment or character facing. Use segment-local observable
-waypoints. All decisions still require review on the real generated pixels.
+waypoints. For a state chain, plan one stage per transition. Name each intermediate
+state by its visible checkpoint.endpoint and describe only that transition in its
+drawing brief. The following stage starts at that confirmed state. The final
+stage reaches quality.interactable.target_state. All decisions still require
+review on the real generated pixels.
 """
 
 PROP_ROLES = {

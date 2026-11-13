@@ -216,7 +216,7 @@ class Adjustments:
                 'planning_calls':[],'generation_calls':[],'review_calls':[],'diagnostic':c.diagnostic_only,'seed':c.seed,
                 'message':'已保存修改任务，原版保持不变','source_goal':work.spec.description}
             from .review_inputs import prop_review_context
-            task.update(prop_review_context(job.request.open_plan))
+            task.update(prop_review_context(job.request.open_plan, body.stage_index))
             task['intent_format_version']=4
             task['comparison_protocol']=1
             # Keep the source work's frozen reviewer policy; a newer deployment

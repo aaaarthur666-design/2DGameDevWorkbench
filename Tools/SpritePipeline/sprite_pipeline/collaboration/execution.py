@@ -12,6 +12,7 @@ from ..jsonio import atomic_write_json, read_json
 from ..models import CandidateStatus, utc_now
 from ..providers.base import PollStatus, ProviderRequest
 from .checkpoints import Checkpoints, checked_plan
+from .state_chain import transition
 
 
 class PlanGeneration:
@@ -202,6 +203,9 @@ class PlanGeneration:
                                  'selected_anchor_frame':accepted.get('selected_anchor_frame'),
                                  'excluded_tail_count':len(accepted.get('excluded_tail',[])),
                                  'context_removed':accepted['context_removed'],'technical_only':False})
+                edge = transition(job.request.open_plan.plan, stage)
+                if edge:
+                    timeline[-1].update(edge, input_sha256=accepted['input_sha256'])
                 for item, data in zip(accepted['frames'],frames):
                     mapping.append({'frame':len(combined),'stage':stage,'raw_frame':item['raw_index'],
                                     **{k:item[k] for k in ('repair_attempt','repair_index') if k in item}})

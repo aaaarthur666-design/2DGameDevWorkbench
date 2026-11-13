@@ -101,6 +101,7 @@ export type MotionReview = MotionReviewOpinion & {
     };
 };
 export type MotionCandidate = {
+  state_chain?: {name: string; stage: number | null; raw_index?: number; sha256: string}[];
   quality_review?: MotionReview;
   candidate_index: number;
   status: string;

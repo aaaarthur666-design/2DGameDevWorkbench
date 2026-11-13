@@ -9,9 +9,19 @@ import json
 from .contracts import CHARACTER_DIMENSIONS, PROP_DIMENSIONS, prop_contract
 
 
-def prop_review_context(binding):
+def prop_review_context(binding, stage=None):
     contract = prop_contract(binding.plan)
-    return {'interactable': contract.model_dump(mode='json')} if contract else {}
+    if not contract:
+        return {}
+    value = contract.model_dump(mode='json')
+    if stage is not None and len(binding.plan.stages) > 1:
+        from .state_chain import transition
+        edge = transition(binding.plan, stage)
+        value.update(initial_state=edge['from_state'], target_state=edge['to_state'],
+                     endpoint=binding.plan.stages[stage].checkpoint.endpoint)
+        if stage < len(binding.plan.stages) - 1:
+            value.update(hold_frames=0, hold='Continue after checkpoint confirmation.')
+    return {'interactable': value}
 
 
 def review_dimensions(context):

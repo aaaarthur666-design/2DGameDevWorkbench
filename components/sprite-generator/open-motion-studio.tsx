@@ -983,7 +983,7 @@ function OpenMotionStudio({
                           <p>{s.goal}</p>
                           {s.checkpoint&&<p>确认姿势：{s.checkpoint.endpoint}</p>}
                           <p className="motion-muted">
-                            {i === 0 ? '从角色原图开始' : '接上一段末帧'} ·{' '}
+                            {i === 0 ? '从对象原图开始' : '接上一段已确认末帧'} ·{' '}
                             {s.last_frame === 'original'
                               ? '以原图作为终点参考'
                               : '保留本段要求的结束姿势'}
@@ -1091,6 +1091,7 @@ function OpenMotionStudio({
                           `open-motion/${work.id}/progress-image`,
                           {
                             candidate: String(candidateIndex),
+                            revision: String(work.revision),
                             v: String(work.job.revision),
                           },
                         )}
@@ -1099,7 +1100,7 @@ function OpenMotionStudio({
                     )}
                   </div>
                   <p className="motion-muted">
-                    显示原图或已保存片段的末帧。完整动画完成后进入播放检查。
+                    {work.spec.object_type === 'interactable' ? '已确认状态时显示状态图，待审片段显示原始末帧。' : '显示原图或已保存片段的末帧。'}完整动画完成后进入播放检查。
                   </p>
                 </section>}
                 <aside className="motion-card">
@@ -1107,6 +1108,7 @@ function OpenMotionStudio({
                   {work.job?.candidates.map((c) => (
                     <div key={c.candidate_index} className="motion-progress">
                       <h3>候选 {c.candidate_index}</h3>
+                      <StateImages work={work} candidate={c} />
                       {c.plan_execution.stages.map((s, i) => (
                         <p key={i}>
                           <span
@@ -1221,6 +1223,7 @@ function OpenMotionStudio({
                       readOnly={readOnly}
                     />
                   )}
+                  {candidate && <StateImages work={work} candidate={candidate} />}
                   {work.diagnostic_only && (
                     <div className="motion-notice">
                       诊断素材，仅用于验证工具链，不能作为模型生成效果。
@@ -1595,6 +1598,22 @@ function ExpertRecord({ work }: { work: MotionWork }) {
       </div>
     </details>
   );
+}
+
+function StateImages({work, candidate}: {work: MotionWork; candidate: MotionCandidate}) {
+  if (!candidate.state_chain?.length) return null;
+  return <details>
+    <summary>状态图（{candidate.state_chain.length}）</summary>
+    <ol>{candidate.state_chain.map(state => {
+      const path = state.stage === null ? 'reference' : `candidates/${candidate.candidate_index}/stages/${state.stage}/state-image`;
+      return <li key={state.stage ?? 'reference'}>
+        <img width={64} height={64} loading="lazy" alt={state.name} src={motionUrl(`open-motion/${work.id}/${path}`, {
+          revision: String(work.revision), v: state.sha256,
+        })} />
+        {state.name} · {state.stage === null ? '参考原图' : `第 ${state.stage + 1} 段，提供方第 ${(state.raw_index ?? 0) + 1} 帧`}
+      </li>;
+    })}</ol>
+  </details>;
 }
 
 function FramePlayer({

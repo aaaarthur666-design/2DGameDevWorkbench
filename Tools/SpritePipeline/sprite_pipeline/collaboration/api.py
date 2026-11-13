@@ -390,6 +390,15 @@ def create_router(service):
                 anchor_frame=body.anchor_frame,acknowledge_trim=body.acknowledge_trim)
         return view(work_id)
 
+    @router.get('/{work_id}/candidates/{candidate}/stages/{stage}/state-image')
+    def state_image(work_id: str, candidate: int, stage: int, revision: int | None = None):
+        from .checkpoints import Checkpoints
+        work = workspace.load(work_id, revision)
+        if not work.job_id:
+            raise ConflictError('尚无生成片段')
+        data = Checkpoints(service).state_image(service.store.load(work.job_id), candidate, stage)
+        return Response(data, media_type='image/png', headers={'Cache-Control': 'no-store'})
+
     @router.post('/{work_id}/repair-stage')
     def repair_stage(work_id: str, body: Repair):
         from .repairs import LocalRepairs
@@ -452,15 +461,20 @@ def create_router(service):
         return {'adjustment':task,'work':view(work_id)}
 
     @router.get("/{work_id}/progress-image")
-    def progress(work_id: str, candidate: int = 1):
+    def progress(work_id: str, candidate: int = 1, revision: int | None = None):
         from .execution import PlanGeneration
-        work = workspace.load(work_id)
+        from .checkpoints import Checkpoints
+        work = workspace.load(work_id, revision)
         if work.job_id:
             job = service.store.load(work.job_id)
             current_candidate = service._candidate(job, candidate)
             for index in reversed(range(len(current_candidate.plan_execution.stages))):
-                if current_candidate.plan_execution.stages[index].state in {'complete','reviewing','awaiting_review','accepted','rejected'}:
-                    data = PlanGeneration(service).saved_frames(work.job_id, candidate, index)[-1]
+                run = current_candidate.plan_execution.stages[index]
+                if run.state in {'complete','reviewing','awaiting_review','accepted','rejected'}:
+                    if work.spec.object_type == 'interactable' and (run.accepted or run.state_checkpoint):
+                        data = Checkpoints(service).state_image(job, candidate, index)
+                    else:
+                        data = PlanGeneration(service).saved_frames(work.job_id, candidate, index)[-1]
                     return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
         return Response(workspace.reference(work), media_type="image/png", headers={"Cache-Control": "no-store"})
 

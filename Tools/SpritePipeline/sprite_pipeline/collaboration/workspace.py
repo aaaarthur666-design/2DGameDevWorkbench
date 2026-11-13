@@ -405,7 +405,12 @@ class OpenMotionWorkspace:
             work = self.load(work_id, revision)
         result = work.model_dump(mode="json")
         result["latest_revision"] = latest_revision
-        result["job"] = self.store.load(work.job_id).model_dump(mode="json") if work.job_id else None
+        job = self.store.load(work.job_id) if work.job_id else None
+        result["job"] = job.model_dump(mode="json") if job else None
+        if job and work.spec.object_type == 'interactable':
+            from .state_chain import state_images
+            for candidate, view in zip(job.candidates, result["job"]["candidates"], strict=True):
+                view["state_chain"] = state_images(job, candidate)
         result["view_path"] = "/tools/sprite-generator?work=" + work.id
         result["diagnostic_only"] = work.spec.provider == "fixture" or bool(result["job"] and any(c["diagnostic_only"] for c in result["job"]["candidates"]))
         from .adjustments import Adjustments

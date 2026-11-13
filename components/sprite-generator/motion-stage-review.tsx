@@ -15,6 +15,7 @@ type Evidence = {
   fps: number;
   frames: { sha256: string; raw_index: number }[];
   definition: MotionStage;
+  transition?: {from_state: string; to_state: string};
   repairs?: RepairAttempt[];
   state_checkpoint?: {frame: number; sha256: string} | null;
   review: MotionReview;
@@ -77,6 +78,7 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved, ex
   return <section className="motion-card motion-checkpoint">
     {!adjustmentOpen&&<>
     <h2>确认第 {stage+1} 段 · {data.definition.name}</h2>
+    {data.transition && <p>{data.transition.from_state} → {data.transition.to_state}</p>}
     <p>候选 {candidate} · 本段 {data.frames.length} 帧。检查完整片段后，末帧将锁定为下一段的实际姿势锚点。</p>
     <div className="motion-canvas motion-large">
       <img src={motionUrl(`${route}/frames/${frame}`,{...query,v:data.token})} alt={`当前片段第 ${frame+1} 帧`} onError={()=>{setLoadedToken('');setError('图片读取失败，不能确认此段。');}} />
