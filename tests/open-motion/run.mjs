@@ -128,7 +128,9 @@ try {
   assert.equal(objectWork.spec.object_id, 'fixture_door');
   assert.equal(objectWork.spec.object_type, 'interactable');
   assert.equal(objectWork.spec.character_id, undefined);
-  assert.equal(objectWork.status, 'ready');
+  assert.equal(objectWork.status, 'needs_input');
+  assert.match(objectWork.message, /结构/);
+  assert.equal(objectWork.job, null);
   assert.ok(objectWork.plan.quality.interactable.reference_check);
   assert.equal(objectWork.character.object_type, 'interactable');
   assert.equal(objectWork.character.facing, undefined);

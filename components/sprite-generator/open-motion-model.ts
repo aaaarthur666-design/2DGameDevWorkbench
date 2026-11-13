@@ -24,6 +24,8 @@ export type MotionSpec = MotionObjectIdentity & {
   budget: {
     max_planning_calls: number;
     max_generation_calls: number;
+    max_frames_per_request?: number;
+    max_total_frames?: number;
     max_review_calls?: number;
   };
   provider: 'pixellab' | 'fixture';
@@ -49,6 +51,7 @@ export type MotionPlan = {
     interactable?: {
       initial_state: string; target_state: string; moving_parts: string[]; fixed_parts: string[];
       motion_type: string; endpoint: string; hold: string;
+      differences?: {description: string; observed: string; impact: 'impedes_motion'|'changes_fixed_parts'|'appearance_only'; handling: 'use_reference'|'needs_decision'}[];
       reference_check: Record<string, {status: string; evidence: string}>;
     };
     event_contract: string;
@@ -83,6 +86,8 @@ export type MotionReview = MotionReviewOpinion & {
     state: string;
     verdict: 'pass' | 'fail' | 'uncertain';
     motion_evidence?: {
+      tracked_parts?: {unavailable?:string; reference_radius_px?:number|null; tolerance_px?:number|null;
+        frames?:{frame:number;radius_px?:number|null;fixed_changed_pixels:Record<string,number>}[]};
       alpha_changes?: {region: string; frame: number; compared_to: number | 'reference'; lost_pixels: number; gained_pixels: number}[];
     };
     protocol?: 'experts_v1';
@@ -125,6 +130,7 @@ export type MotionJob = {
   request: { open_plan?: { work_id: string; revision: number } };
 };
 export type MotionWork = {
+  frame_budget?: {remaining_units:number|null; max_frames_per_request:number; max_total_frames:number; estimated_units:number|null} | null;
   visual_structure?: {sha256:string;revision:number;selection:{analysis_id:string;token:string};data:{summary:string}} | null;
   adjustment_usage?: {planning:number;generation:number;review:number;tasks:{id:string;revision:number;candidate:number;stage:number|null;state:string}[]};
   end_targets?: {stage: number; sha256: string; note: string}[];

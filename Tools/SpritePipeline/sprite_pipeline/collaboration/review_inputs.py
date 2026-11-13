@@ -25,7 +25,8 @@ actual frame(s) that reach a usable target, including early arrival, and
 distinguish first arrival from the last frame. For transition inspect the
 ordered path to that target, overshoot, timing and single-frame defects.
 For fixed_parts check mounting, attachment, stationary regions and opacity.
-Alpha measurements locate pixels to inspect; they cannot decide any check.
+Alpha, tracked fixed-region pixel counts and hinge radii locate frames to inspect.
+A motion measurement conflict needs actual-frame adjudication; masks may be imperfect.
 Report the three conclusions independently with 1-based actual frames and
 concise Chinese evidence. Treat REF/INPUT/TARGET as context, never playback.
 Occlusion and projection may be ambiguous. Use uncertain when evidence is

@@ -115,6 +115,10 @@ class Checkpoints:
         prop_context = prop_review_context(job.request.open_plan)
         metrics = measurements([self.s.store.resolve_job_path(job_id,f['path']).read_bytes() for f in evidence['frames']],job.action.fps, prop_context.get('interactable'),
             (self.s.store.job_dir(job_id) / 'input/reference.png'))
+        from .prop_measurements import tracked_measurements, guard_measurements
+        cues = tracked_measurements(self.s, job, index, stage, evidence['token'])
+        if cues:
+            metrics['tracked_parts'] = cues
         with self.s.store.locked_job(job_id) as current:
             r = self.run_record(current,index,stage)
             r.state = 'reviewing'
@@ -161,6 +165,8 @@ class Checkpoints:
                     report = ProductionReview(self.s, job_id, index, stage=stage).finish(report,
                         lambda phase, content, schema, count: self.call(job_id,index,stage,phase,content,schema,count),
                         expected_token=evidence['token'], expected_fps=job.action.fps)
+                else:
+                    report = guard_measurements(report, cues)
         except Exception as exc:
             report = {'state':'failed','verdict':'uncertain','summary':str(exc) if isinstance(exc,ValidationHarnessError) else '分段视觉检查未完成，未自动重试；请人工检查。'}
         with self.s.store.locked_job(job_id) as current:

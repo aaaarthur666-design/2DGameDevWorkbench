@@ -113,6 +113,10 @@ class QualityReviewer:
             prop_context = prop_review_context(job.request.open_plan)
             metrics=measurements([p.read_bytes() for p in paths],job.action.fps, prop_context.get('interactable'),
                 reference)
+            from .prop_measurements import tracked_measurements, guard_measurements
+            cues = tracked_measurements(self.s, job, index, None, fingerprint)
+            if cues:
+                metrics['tracked_parts'] = cues
             with self.s.store.locked_job(job_id) as current:
                 self.s._candidate(current,index).plan_execution.quality_review['motion_evidence']=metrics
             observe = observation_content(pictures, interactable=bool(prop_context))
@@ -141,6 +145,8 @@ class QualityReviewer:
                 report = ProductionReview(self.s,job_id,index).finish(report,
                     lambda phase, content, schema, count: self.call(job_id,index,phase,content,schema,count),
                     expected_token=fingerprint, expected_fps=job.action.fps)
+            else:
+                report = guard_measurements(report, cues)
             with self.s.store.locked_job(job_id) as current:
                 c = self.s._candidate(current,index)
                 if frame_digest(c) != fingerprint: raise ValidationHarnessError('验收期间动画已改变')

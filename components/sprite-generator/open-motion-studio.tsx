@@ -867,6 +867,13 @@ function OpenMotionStudio({
                           }
                         />
                       </label>
+                      {(['max_frames_per_request', 'max_total_frames'] as const).map((key) => (
+                        <label key={key}>{key === 'max_total_frames' ? '所有候选绘图总帧数上限' : '单次绘图帧数上限'}
+                          <input type="number" min={4} max={key === 'max_total_frames' ? 512 : 16}
+                            placeholder="自动" value={spec.budget[key] ?? ''}
+                            onChange={e => edit({budget: {...spec.budget, [key]: e.target.value ? Number(e.target.value) : undefined}})} />
+                        </label>
+                      ))}
                       <label>
                         视觉复核方式
                         <select aria-label="视觉复核方式" value={spec.review_protocol || 'baseline'} onChange={e=>edit({
@@ -915,12 +922,21 @@ function OpenMotionStudio({
                 <section className="motion-card">
                   <h2>{work.plan?.title || (work.status === 'planning' ? '正在形成制作方案' : '制作方案未完成')}</h2>
                   <p>{work.plan?.summary || work.message}</p>
+                  {work.frame_budget && <p>绘图预算 · 每次最多 {work.frame_budget.max_frames_per_request} 帧，合计最多 {work.frame_budget.max_total_frames} 帧
+                    {work.spec.provider === 'pixellab' && <> · {work.frame_budget.remaining_units === null ? '额度未知' : `规划时余额 ${work.frame_budget.remaining_units} 单位`}
+                      {work.frame_budget.estimated_units !== null && ` · 预计消耗 ${work.frame_budget.estimated_units} 单位`}</>}</p>}
+                  {work.plan && work.status === 'needs_input' && <p>{work.message}</p>}
                   {work.plan?.quality?.interactable && <section>
                     <h3>交互物状态与起始图核对</h3>
                     <p>{work.plan.quality.interactable.initial_state} → {work.plan.quality.interactable.target_state}</p>
                     <p>运动部件：{work.plan.quality.interactable.moving_parts.join('、')} · 固定部件：{work.plan.quality.interactable.fixed_parts.join('、')}</p>
                     <p>运动类型：{({appearance_change:'外观变化', hinge_rotation:'铰接转动', deformation:'形变', occluded_rigid_translation:'带遮挡的刚体平移（当前生成器不适合）'} as Record<string,string>)[work.plan.quality.interactable.motion_type]}</p>
                     <p>终点：{work.plan.quality.interactable.endpoint} · 停留：{work.plan.quality.interactable.hold}</p>
+                    {work.plan.quality.interactable.differences?.map((d, i) => <p key={i}>
+                      原描述「{d.description}」，参考图「{d.observed}」 ·
+                      {{appearance_only:'仅外观差异', impedes_motion:'影响运动', changes_fixed_parts:'影响固定部件集合'}[d.impact]} ·
+                      {d.handling === 'needs_decision' || d.impact !== 'appearance_only' ? '需要裁决' : '采用参考图'}
+                    </p>)}
                     {Object.entries(work.plan.quality.interactable.reference_check).map(([key, check]) => <p key={key}>
                       {({viewpoint:'视角', initial_state:'初态', part_ownership:'部件归属'} as Record<string,string>)[key]} · {({satisfied:'符合', mismatch:'不符', ambiguous:'待澄清'} as Record<string,string>)[check.status]} · {check.evidence}
                     </p>)}

@@ -79,6 +79,8 @@ try {
   assert.equal(await page.getByLabel('已有对象').inputValue(),'test_hero');
   await page.getByLabel('已有对象').selectOption('test_hero');
   await page.getByText('候选数量、播放速度与调用上限',{exact:true}).click();
+  await page.getByLabel('单次绘图帧数上限',{exact:true}).fill('8');
+  await page.getByLabel('所有候选绘图总帧数上限',{exact:true}).fill('16');
   assert.equal(await page.getByLabel('视觉复核方式',{exact:true}).inputValue(),'experts_v1');
   assert.equal(await page.getByLabel('视觉验收调用上限',{exact:true}).inputValue(),'25');
   await page.getByText('候选数量、播放速度与调用上限',{exact:true}).click();
@@ -99,6 +101,7 @@ try {
   await page.getByAltText('第 1 段目标图片',{exact:true}).waitFor();
   assert.match(await page.getByTestId('motion-target-status').innerText(),/1\/2 段/);
   await page.screenshot({path:path.join(root,'plan.png'),fullPage:true});
+  await page.getByText(/绘图预算 · 每次最多 8 帧，合计最多 16 帧/).waitFor();
   await page.getByRole('button',{name:'确认方案，开始制作',exact:true}).click();
   for(let stage=0;stage<2;stage++) {
     await page.getByRole('heading',{name:new RegExp(`确认第 ${stage+1} 段`)}).waitFor({timeout:30000});

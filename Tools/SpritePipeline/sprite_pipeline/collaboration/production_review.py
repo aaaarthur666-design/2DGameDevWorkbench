@@ -134,10 +134,15 @@ class ProductionReview:
         self.persist(state='running', phase='appearance', max_calls=5, evidence_token=evidence.token,
                      baseline=original, experts={}, requires_human_adjudication=[])
 
+        tracked = self.native(job).get('motion_evidence', {}).get('tracked_parts')
         def request(phase, content, schema):
             if self.identity(self.s.store.load(self.job_id))[0] != identity:
                 raise ConflictError('复核期间实际帧或播放合同发生变化')
             evidence.verify()
+            if tracked:
+                content = [*content, {'type': 'input_text', 'text':
+                    'Native tracked part measurements on these exact frames. Inspect the cited regions; '
+                    'these are localization cues, not automatic verdicts.\n' + json.dumps(tracked, ensure_ascii=False)}]
             result = call(phase, content, schema, len(frames))
             if self.identity(self.s.store.load(self.job_id))[0] != identity:
                 raise ConflictError('复核期间实际帧或播放合同发生变化')
@@ -147,6 +152,10 @@ class ProductionReview:
             selected = independent_followup(evidence, original, request, self.persist,
                 lambda: self.native(self.s.store.load(self.job_id))['requests'],
                 visibility_version=job.request.open_plan.visibility_review_version)
+            from .prop_measurements import guard_measurements
+            selected = guard_measurements(selected, tracked)
+            if selected.get('requires_human_adjudication'):
+                self.persist(requires_human_adjudication=selected['requires_human_adjudication'])
             # Keep the flat native request ledger untouched for budgets/history.
             return {**baseline, **selected, 'protocol': 'experts_v1', 'protocol_version': 3,
                     'expert_review': copy.deepcopy(self.details)}

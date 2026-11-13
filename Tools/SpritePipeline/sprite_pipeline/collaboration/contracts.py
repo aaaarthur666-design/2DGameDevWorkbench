@@ -15,9 +15,16 @@ class Contract(BaseModel):
 
 
 class Budget(Contract):
+    max_frames_per_request: int | None = Field(default=None, ge=4, le=16)
+    max_total_frames: int | None = Field(default=None, ge=4, le=512)
+
     max_planning_calls: int = Field(default=8, ge=4, le=16)
     max_generation_calls: int = Field(default=4, ge=1, le=32)
     max_review_calls: int = Field(default=10, ge=2, le=200)
+
+    @model_serializer(mode='wrap')
+    def preserve_budget_hash(self, handler):
+        return {key: value for key, value in handler(self).items() if value is not None}
 
 
 class VisualStructureSelection(Contract):
@@ -105,7 +112,37 @@ class OpaqueRegion(Contract):
         return self
 
 
+class ReferenceDifference(Contract):
+    description: str = Field(min_length=1, max_length=300)
+    observed: str = Field(min_length=1, max_length=300)
+    impact: Literal['impedes_motion', 'changes_fixed_parts', 'appearance_only']
+    handling: Literal['use_reference', 'needs_decision']
+
+
+class HingeMeasurement(Contract):
+    pivot_anchor_id: str
+    endpoint_part_id: str
+
+
 class InteractableMotion(Contract):
+    differences: list[ReferenceDifference] = Field(default_factory=list, max_length=24)
+    hinge: HingeMeasurement | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_recorded_contract(self, handler):
+        data = handler(self)
+        if not self.differences:
+            data.pop('differences', None)
+        if self.hinge is None:
+            data.pop('hinge', None)
+        return data
+
+    def blockers(self):
+        return self.reference_check.blockers() + [
+            f'{item.description} → {item.observed}' for item in self.differences
+            if item.impact != 'appearance_only' or item.handling == 'needs_decision'
+        ]
+
     initial_state: str = Field(min_length=1, max_length=300)
     target_state: str = Field(min_length=1, max_length=300)
     moving_parts: list[str] = Field(min_length=1, max_length=24)
@@ -391,6 +428,7 @@ def prop_contract(plan):
 
 
 class PlanBinding(Contract):
+    prop_structure_policy: Literal[1] | None = None
     unsupported_motion_acknowledged: Literal[True] | None = None
     version: Literal[1] = 1
     work_id: str = Field(pattern=r"^[0-9a-f]{32}$")
@@ -409,6 +447,7 @@ class PlanBinding(Contract):
     @model_serializer(mode='wrap')
     def preserve_binding(self, handler):
         data = handler(self)
+        if self.prop_structure_policy is None: data.pop('prop_structure_policy', None)
         if self.unsupported_motion_acknowledged is None: data.pop('unsupported_motion_acknowledged', None)
         if not self.end_targets: data.pop('end_targets', None)
         if self.visual_structure is None:data.pop('visual_structure',None)
@@ -421,9 +460,14 @@ class PlanBinding(Contract):
         from .structure_control import validate_structure_binding
         validate_structure_binding(self.spec,self.visual_structure,self.reference_sha256,self.plan)
         prop = prop_contract(self.plan)
+        if self.prop_structure_policy:
+            from .structure_control import prop_structure_problem
+            problem = prop_structure_problem(prop, self.visual_structure)
+            if problem:
+                raise ValueError(problem)
         if prop and self.plan.quality.version < 3:
             raise ValueError('交互物计划需要真实帧检查点')
-        if prop and (self.spec.object_type != 'interactable' or prop.reference_check.blockers()):
+        if prop and (self.spec.object_type != 'interactable' or prop.blockers()):
             raise ValueError('交互物合同与对象或起始图前提不符')
         if prop and prop.motion_type == 'occluded_rigid_translation' and not self.unsupported_motion_acknowledged and not (info.context or {}).get('planning_only'):
             raise ValueError('当前生成器不适合带遮挡的刚体平移，请明确确认是否尝试')
@@ -454,6 +498,11 @@ class PlanBinding(Contract):
             raise ValueError("The requested return to reference must be bound to the final stage")
         if len(self.plan.stages) * self.spec.candidate_count > self.spec.budget.max_generation_calls:
             raise ValueError("The plan exceeds the authorized generation-call limit")
+        counts = [stage.frame_count for stage in self.plan.stages]
+        budget = self.spec.budget
+        if ((budget.max_frames_per_request and max(counts) > budget.max_frames_per_request)
+                or (budget.max_total_frames and sum(counts) * self.spec.candidate_count > budget.max_total_frames)):
+            raise ValueError("方案超过用户授权的绘图帧数")
         checks = 1 + len(self.plan.stages) if self.plan.quality and self.plan.quality.version >= 3 else 1
         reviews = review_calls_per_check(self.spec) * checks
         if self.plan.quality and self.spec.candidate_count * reviews > self.spec.budget.max_review_calls:
@@ -503,6 +552,7 @@ class PlanControl(Contract):
 
 
 class OpenWork(Contract):
+    frame_budget: dict[str, Any] | None = None
     version: Literal[1, 2, 3] = 3
     id: str = Field(pattern=r"^[0-9a-f]{32}$")
     revision: int = Field(default=1, ge=1)

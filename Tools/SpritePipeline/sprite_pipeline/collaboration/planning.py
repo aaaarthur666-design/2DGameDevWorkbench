@@ -130,6 +130,14 @@ PROP_INSTRUCTIONS = """
 Plan an animation of an inanimate interactable. Record evidence from the actual
 reference, including viewpoint, initial_state and part_ownership
 at seams. For each reference_check item use satisfied, mismatch or ambiguous.
+Record each description/reference discrepancy in differences with the original claim,
+observed fact, impact and handling. For appearance_only use_reference, rewrite the
+executable contract using the observed appearance; preserve the user's original text.
+A motion or fixed-set conflict, or needs_decision, requires adjudication.
+With a checked structure classify every part by its exact ID in either moving_parts or
+fixed_parts. For hinge_rotation bind hinge.pivot_anchor_id to a visible fixed pivot
+and hinge.endpoint_part_id to the moving tip. Hinge and deformation need a checked
+structure. Never invent coordinates, IDs, or a new part when structure is missing.
 Report conflicts even if a different image would be easy to animate. Never
 declare a task premise true just because the description requests it.
 Fill quality.interactable with the initial and target state, moving/changing
@@ -184,6 +192,9 @@ class PlanningModel:
         data = {"original_request": work.spec.model_dump(mode="json"),
                 "reference": work.character, "question": question,
                 "peer_messages": messages, "calls_remaining": work.spec.budget.max_planning_calls - len(work.planning_calls)}
+        if work.frame_budget:
+            data['hard_drawing_limits'] = work.frame_budget
+            data['frame_budget_scope'] = 'Per request and total drawn frames across all candidates; round each submission up separately. Playback holds cost no drawn frames.'
         prop = work.spec.object_type == 'interactable'
         instructions = INSTRUCTIONS
         if work.generation_policy_version in (1,2,3,4,5):
@@ -217,6 +228,8 @@ FPS and each segment's actual frame count. Keep provider text within 1000 chars.
 Review allowance = candidate_count * (2*stage_count + 2).
 The two final calls inspect the WHOLE clip, including seams.
 """ + suffix
+        if work.frame_budget:
+            instructions += '\nRespect hard_drawing_limits in TASK DATA in every proposal and final plan. Do not rely on the ending field for resource limits.'
         role_instructions = PROP_ROLES.get(role, ROLES[role]) if prop else ROLES[role]
         if prop:
             instructions += "\nFor the labelled drawing brief, Facing is the view of the prop, Support is its mount, and Drive describes the changing part."
@@ -232,6 +245,9 @@ The two final calls inspect the WHOLE clip, including seams.
         if work.visual_structure:
             from .structure_control import INSTRUCTIONS as STRUCTURE_INSTRUCTIONS,planning_structure
             data['checked_visual_structure']=planning_structure(work.visual_structure,version=2 if work.planning_format_version in (2,3) else 1)
+            if prop:
+                data['parts_to_classify'] = [dict(id=p['id'], name=p['name'], visibility=p['visibility'])
+                                             for p in work.visual_structure['data']['parts']]
             instructions+='\n'+STRUCTURE_INSTRUCTIONS
             if work.generation_policy_version in (1,2):
                 instructions+='\nStructure relations use their own generation_hint slot. Do not replace motion.drive/support/trajectory with structure prose: those fields are sent directly. Cite only task-relevant visible relations; distinguish their observed geometry from proposed future motion.'

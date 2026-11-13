@@ -1,6 +1,8 @@
 """Offline N2 regression. Scripted opinions exercise gates, never measure model quality."""
 from dataclasses import replace
 import json
+import io
+from PIL import Image
 from pathlib import Path
 from unittest.mock import patch
 
@@ -51,6 +53,13 @@ class PropPlanner(Planner):
             plan['quality'] = q
             plan['stages'][0].update(frame_count=16, prompt='Animate the working component from the reference.',
                 checkpoint=dict(endpoint=prop['endpoint'], rhythm='Move to the target', reason='Inspect actual endpoint'))
+            if work.visual_structure:
+                from test_open_motion_refinement import motion
+                prop.update(moving_parts=['tip'], fixed_parts=['support'],
+                            hinge={'pivot_anchor_id':'pivot', 'endpoint_part_id':'tip'})
+                q['version'] = 4
+                plan['stages'][0].update(motion=motion().model_dump(mode='json'), structure_usage={
+                    'part_ids':['tip', 'support'], 'anchor_ids':['pivot'], 'effect':'Use checked pivot and moving tip.'})
         return response, receipt
 
 
@@ -94,9 +103,60 @@ def workspace_for(tmp_path, item, *, blockers=False, seed=1101):
     return service, OpenMotionWorkspace(service)
 
 
-def plan(ws, item, auto=False):
+def checked_fixture_structure(service, item):
+    # Synthetic one-pixel labels isolate planning and source binding from SAM accuracy.
+    from sprite_pipeline.collaboration.structures import VisualStructures
+    from sprite_pipeline.jsonio import atomic_write_json, sha256_file
+    def parser(registry, data, models, **kwargs):
+        with Image.open(io.BytesIO(data)) as image:
+            alpha = image.convert('RGBA').getchannel('A')
+            points = [(x, y) for y in range(image.height) for x in range(image.width) if alpha.getpixel((x,y)) == 255]
+        parts = [dict(id=name, name=name, kind='other', points=[dict(x=x, y=y, label=1)])
+                 for name,(x,y) in zip(['tip','support'], [points[0], points[-1]])]
+        x,y = points[-1]
+        return dict(summary='Fixture structure', parts=parts, anchors=[dict(id='pivot', name='pivot',
+                    part_id='support', x=x, y=y, state='visible')]), {}
+    def segment(source, parts, output):
+        output.mkdir()
+        masks = []
+        for part in parts:
+            im = Image.new('L', (128,128))
+            im.putpixel(tuple(map(int, part['points'][0])), 255)
+            path = output / (part['id'] + '.png')
+            im.save(path)
+            masks.append(dict(id=part['id'], file=path.name, sha256=sha256_file(path), area=1))
+        return dict(source_sha256=sha256_file(source), parts=masks)
+    def track(job):
+        output = Path(job['output'])
+        output.mkdir()
+        frames = []
+        for index, frame in enumerate(job['frames']):
+            parts = []
+            for region in job['parts']:
+                src = Path(region['mask_path'])
+                path = output / f"{index}-{region['id']}.png"
+                path.write_bytes(src.read_bytes())
+                parts.append(dict(id=region['id'], file=path.name, sha256=sha256_file(path), area=1,
+                                  state='estimated', centroid=None, box=None, axis_degrees_mod_180=None))
+            frames.append(dict(frame_index=index, source_sha256=frame['sha256'], time_seconds=index/job['fps'], parts=parts))
+        receipt = dict(operation='track', fps=job['fps'], reference=job['reference'], source_frames=job['frames'],
+                       reference_parts=job['parts'], corrections=[], frames=frames, width=128, height=128,
+                       tracking_policy=job['tracking_policy'], context_frame_count=1, context_excluded_from_playback=True)
+        atomic_write_json(output/'receipt.json', receipt)
+        return receipt
+    service.structure_parser, service.structure_segmenter, service.structure_tracker = parser, segment, track
+    structures = VisualStructures(service)
+    pending = structures.create(item, 'fixture-structure-'+item, authorized=True)
+    structures.run(pending['id'])
+    v = structures.view(pending['id'])
+    v = structures.correct(v['id'], v['revision'], v['document']['token'], 'confirm-fixture',
+                           note='Confirm scripted fixture regions', confirm=True)
+    return dict(analysis_id=v['id'], token=v['document']['token'])
+
+
+def plan(ws, item, auto=False, selection=None):
     spec = TaskSpec(object_type='interactable', object_id=item, provider='fixture',
-        description=PROTOCOL['objects'][item]['action'], review_protocol='experts_v1')
+        description=PROTOCOL['objects'][item]['action'], review_protocol='experts_v1', visual_structure=selection)
     w = ws.create(spec,'archive-plan-'+item,planning_authorized=True,auto_execute=auto)
     return ws.plan(w.id)
 
@@ -114,7 +174,8 @@ def test_reference_mismatch_blocks_even_auto_execution(tmp_path, item):
 @pytest.mark.parametrize('seed', [1101,2202])
 def test_saved_sequences_replay_through_checkpoint_and_review(tmp_path, item, seed):
     service, ws = workspace_for(tmp_path, item, seed=seed)
-    work = plan(ws, item, auto=item=='gate')
+    selection = checked_fixture_structure(service,item) if TYPES[item] == 'hinge_rotation' else None
+    work = plan(ws, item, auto=item=='gate', selection=selection)
     assert work.status == 'ready' and not work.job_id, work.message
     work.visibility_review_version = 4
     ws.save(work)
@@ -146,6 +207,9 @@ def test_saved_sequences_replay_through_checkpoint_and_review(tmp_path, item, se
     assert view['context_removed'] and len(view['frames']) == 16
     report = view['review']
     assert report['state'] == 'complete', report.get('summary')
+    if selection:
+        assert len(report['motion_evidence']['tracked_parts']['frames']) == 16
+        assert report['motion_evidence']['tracked_parts']['revision'] == 1
     clean = item == 'lamp' and seed == 2202
     assert [c['status'] for c in report['checks']] == [
         'fail' if item == 'gate' else 'pass', 'pass' if clean else 'fail', 'pass']
@@ -201,10 +265,12 @@ def test_production_prop_planning_prompt_and_wire_schema(tmp_path):
     service, ws = workspace_for(tmp_path, 'lamp')
     work = ws.create(TaskSpec(object_id='lamp', object_type='interactable', description='Turn on the green light.'),
                      'production-prop-planning',planning_authorized=True)
+    work.frame_budget = dict(max_frames_per_request=8, max_total_frames=8, remaining_units=2, estimated_units=None)
     model = PlanningModel(service.settings)
     def send(role, content, schema, count, **kwargs):
         assert kwargs['interactable'] is True
         prompt = content[0]['text']
+        assert '"hard_drawing_limits": {"max_frames_per_request": 8' in prompt
         for fact in ('reference_check', 'part_ownership', 'hold_frames', 'state_frame', 'EXECUTABLE DRAWING BRIEF policy 5'):
             assert fact in prompt
         return schema.model_validate({'action':'consult','summary':'Check viewpoint','target':'appearance','question':'Is the lens visible?'}), {}

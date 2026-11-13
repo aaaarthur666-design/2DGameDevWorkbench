@@ -165,6 +165,7 @@ class OpenMotionWorkspace:
             work.character = character.model_dump(mode="json"); work.reference_sha256 = hashlib.sha256(data).hexdigest()
             work.plan = None; work.plan_sha256 = None; work.job_id = None
             work.end_targets = []
+            work.frame_budget = None
             work.planning_calls = []; work.messages = []; work.status = "planning"
             work.message = "正在按新要求制定方案"; work.auto_execute = False
             work.planning_config = self.model.configuration
@@ -191,6 +192,14 @@ class OpenMotionWorkspace:
             contributed = set()
             last_invalid_plan = None
             try:
+                from .frame_budget import planning_limits, plan_cost
+                work.frame_budget = planning_limits(self.service, work)
+                if (work.frame_budget['max_frames_per_request'] < 4 or
+                        work.frame_budget['max_total_frames'] < 4 * work.spec.candidate_count):
+                    work.status = 'budget_exhausted'
+                    work.message = '绘图额度或帧数上限不足以为每个候选生成最少 4 帧；尚未调用规划模型'
+                    self.save(work)
+                    return work
                 reference = self.reference(work)
                 while queue:
                     if stopping():
@@ -239,14 +248,20 @@ class OpenMotionWorkspace:
                         prop = prop_contract(plan)
                         if work.spec.object_type == 'interactable' and not prop:
                             raise ValidationHarnessError('交互物规划缺少起始图核对与状态合同；未提交生成')
-                        blockers = prop.reference_check.blockers() if prop else []
-                        problem = None
+                        blockers = prop.blockers() if prop else []
+                        from .structure_control import prop_structure_problem
+                        structure_problem = prop_structure_problem(prop, work.visual_structure) if prop else None
+                        if structure_problem and not work.visual_structure:
+                            blockers.append(structure_problem)
+                            structure_problem = None
+                        units, problem = plan_cost(work, plan)
+                        problem = problem or structure_problem
                         calls = len(plan.stages) * work.spec.candidate_count
                         if calls > work.spec.budget.max_generation_calls:
                             problem = f"方案需要 {calls} 次生成，但用户上限是 {work.spec.budget.max_generation_calls} 次。合并非必要片段，不能提高预算。"
-                        elif not plan.questions and not blockers:
+                        elif not problem and not plan.questions and not blockers:
                             try:
-                                PlanBinding.model_validate(dict(work_id=work.id, revision=work.revision, plan_sha256=digest(plan.model_dump(mode="json")),
+                                PlanBinding.model_validate(dict(prop_structure_policy=1 if prop else None, work_id=work.id, revision=work.revision, plan_sha256=digest(plan.model_dump(mode="json")),
                                             reference_sha256=work.reference_sha256, spec=work.spec, plan=plan,visual_structure=work.visual_structure,
                                             generation_policy_version=work.generation_policy_version,
                                             visibility_review_version=work.visibility_review_version), context={'planning_only': True})
@@ -273,6 +288,7 @@ class OpenMotionWorkspace:
                             queue.insert(0, ("coordinator", "Local validator rejected the proposal. Correct ONLY the invalid plan, preserve the original task and return finalize: " + problem, None))
                             self.save(work)
                             continue
+                        work.frame_budget['estimated_units'] = units
                         work.plan = plan; work.plan_sha256 = digest(plan.model_dump(mode="json"))
                         work.status = "needs_input" if plan.questions else "ready"
                         work.message = "请补充方案中的关键问题" if plan.questions else "方案已就绪，等待制作授权"
@@ -341,7 +357,8 @@ class OpenMotionWorkspace:
             unsupported = prop and prop.motion_type == 'occluded_rigid_translation'
             if unsupported and not allow_unsupported_motion:
                 raise ValidationHarnessError('当前生成器不适合带遮挡的刚体平移，请确认是否仍要尝试')
-            binding = PlanBinding(unsupported_motion_acknowledged=True if unsupported else None, work_id=work.id, revision=work.revision, plan_sha256=work.plan_sha256,
+            binding = PlanBinding(prop_structure_policy=1 if prop and work.frame_budget is not None else None,
+                                  unsupported_motion_acknowledged=True if unsupported else None, work_id=work.id, revision=work.revision, plan_sha256=work.plan_sha256,
                                   reference_sha256=work.reference_sha256, spec=work.spec, plan=work.plan,
                                   model_snapshot=work.planning_config,
                                   visual_structure=work.visual_structure,
