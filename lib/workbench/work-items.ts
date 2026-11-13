@@ -38,7 +38,7 @@ export type StoredTask = {
   requiredEnvironment?: string;
   createdAt?: string;
   updatedAt?: string;
-  adapter?: { remoteJobId?: string; remoteStatus?: string; openWorkId?: string };
+  adapter?: { propObjectId?: string; remoteJobId?: string; remoteStatus?: string; openWorkId?: string };
 };
 export type SpriteJob = {
   job_id: string;
@@ -117,7 +117,8 @@ export function taskWorkItems(
     (a.updatedAt || '').localeCompare(b.updatedAt || ''),
   )) {
     const input = task.input || {};
-    const moduleId = task.capabilityId === 'image-assets'
+    const propObjectId = task.capabilityId === 'reference-art' && input.operation === 'transfer' ? task.adapter?.propObjectId : undefined;
+    const moduleId = propObjectId ? 'sprite-generator' : task.capabilityId === 'image-assets'
       ? 'interactable-editor'
       : task.capabilityId;
     const capabilityModule = modules.find((m) => m.id === moduleId);
@@ -150,7 +151,7 @@ export function taskWorkItems(
                   : input.operation === 'transfer'
                     ? '原图已移送序列帧'
                     : input.subject === 'prop' ? '物品原图' : '角色原图',
-              href: input.subject === 'prop'
+              href: propObjectId ? `${capabilityModule.href}?object=${encodeURIComponent(propObjectId)}` : input.subject === 'prop'
                 ? `${modules.find((m) => m.id === 'interactable-editor')?.href || capabilityModule.href}?artTask=${encodeURIComponent(task.id)}`
                 : `${capabilityModule.href}?task=${encodeURIComponent(typeof input.sourceTaskId === 'string' ? input.sourceTaskId : task.id)}`,
             },

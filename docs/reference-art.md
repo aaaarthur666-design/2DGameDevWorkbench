@@ -64,4 +64,4 @@ npm run workbench -- status <task-id> --json
 
 ## 与对象库存的边界
 
-开放动作的 objects 库存支持选择已有角色或交互物预设；本页仍只生成、导入与移送角色参考。旧 `?character=` 深链继续有效，开放动作另接受 `?object=`。上传不创建交互物预设，PixelLab subject=prop 的原图仍不能 transfer；N2 须先有真实可行性结果。详见[序列帧对象身份](sprite-generator.md#对象身份与预设n1)。
+开放动作的 objects 库存支持选择已有角色或交互物预设；本页仍只生成、导入与移送角色参考。旧 `?character=` 深链继续有效，开放动作另接受 `?object=`。上传不创建交互物预设，PixelLab 物品的移送操作见[物品原图](prop-art.md#旧-pixellab-流程)。详见[序列帧对象身份](sprite-generator.md#对象身份与预设n1)。

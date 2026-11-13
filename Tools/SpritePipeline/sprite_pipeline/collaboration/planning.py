@@ -126,6 +126,36 @@ instruction changes no action requirement, budget, or generation strategy.
 '''
 
 
+PROP_INSTRUCTIONS = """
+Plan an animation of an inanimate interactable. Record evidence from the actual
+reference, including viewpoint, initial_state and part_ownership
+at seams. For each reference_check item use satisfied, mismatch or ambiguous.
+Report conflicts even if a different image would be easy to animate. Never
+declare a task premise true just because the description requests it.
+Fill quality.interactable with the initial and target state, moving/changing
+parts, fixed parts, allowed motion type, visible endpoint and requested hold.
+Use appearance_change, hinge_rotation, deformation or occluded_rigid_translation.
+The last type is unsupported and requires an explicit human decision after
+planning. Describe where the goal first occurs separately from its hold.
+Use 4-16 even frames per segment based on travel. Leave endpoint holds to playback
+of confirmed real frames. Set hold_frames to the requested additional playback ticks at the planned FPS (zero when unspecified). Do not generate a static hold segment. In opaque_regions
+give native 128px [left,top,right,bottom) boxes for actually fixed regions or
+surfaces expected to stay opaque at the same screen location. Do not include a
+swept moving part. Use [] when there is no justified stationary opaque region.
+The three quality.criteria dimensions are state_frame (actual usable endpoint),
+transition (usable ordered movement to that state) and fixed_parts (preserved
+stationary appearance). For motion.support describe fixed mounting, for drive
+the changing component, and for orientation the prop view. Do not invent an
+actor, anatomy, equipment or character facing. Use segment-local observable
+waypoints. All decisions still require review on the real generated pixels.
+"""
+
+PROP_ROLES = {
+    'appearance': 'Independently inspect viewpoint, initial state, attachments, seams, fixed surfaces and their visibility. Cite contrary or ambiguous pixels.',
+    'motion': 'Independently identify the moving and fixed parts, movement type, path, endpoint, hold and compatibility with the actual starting image.',
+}
+
+
 class PlanningModel:
     def __init__(self, settings):
         self.registry = ModelRegistry(settings)
@@ -154,6 +184,7 @@ class PlanningModel:
         data = {"original_request": work.spec.model_dump(mode="json"),
                 "reference": work.character, "question": question,
                 "peer_messages": messages, "calls_remaining": work.spec.budget.max_planning_calls - len(work.planning_calls)}
+        prop = work.spec.object_type == 'interactable'
         instructions = INSTRUCTIONS
         if work.generation_policy_version in (1,2,3,4,5):
             from .generation_conditions import planning_instructions
@@ -175,7 +206,20 @@ class PlanningModel:
                     'provider_text':'stage.prompt unchanged'} if work.generation_policy_version in (3,4,5) else
                    {'motion_fields_sent_directly':['camera','orientation','drive','support','trajectory','appearance']}),
             }
-        role_instructions = ROLES[role]
+        if prop:
+            # Retain shared scheduling, budgets, and transport policy. Replace
+            # the actor-specific direction before adding the provider brief.
+            suffix = instructions[instructions.index('EXECUTABLE DRAWING BRIEF'):] if 'EXECUTABLE DRAWING BRIEF' in instructions else ''
+            instructions = INSTRUCTIONS[:INSTRUCTIONS.index('QUALITY CONTRACT version=4')] + PROP_INSTRUCTIONS + """
+Return quality.version=4 with event, appearance, ending and rhythm contracts,
+three to six key poses, per-stage checkpoint and motion fields. Respect fixed
+FPS and each segment's actual frame count. Keep provider text within 1000 chars.
+Review allowance = candidate_count * (2*stage_count + 2).
+The two final calls inspect the WHOLE clip, including seams.
+""" + suffix
+        role_instructions = PROP_ROLES.get(role, ROLES[role]) if prop else ROLES[role]
+        if prop:
+            instructions += "\nFor the labelled drawing brief, Facing is the view of the prop, Support is its mount, and Drive describes the changing part."
         if work.planning_format_version in (1, 2, 3):
             instructions = instructions.replace('Return only the ExpertTurn JSON requested by the transport.',
                 'Return only the role-specific JSON object requested by the transport schema.')
@@ -233,6 +277,7 @@ class PlanningModel:
                 schema=bind_text_budget(schema)
             turn, metadata = self.registry.send(role, content, schema, 64, snapshot=work.planning_config,
                 schema_name="open_motion_plan", on_response=receipt.update,
+                **({'interactable': True} if prop else {}),
                 **({'output_format':output_format} if output_format else {}))
             return turn.model_dump(mode="json"), {**receipt, **metadata}
         except ValidationHarnessError as exc:

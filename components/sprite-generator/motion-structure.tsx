@@ -79,7 +79,7 @@ type Saver = (() => void) | null;
 const pendingStates = new Set(['queued', 'parsing', 'segmenting']);
 const stateNames: Record<string, string> = {
   queued: '等待解析',
-  parsing: '识别角色部件中',
+  parsing: '识别对象部件中',
   segmenting: '计算可见区域中',
   unknown: '原调用结果待核对',
   failed: '解析未完成',
@@ -114,7 +114,7 @@ export function MotionStructure({
     'anchor',
   );
   const [boxStart, setBoxStart] = useState<Point | null>(null);
-  const [note, setNote] = useState('手动核对并纠正角色结构，原图保持不变');
+  const [note, setNote] = useState('手动核对并纠正对象结构，原图保持不变');
   const imageRef = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const document = analysis?.document;
@@ -452,7 +452,7 @@ export function MotionStructure({
             onPointerDown={(e) => place(e)}
             onPointerUp={(e) => place(e, true)}
           >
-            <img src={sourceUrl} alt="所选角色参考图" draggable={false} />
+            <img src={sourceUrl} alt="所选对象参考图" draggable={false} />
             {visible && maskUrl && (
               <div
                 className="structure-mask"
@@ -462,7 +462,7 @@ export function MotionStructure({
             {visible && analysis && draft && (
               <svg
                 viewBox={`0 0 ${analysis.source.width} ${analysis.source.height}`}
-                aria-label="角色结构叠加"
+                aria-label="对象结构叠加"
               >
                 {part?.box && (
                   <rect
@@ -504,13 +504,13 @@ export function MotionStructure({
             )}
           </div>
         ) : (
-          <span>选择或上传角色</span>
+          <span>选择参考对象</span>
         )}
       </div>
       {characterId && (
         <>
           <div className="structure-status">
-            <small>角色结构 · {status}</small>
+            <small>对象结构 · {status}</small>
             {document && (
               <button
                 type="button"
@@ -590,7 +590,7 @@ export function MotionStructure({
                     )
                   }
                 >
-                  解析角色结构
+                  解析对象结构
                 </button>
                 <small>
                   {runtime?.message}
@@ -1094,7 +1094,7 @@ export function MotionStructure({
                   {(historical) => <>
                     <p>{historical.document?.data.summary}</p>
                     <StructureHistoryImage key={`${historical.id}:${historical.document?.revision}`} image={motionUrl(`open-motion/structures/${historical.id}/source`)} width={historical.source.width} height={historical.source.height}
-                      caption={`角色结构版本 ${historical.document?.revision} 的原图`}
+                      caption={`对象结构版本 ${historical.document?.revision} 的原图`}
                       parts={(historical.document?.data.parts || []).map((part) => ({ id: part.id, name: part.name, maskUrl: historical.document?.masks.some((mask) => mask.id === part.id) ? motionUrl(`open-motion/structures/${historical.id}/masks/${part.id}`, { revision: String(historical.document.revision) }) : undefined }))}
                       anchors={historical.document?.data.anchors || []} />
                     {!!historical.document?.data.relations.length && <details><summary>历史连接与握持关系</summary><ul>{historical.document.data.relations.map((relation) => {

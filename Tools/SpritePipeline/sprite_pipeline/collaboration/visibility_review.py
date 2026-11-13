@@ -74,7 +74,7 @@ def schema(base):
     return create_model('Visibility'+base.__name__,__base__=base,equipment_visibility=(VisibilityEvidence,...))
 
 
-def add_content(content,*,version=1):
+def add_content(content,*,version=1,interactable=False):
     # Version 4 changes local adjudication only, not model prompts or schema.
     if version==4:version=3
     value=copy.deepcopy(content)
@@ -84,6 +84,9 @@ def add_content(content,*,version=1):
         rules+='\ncontradiction_frames may cite both the observed interval and explicitly listed before/after frames to explain a boundary change. Include at least one frame inside the observed interval; never cite other frames or invent neighbors.\n'
     if version==3:
         rules+='\nFrame lists are sets of cited evidence, not disjoint time intervals. A shared boundary/context frame may appear in more than one list. Verify temporal claims from the full ordered actual images, not from min/max of these evidence lists. Distinguish a comparison context from the defective frame; naming a context frame does not declare it defective.\n'
+    if interactable:
+        rules = rules.replace('The equipment check', 'The fixed_parts check')
+        rules += '\nUse equipment_visibility for fixed prop components. Inspect attachment, mounting, opacity, projected motion and occlusion.\n'
     value[0]['text']=rules+'\n'+value[0]['text']
     return value
 
@@ -103,7 +106,7 @@ def guard(result,count,*,resolution=False,version=1):
             raise ValidationHarnessError('可见性后序证据必须晚于观察区间')
     raw=result.model_dump(mode='json')
     normalized=copy.deepcopy(raw);normalized.pop('equipment_visibility')
-    check=next((c for c in normalized['checks'] if c['dimension']=='equipment'),None)
+    check=next((c for c in normalized['checks'] if c['dimension'] in {'equipment', 'fixed_parts'}),None)
     if check is None:raise ValidationHarnessError('可见性核对缺少装备维度')
     state=check['classification'] if resolution else check['status']
     defect_state='material_defect' if resolution else 'fail'
@@ -144,25 +147,26 @@ def retain_visible_disagreement(selected,traces,count):
     resolution and all original model responses alongside the guarded result.
     """
     from .visual_review import grounded_audit
-    check=next(c for c in selected['checks'] if c['dimension']=='equipment')
+    dimension = 'fixed_parts' if any(c['dimension'] == 'fixed_parts' for c in selected['checks']) else 'equipment'
+    check=next(c for c in selected['checks'] if c['dimension']==dimension)
     if check['status']!='pass':return selected
     conflicting=[];frames=set()
     for name,trace in traces.items():
         if not name.startswith('expert_'):continue
-        raw=next(c for c in trace['raw_opinion']['checks'] if c['dimension']=='equipment')
+        raw=next(c for c in trace['raw_opinion']['checks'] if c['dimension']==dimension)
         if raw.get('status')=='fail' and raw.get('confidence',0)>=.8 and trace['definite_contradiction_reported']:
             conflicting.append(name);frames.update(raw['frames'])
     if not conflicting:return selected
     value=copy.deepcopy(selected)
-    item=next(c for c in value['checks'] if c['dimension']=='equipment')
+    item=next(c for c in value['checks'] if c['dimension']==dimension)
     item.update(status='uncertain',confidence=0,frames=sorted(frames|set(item['frames'])),
         evidence='独立专家提出了具体帧中的外观矛盾，复核意见相反，尚未由实际画面裁定；不能直接通过。'+item['evidence'][:400])
     pending=value.setdefault('requires_human_adjudication',[])
-    if not any(p['dimension']=='equipment' for p in pending):
-        prior=next(c for c in traces[conflicting[0]]['raw_opinion']['checks'] if c['dimension']=='equipment')
-        pending.append({'dimension':'equipment','prior':copy.deepcopy(prior),'proposal':copy.deepcopy(check),
+    if not any(p['dimension']==dimension for p in pending):
+        prior=next(c for c in traces[conflicting[0]]['raw_opinion']['checks'] if c['dimension']==dimension)
+        pending.append({'dimension':dimension,'prior':copy.deepcopy(prior),'proposal':copy.deepcopy(check),
             'reason':'clearing_independent_visible_contradiction_requires_actual_frame_adjudication'})
-    value['visibility_conflict']={'state':'needs_human_adjudication','dimension':'equipment',
+    value['visibility_conflict']={'state':'needs_human_adjudication','dimension':dimension,
         'independent_opinions':conflicting,'frames':item['frames'],'rule':'retain_conflicting_evidence_not_majority_vote'}
     verdict,checks,summary=grounded_audit(Audit.model_validate({k:value[k] for k in ('summary','checks')}),count)
     value.update(verdict=verdict,checks=checks,summary=summary)

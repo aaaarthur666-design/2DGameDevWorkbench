@@ -16,6 +16,7 @@ type Evidence = {
   frames: { sha256: string; raw_index: number }[];
   definition: MotionStage;
   repairs?: RepairAttempt[];
+  state_checkpoint?: {frame: number; sha256: string} | null;
   review: MotionReview;
 };
 
@@ -37,7 +38,7 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved, ex
     const abort=new AbortController();
     void motionRequest<Evidence>(route,undefined,{revision:String(work.revision)},abort.signal).then(next=>{
       if(abort.signal.aborted)return;
-      setData(previous=>previous?.token===next.token&&previous?.state===next.state&&JSON.stringify(previous?.review)===JSON.stringify(next.review)&&JSON.stringify(previous?.repairs)===JSON.stringify(next.repairs)?previous:next);
+      setData(previous=>previous?.token===next.token&&previous?.state===next.state&&previous?.state_checkpoint?.sha256===next.state_checkpoint?.sha256&&JSON.stringify(previous?.review)===JSON.stringify(next.review)&&JSON.stringify(previous?.repairs)===JSON.stringify(next.repairs)?previous:next);
       setEvidenceRevision(work.job?.revision??null);
     }).catch(e=>{if(!abort.signal.aborted)setError(e.message);});
     return ()=>abort.abort();
@@ -62,15 +63,15 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved, ex
     const timer=setTimeout(()=>setFrame(i=>i+1),1000/data.fps*(slow?2:1));
     return ()=>clearTimeout(timer);
   },[playing,frame,data,loaded,slow]);
-  async function decide(decision:'accept'|'reject') {
+  async function decide(decision:'accept'|'reject'|'accept_state') {
     if(!data)return;setBusy(true);setError('');
     try {onSaved(await motionRequest<MotionWork>(`open-motion/${work.id}/review-stage`,{
       expected_revision:work.revision,candidate_index:candidate,stage_index:stage,token:data.token,
-      note,decision,acknowledge_warnings:ack,anchor_frame:anchor,acknowledge_trim:ackTrim,
+      note,decision,acknowledge_warnings:ack,anchor_frame:data.state_checkpoint?.frame ?? anchor,acknowledge_trim:ackTrim,
     }));} catch(e){setError((e as Error).message);} finally{setBusy(false);}
   }
   if(!data)return <section className="motion-card">{error||'正在读取当前片段…'}</section>;
-  const endpoint=anchor??data.frames.length-1, trimmed=endpoint<data.frames.length-1;
+  const endpoint=data.state_checkpoint?.frame??anchor??data.frames.length-1, trimmed=endpoint<data.frames.length-1;
   const canAccept=!readOnly&&!busy&&!adjustmentPending&&loaded&&played&&watched&&note.trim().length>=4&&
     data.state==='awaiting_review'&&(data.review.verdict==='pass'||ack)&&(!trimmed||ackTrim)&&!data.repairs?.some(a=>['submitting','pending','unknown','awaiting_review'].includes(a.state));
   return <section className="motion-card motion-checkpoint">
@@ -105,7 +106,7 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved, ex
     </div>
     <details><summary>目标姿势提前到达时，选择实际锚点</summary>
       <p>默认使用最后一帧。若末尾已越过目标，可明确选择较早的真实帧结束本段。原始尾帧保留，后段从选中图片继续。</p>
-      <label>本段结束锚点<select aria-label="本段结束锚点" value={endpoint} onChange={e=>{setAnchor(Number(e.target.value));setAckTrim(false);setWatched(false);}}>{data.frames.map((_,i)=><option key={i} value={i}>第 {i+1} 帧{i===data.frames.length-1?'（原始末帧）':''}</option>)}</select></label>
+      <label>本段结束锚点<select aria-label="本段结束锚点" value={endpoint} disabled={!!data.state_checkpoint} onChange={e=>{setAnchor(Number(e.target.value));setAckTrim(false);setWatched(false);}}>{data.frames.map((_,i)=><option key={i} value={i}>第 {i+1} 帧{i===data.frames.length-1?'（原始末帧）':''}</option>)}</select></label>
       {trimmed&&<label><input type="checkbox" checked={ackTrim} onChange={e=>setAckTrim(e.target.checked)} />确认采用第 1–{endpoint+1} 帧，其余原始帧保留在记录中</label>}
     </details>
     {!!data.repairs?.length&&<details><summary>旧版局部修复记录</summary><MotionLocalRepair work={work} candidate={candidate} stage={stage} token={data.token} count={data.frames.length} attempts={data.repairs} onSaved={onSaved} readOnly={readOnly}/></details>}
@@ -115,10 +116,13 @@ export function MotionStageReview({work, candidate, stage, readOnly, onSaved, ex
     </MotionPanel>
     </div>
     {trimmed&&<p className="motion-notice">将以第 {endpoint+1} 帧结束本段。其余原始帧保留。</p>}
-    <label><input type="checkbox" checked={watched} disabled={!played} onChange={e=>setWatched(e.target.checked)} />我已播放此段并检查实际末姿势、装备和节奏</label>
+    <label><input type="checkbox" checked={watched} disabled={!played} onChange={e=>setWatched(e.target.checked)} />{work.plan?.quality?.interactable ? '我已播放此段并检查状态帧、固定部件和过渡' : '我已播放此段并检查实际末姿势、装备和节奏'}</label>
     <label>本段检查结论<textarea value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="记录实际看到的姿势、运动及衔接情况" /></label>
-    {data.review.verdict!=='pass'&&<label><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)} />已核对模型的未通过或不确定意见，按实际画面确认接受</label>}
+    {(data.review.verdict!=='pass'||work.plan?.quality?.interactable)&&<label><input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)} />已核对模型的未通过或不确定意见，按实际画面确认接受</label>}
     {error&&<p className="motion-danger">{error}</p>}
+    {work.plan?.quality?.interactable && (data.state_checkpoint
+      ? <p>第 {data.state_checkpoint.frame + 1} 帧已单独确认为状态帧，可继续修复过渡。</p>
+      : <button disabled={readOnly||busy||adjustmentPending||!loaded||!played||!watched||note.trim().length<4||data.state!=='awaiting_review'} onClick={()=>void decide('accept_state')}>只确认第 {endpoint + 1} 帧，保留过渡待修复</button>)}
     <button className="motion-primary" disabled={!canAccept} onClick={()=>void decide('accept')}>确认此段，继续制作</button>
     </>}
     <MotionAdjustment work={work} candidate={candidate} stage={stage} onSaved={onSaved} readOnly={readOnly} onPendingChange={setAdjustmentPending} onOpenChange={setAdjustmentOpen}/>

@@ -105,7 +105,7 @@ class OpenMotionWorkspace:
             self.service._validate_reference_image(source, character.cell_width, character.cell_height)
             data = source.read_bytes()
             from .structure_control import freeze_structure
-            structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest())
+            structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest(), object_type=spec.object_type)
             work = OpenWork(id=uuid.uuid4().hex, request_key=request_key, request_sha256=fingerprint,
                             spec=spec, character=character.model_dump(mode="json"), reference_sha256=hashlib.sha256(data).hexdigest(),
                             created_at=now(), updated_at=now(), planning_authorized=True, auto_execute=auto_execute,
@@ -146,7 +146,7 @@ class OpenMotionWorkspace:
             self.service._validate_reference_image(source, character.cell_width, character.cell_height)
             data = source.read_bytes()
             from .structure_control import freeze_structure
-            structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest())
+            structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest(), object_type=spec.object_type)
             if work.job_id:
                 job = self.store.load(work.job_id)
                 if any(c.status.value in {"submitting", "submission_unknown", "provider_pending", "saving"} for c in job.candidates):
@@ -201,7 +201,7 @@ class OpenMotionWorkspace:
                     from .structure_control import require_current_structure
                     require_current_structure(self.service,work.visual_structure,work.reference_sha256)
                     role, question, crop = queue.pop(0)
-                    work.message = {"appearance": "正在核对角色特征", "motion": "正在安排动作与衔接", "strategy": "正在制定生成策略", "coordinator": "正在协调并校验方案"}[role]
+                    work.message = {"appearance": "正在核对原图特征", "motion": "正在安排动作与衔接", "strategy": "正在制定生成策略", "coordinator": "正在协调并校验方案"}[role]
                     work.planning_calls.append({"role": role, "state": "submitting", "started_at": now(), "request_id": uuid.uuid4().hex,
                                                 "reference_sha256": work.reference_sha256, "crop": crop})
                     if work.visual_structure:work.planning_calls[-1]['visual_structure_sha256']=work.visual_structure['sha256']
@@ -235,16 +235,21 @@ class OpenMotionWorkspace:
                         if role != "coordinator" or not {"appearance", "motion", "strategy"} <= contributed:
                             raise ValidationHarnessError("方案缺少必要的专家提案")
                         plan = bind_original_requirements(turn.plan, work.spec)
+                        from .contracts import prop_contract
+                        prop = prop_contract(plan)
+                        if work.spec.object_type == 'interactable' and not prop:
+                            raise ValidationHarnessError('交互物规划缺少起始图核对与状态合同；未提交生成')
+                        blockers = prop.reference_check.blockers() if prop else []
                         problem = None
                         calls = len(plan.stages) * work.spec.candidate_count
                         if calls > work.spec.budget.max_generation_calls:
                             problem = f"方案需要 {calls} 次生成，但用户上限是 {work.spec.budget.max_generation_calls} 次。合并非必要片段，不能提高预算。"
-                        elif not plan.questions:
+                        elif not plan.questions and not blockers:
                             try:
-                                PlanBinding(work_id=work.id, revision=work.revision, plan_sha256=digest(plan.model_dump(mode="json")),
+                                PlanBinding.model_validate(dict(work_id=work.id, revision=work.revision, plan_sha256=digest(plan.model_dump(mode="json")),
                                             reference_sha256=work.reference_sha256, spec=work.spec, plan=plan,visual_structure=work.visual_structure,
                                             generation_policy_version=work.generation_policy_version,
-                                            visibility_review_version=work.visibility_review_version)
+                                            visibility_review_version=work.visibility_review_version), context={'planning_only': True})
                                 if work.version >= 2 and work.spec.provider != 'fixture':
                                     from .quality import validate_quality_plan
                                     from ..models import validate_object_preset
@@ -271,8 +276,14 @@ class OpenMotionWorkspace:
                         work.plan = plan; work.plan_sha256 = digest(plan.model_dump(mode="json"))
                         work.status = "needs_input" if plan.questions else "ready"
                         work.message = "请补充方案中的关键问题" if plan.questions else "方案已就绪，等待制作授权"
+                        unsupported = prop and prop.motion_type == 'occluded_rigid_translation'
+                        if blockers:
+                            work.status = "needs_input"
+                            work.message = "起始图前提未满足，请核对原图：" + "；".join(blockers)
+                        elif unsupported and work.status == "ready":
+                            work.message = "当前生成器不适合带遮挡的刚体平移，请决定是否仍要尝试"
                         self.save(work)
-                        if work.auto_execute and work.status == "ready" and not stopping():
+                        if work.auto_execute and work.status == "ready" and not unsupported and not stopping():
                             return self.start(work.id, work.revision, work.plan_sha256)
                         return work
                     else:
@@ -303,7 +314,7 @@ class OpenMotionWorkspace:
                 except ConflictError:
                     pass  # Another process owns this planning request.
 
-    def start(self, work_id, expected_revision, plan_sha256):
+    def start(self, work_id, expected_revision, plan_sha256, *, allow_unsupported_motion=False):
         from ..models import GenerationRequest, utc_now
         with self.lock(work_id):
             work = self.load(work_id)
@@ -325,7 +336,12 @@ class OpenMotionWorkspace:
             from .structure_control import require_current_structure
             require_current_structure(self.service,work.visual_structure,work.reference_sha256)
             from .quality import compiled_prompt
-            binding = PlanBinding(work_id=work.id, revision=work.revision, plan_sha256=work.plan_sha256,
+            from .contracts import prop_contract
+            prop = prop_contract(work.plan)
+            unsupported = prop and prop.motion_type == 'occluded_rigid_translation'
+            if unsupported and not allow_unsupported_motion:
+                raise ValidationHarnessError('当前生成器不适合带遮挡的刚体平移，请确认是否仍要尝试')
+            binding = PlanBinding(unsupported_motion_acknowledged=True if unsupported else None, work_id=work.id, revision=work.revision, plan_sha256=work.plan_sha256,
                                   reference_sha256=work.reference_sha256, spec=work.spec, plan=work.plan,
                                   model_snapshot=work.planning_config,
                                   visual_structure=work.visual_structure,

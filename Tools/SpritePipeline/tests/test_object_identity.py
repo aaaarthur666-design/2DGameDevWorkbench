@@ -125,8 +125,7 @@ def test_typed_character_object_keeps_character_structure_reads(objects):
     from sprite_pipeline.collaboration.structures import VisualStructures
     structures = VisualStructures(service)
     assert structures.reference("typed_hero")[1]["character_id"] == "typed_hero"
-    with pytest.raises(ValidationHarnessError, match="type does not match"):
-        structures.reference(preset.object_id)
+    assert structures.reference(preset.object_id)[1]["object_type"] == "interactable"
     assert not service.list_jobs() and not service.open_motion_model.calls
 
 
@@ -138,7 +137,17 @@ def test_old_and_new_objects_plan_resume_and_export_without_identity_migration(o
     key = uuid.uuid4().hex
     work = workspace.create(spec, key, planning_authorized=True)
     assert workspace.create(spec, key, planning_authorized=True).id == work.id
-    work = workspace.plan(work.id)
+    if spec.object_type == "interactable":
+        # A saved N1 plan predates the prop contract and keeps its original
+        # fingerprint and execution behavior. New planning is tested on N2 archives.
+        from sprite_pipeline.collaboration.contracts import PlanProposal
+        value, _ = service.open_motion_model("coordinator", work, workspace.reference(work))
+        work.plan = PlanProposal.model_validate(value["plan"])
+        work.plan_sha256 = digest(work.plan.model_dump(mode="json"))
+        work.status = "ready"
+        workspace.save(work)
+    else:
+        work = workspace.plan(work.id)
     assert work.status == "ready", work.message
     provider = FixtureProvider()
     with patch("sprite_pipeline.providers.get_provider", return_value=provider):

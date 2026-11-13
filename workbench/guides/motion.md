@@ -4,7 +4,7 @@
 
 ## 开始或继续
 
-读取当前对象库存和已有作品。新动作使用 `plan-motion`，在 `motionSpec.description` 保留用户原话，按请求设置 ending、候选数与预算；需要已有对象 preset，不需要动作 preset。新请求使用 motionSpec.object_id / object_type，类型从库存读取；旧 character_id 保持可读。N1 只识别已有对象，物品原图移送、交互物合同模板和状态链仍待后续实现，不把库存条目当成真实生成品质的证明。用户授权默认制作时可使用已配置模型和当前默认预算，普通参数无需再次确认。规划本身调用模型；纯讨论只读取信息。
+读取当前对象库存和已有作品。新动作使用 `plan-motion`，在 `motionSpec.description` 保留用户原话，按请求设置 ending、候选数与预算；需要已有对象 preset，不需要动作 preset。新请求使用 motionSpec.object_id / object_type，类型从库存读取；旧 character_id 保持可读。PixelLab 物品经[移送到物品动画](../../docs/prop-art.md#旧-pixellab-流程)后可选。交互物合同核对视角、初态与部件归属。遇到带遮挡的刚体平移，只有用户明确选择尝试才在 generate-motion 传 allowUnsupportedMotion。review-motion-stage 的 accept_state 可先锁定真实状态帧，过渡仍待确认。用户授权默认制作时可使用已配置模型和当前默认预算，普通参数无需再次确认。规划本身调用模型；纯讨论只读取信息。
 
 收到方案后处理真正未答的关键问题。`generate-motion` 绑定返回的 revision 与 planSha256；已授权连续制作可使用 autoExecute。追踪原 taskId 和 `?work=<openWorkId>`，换候选时保留精确版本与候选身份。
 

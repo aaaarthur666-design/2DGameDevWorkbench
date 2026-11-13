@@ -520,8 +520,11 @@ class SpritePipelineService:
                 from .collaboration.quality import compiled_prompt
                 if binding.compiled_prompts != [compiled_prompt(binding.plan,character,i,policy_version=binding.generation_policy_version) for i in range(len(binding.plan.stages))]:
                     raise ConflictError('实际生成提示词与方案合同不一致')
+            from .collaboration.contracts import prop_contract
+            prop = prop_contract(binding.plan)
+            playback_count = sum(stage.frame_count for stage in binding.plan.stages) + (prop.hold_frames if prop else 0)
             base_action = ActionPreset(action_id=request.action_id, display_name=binding.plan.title,
-                frame_count=sum(stage.frame_count for stage in binding.plan.stages),
+                frame_count=playback_count,
                 fps=binding.plan.quality.playback_fps if binding.plan.quality else binding.spec.fps,
                 loop=binding.spec.loop, grounded=binding.plan.grounded, manifest_action_name=binding.plan.animation_name,
                 action_description=binding.spec.description[:1000].ljust(8),

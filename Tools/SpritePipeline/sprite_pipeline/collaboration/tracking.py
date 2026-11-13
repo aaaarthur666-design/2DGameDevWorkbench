@@ -131,7 +131,7 @@ class TemporalStructures:
         if use_semantic and not self.observer and not self.registry.key(self.registry.profile('structure',models).provider):
             raise ValidationHarnessError('结构模型尚未配置；没有提交请求')
         job=self.store.load(job_id)
-        if job.reference_sha256!=structure['source']['sha256']:
+        if job.reference_sha256!=structure['source']['sha256'] or job.character.object_type != structure['source'].get('object_type','character'):
             raise ConflictError('角色结构不是此动画使用的参考图')
         source_identity,frame_token,_=ProductionReview(self.service,job_id,candidate,stage=stage).identity(job)
         fingerprint=digest({'job_id':job_id,'candidate':candidate,'stage':stage,'source':source_identity,'structure':structure_token,'tracker':TRACKER_VERSION,
@@ -168,6 +168,7 @@ class TemporalStructures:
                 'source':{**evidence.manifest['source'],'fps':job.action.fps},'source_identity':source_identity,
                 'evidence_token':evidence.token,'structure_id':structure_id,'structure_token':structure_token,
                 'supports_review':bool(job.request.open_plan.plan.quality),
+                **({'object_type': 'interactable'} if job.character.object_type == 'interactable' else {}),
                 'intent_sha256':sha256_file(folder/'intent.json'),
                 'structure_snapshot_sha256':digest(doc),'parts':parts,'models':models,'runtime_profile':runtime['profile'],
                 'selected_frames':select_keyframes(evidence.paths,job.action.fps),'calls':[],'history':[],
@@ -197,7 +198,8 @@ class TemporalStructures:
                     def started():record['calls'][0]['state']='submitted';self.save(record)
                     try:
                         result,metadata=(self.observer or observe)(self.registry,folder/'evidence/reference.png',structure,
-                            evidence.paths,record['selected_frames'],record['models'],on_request=started,on_response=receipt.update)
+                            evidence.paths,record['selected_frames'],record['models'],on_request=started,on_response=receipt.update,
+                            **({'object_type': 'interactable'} if record.get('object_type') == 'interactable' else {}))
                     except Exception:
                         call=record['calls'][0]
                         state='invalid_response' if receipt.get('response_id') else 'failed_before_submission' if call['state']=='reserved' else 'failed_or_unknown'

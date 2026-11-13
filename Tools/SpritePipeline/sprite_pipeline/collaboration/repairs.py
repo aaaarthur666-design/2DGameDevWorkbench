@@ -68,6 +68,8 @@ class LocalRepairs:
                 raise ConflictError('只修复当前未锁定片段；后段已执行时需新版本重新核对依赖')
             evidence=Checkpoints(self.s).evidence(job,index,stage)
             if token!=evidence['token']:raise ConflictError('片段已改变，请重新检查')
+            if run.state_checkpoint and start <= run.state_checkpoint['frame'] <= end:
+                raise ValidationHarnessError('修复范围包含已确认的状态帧')
             count=end-start+1
             maximum=edit_window_limit(job.character.cell_width,job.character.cell_height) if mode=='appearance' else 16
             minimum=2 if mode=='appearance' else 4

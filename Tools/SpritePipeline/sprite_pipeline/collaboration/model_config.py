@@ -101,12 +101,14 @@ class ModelRegistry:
                 'planning_configured': all(ready[self.profile(role).provider] for role in ROLES),
                 'provider': 'hunyuan' if config.default.provider == 'tokenhub' else 'openai', 'model': config.default.model}
 
-    def send(self, role, content, schema, frame_count, *, snapshot=None, on_request=None, on_response=None, schema_name='open_motion_plan', output_format=None):
+    def send(self, role, content, schema, frame_count, *, snapshot=None, on_request=None, on_response=None, schema_name='open_motion_plan', output_format=None, interactable=False):
         profile = self.profile(role, snapshot)
         key = self.key(profile.provider)
         if not key:
             raise ValidationHarnessError(f'{role} 的 API Key 尚未配置；未发送请求')
         provider = 'hunyuan' if profile.provider == 'tokenhub' else 'openai'
+        from .contracts import motion_transport_schema
+        schema = motion_transport_schema(schema, interactable)
         return VisionReviewer(self.settings)._send(content, schema, provider, key, frame_count, on_request,
             schema_name=schema_name, on_response=on_response, model_options=profile.model_dump(mode='json'),
             **({'output_format':output_format} if output_format is not None else {}))

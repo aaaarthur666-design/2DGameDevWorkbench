@@ -641,7 +641,7 @@ function OpenMotionStudio({
               <div className="motion-grid">
                 <section className="motion-card motion-reference">
                   <h2>使用哪个对象</h2>
-                  {motionObjectType(spec) === 'character' ? <MotionStructure key={motionObjectId(spec)} characterId={motionObjectId(spec)} disabled={readOnly || busy} registerDraftSaver={registerStructureDraftSaver} modelConfiguration={JSON.stringify(configuration?.configuration || null)} generationStructure={spec.visual_structure} onGenerationStructure={(value)=>edit({visual_structure:value})} /> : <div className="motion-canvas"><img src={motionUrl(`open-motion/references/${motionObjectId(spec)}`)} alt="对象参考图" /></div>}
+                  <MotionStructure key={motionObjectId(spec)} characterId={motionObjectId(spec)} disabled={readOnly || busy} registerDraftSaver={registerStructureDraftSaver} modelConfiguration={JSON.stringify(configuration?.configuration || null)} generationStructure={spec.visual_structure} onGenerationStructure={(value)=>edit({visual_structure:value})} />
                   <label>
                     已有对象
                     <select
@@ -915,7 +915,17 @@ function OpenMotionStudio({
                 <section className="motion-card">
                   <h2>{work.plan?.title || (work.status === 'planning' ? '正在形成制作方案' : '制作方案未完成')}</h2>
                   <p>{work.plan?.summary || work.message}</p>
-                  {work.visual_structure && <p className="motion-muted">已使用核对后的角色结构 · 版本 {work.visual_structure.revision}。各段采用的结构依据可在描述中展开查看。</p>}
+                  {work.plan?.quality?.interactable && <section>
+                    <h3>交互物状态与起始图核对</h3>
+                    <p>{work.plan.quality.interactable.initial_state} → {work.plan.quality.interactable.target_state}</p>
+                    <p>运动部件：{work.plan.quality.interactable.moving_parts.join('、')} · 固定部件：{work.plan.quality.interactable.fixed_parts.join('、')}</p>
+                    <p>运动类型：{({appearance_change:'外观变化', hinge_rotation:'铰接转动', deformation:'形变', occluded_rigid_translation:'带遮挡的刚体平移（当前生成器不适合）'} as Record<string,string>)[work.plan.quality.interactable.motion_type]}</p>
+                    <p>终点：{work.plan.quality.interactable.endpoint} · 停留：{work.plan.quality.interactable.hold}</p>
+                    {Object.entries(work.plan.quality.interactable.reference_check).map(([key, check]) => <p key={key}>
+                      {({viewpoint:'视角', initial_state:'初态', part_ownership:'部件归属'} as Record<string,string>)[key]} · {({satisfied:'符合', mismatch:'不符', ambiguous:'待澄清'} as Record<string,string>)[check.status]} · {check.evidence}
+                    </p>)}
+                  </section>}
+                  {work.visual_structure && <p className="motion-muted">已使用核对后的对象结构 · 版本 {work.visual_structure.revision}。各段采用的结构依据可在描述中展开查看。</p>}
                   {work.plan?.quality&&<p className="motion-muted">复核方式：{work.spec.review_protocol==='experts_v1'?'独立专家与争议复核':'基础视觉检查'}；
                     本方案最多预留 {(work.spec.review_protocol==='experts_v1'?5:2)*(work.plan.quality.version>=3?work.plan.stages.length+1:1)*work.spec.candidate_count} 次视觉请求，
                     已设总上限 {work.spec.budget.max_review_calls ?? 10} 次。按实际调用计费；确认片段和最终采用仍由你决定。</p>}
@@ -1474,11 +1484,12 @@ function OpenMotionStudio({
                       }
                       await mutate('generate', {
                         plan_sha256: work?.plan_sha256,
+                        allow_unsupported_motion: work?.plan?.quality?.interactable?.motion_type === 'occluded_rigid_translation',
                       });
                     })
               }
             >
-              {work?.job ? '查看制作结果' : '确认方案，开始制作'}
+              {work?.job ? '查看制作结果' : work?.plan?.quality?.interactable?.motion_type === 'occluded_rigid_translation' ? '已知遮挡平移不受支持，仍尝试制作' : '确认方案，开始制作'}
               <ArrowRight size={16} />
             </button>
           )}

@@ -64,11 +64,12 @@ class VisualStructures:
                 'message': f"本地分割已就绪 · {runtime.get('compute', {}).get('device', 'fixture').upper()}；查看和纠正不调用外部模型。" if runtime['ready'] else runtime.get('compute', {}).get('error', '尚未安装独立分割工具；可继续使用原制作流程。')}
 
     def reference(self, character_id):
-        character, preset = self.service.presets.load_object(character_id, object_type="character")
+        character, preset = self.service.presets.load_object(character_id)
         path = preset.parent / character.reference_frame
         self.service._validate_reference_image(path, character.cell_width, character.cell_height)
         data = path.read_bytes()
         return data, {'character_id': character_id, 'name': character.display_name,
+                      **({'object_type': character.object_type} if character.object_type != 'character' else {}),
                       'sha256': hashlib.sha256(data).hexdigest(), 'width': character.cell_width, 'height': character.cell_height}
 
     def save_record(self, record):
@@ -99,7 +100,10 @@ class VisualStructures:
         return doc
 
     def source_current(self, record):
-        try: return self.reference(record['source']['character_id'])[1]['sha256'] == record['source']['sha256']
+        try:
+            source = record['source']
+            current = self.reference(source['character_id'])[1]
+            return current['sha256'] == source['sha256'] and current.get('object_type') == source.get('object_type')
         except (NotFoundError, ValidationHarnessError, OSError): return False
 
     def view(self, identity, revision=None):
@@ -118,7 +122,7 @@ class VisualStructures:
         for path in self.root.glob('*/record.json'):
             try:
                 record = read_json(path)
-                if record['source']['character_id'] == character_id and record['source']['sha256'] == source['sha256']:
+                if all(record['source'].get(key) == source.get(key) for key in ('character_id', 'object_type', 'sha256')):
                     rows.append(record)
             except (OSError, ValueError, KeyError): continue
         latest = max(rows, key=lambda r:r['updated_at']) if rows else None
@@ -261,7 +265,8 @@ class VisualStructures:
                     try:
                         parser=self.parser or parse
                         result,metadata=parser(self.registry,(folder/'source.png').read_bytes(),record['models'],
-                                               on_request=request_started,on_response=receipt.update)
+                                               on_request=request_started,on_response=receipt.update,
+                                               **({'object_type': 'interactable'} if record['source'].get('object_type') == 'interactable' else {}))
                     except Exception:
                         record['calls'][0].update(receipt);record['calls'][0]['state']='failed_or_unknown';raise
                     proposal=StructureProposal.model_validate(result.model_dump(mode='json') if hasattr(result,'model_dump') else result)

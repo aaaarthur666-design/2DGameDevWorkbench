@@ -73,6 +73,8 @@ def adopt_clip(manager, task):
             newfolder=root/'provider'/'candidate_01.plan'/str(stage);newfolder.mkdir(parents=True,exist_ok=True)
             for i,data in enumerate(raw):s._atomic_write_bytes(newfolder/f'frame_{i:03d}.png',data)
             s._atomic_write_bytes(newfolder/'frames.json',(oldfolder/'frames.json').read_bytes())
+            if r.state_checkpoint:
+                copy_file(r.state_checkpoint['path'])
             for f in (r.active_frames or [])+((r.accepted or {}).get('frames',[])):
                 copy_file(f['path'])
         for target in source.request.open_plan.end_targets:copy_file('targets/'+target.filename)

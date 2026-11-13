@@ -25,6 +25,17 @@ if '--checkpoints' in sys.argv:
     service.open_motion_model = CheckpointPlanner()
 else:
     service.open_motion_model = Planner()
+from test_interactable_motion import PropPlanner
+character_planner = service.open_motion_model
+class ObjectPlanner:
+    configuration = character_planner.configuration
+    configured = character_planner.configured
+
+    def __call__(self, role, work, reference, **kwargs):
+        planner = PropPlanner('lever') if work.spec.object_type == 'interactable' else character_planner
+        return planner(role, work, reference, **kwargs)
+
+service.open_motion_model = ObjectPlanner()
 provider = Provider(fixture)
 with ExitStack() as stack:
     stack.enter_context(patch('sprite_pipeline.providers.get_provider', return_value=provider))

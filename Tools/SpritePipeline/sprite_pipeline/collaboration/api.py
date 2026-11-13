@@ -38,6 +38,7 @@ class Revise(Create, Revision):
 
 
 class Generate(Revision):
+    allow_unsupported_motion: bool = False
     plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -56,7 +57,7 @@ class StageReview(Export):
     stage_index: int = Field(ge=0, le=3)
     token: str = Field(pattern=r'^[0-9a-f]{64}$')
     note: str = Field(min_length=4, max_length=2000)
-    decision: Literal['accept', 'reject']
+    decision: Literal['accept', 'reject', 'accept_state']
     acknowledge_warnings: bool = False
     anchor_frame: int | None = Field(default=None, ge=0, le=63)
     acknowledge_trim: bool = False
@@ -324,7 +325,7 @@ def create_router(service):
 
     @router.post("/{work_id}/generate")
     def generate(work_id: str, body: Generate):
-        workspace.start(work_id, body.expected_revision, body.plan_sha256)
+        workspace.start(work_id, body.expected_revision, body.plan_sha256, allow_unsupported_motion=body.allow_unsupported_motion)
         return view(work_id)
 
     @router.post('/{work_id}/target')

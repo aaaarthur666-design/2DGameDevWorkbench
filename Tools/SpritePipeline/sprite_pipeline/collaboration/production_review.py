@@ -11,6 +11,7 @@ import json
 
 from ..errors import ConflictError, ValidationHarnessError
 from .contracts import digest
+from .review_inputs import review_dimensions
 from .review_evaluation import ReviewEvidence, validated_audit
 from .review_sources import snapshot_review
 from .visual_review import Audit, frame_digest
@@ -35,7 +36,7 @@ def independent_followup(evidence, original, call, persist, requests, *, additio
         if visibility_version not in (1,2,3,4):
             return call(phase, content, result_type)
         from .visibility_review import add_content, schema, guard
-        value = call(phase, add_content(content,version=visibility_version), schema(result_type))
+        value = call(phase, add_content(content,version=visibility_version, interactable=bool(evidence.manifest['context'].get('interactable'))), schema(result_type))
         value, trace = guard(value, len(evidence.paths), resolution=phase=='dispute',version=visibility_version)
         visibility[phase] = trace
         persist(visibility_review_version=visibility_version, visibility_evidence=copy.deepcopy(visibility))
@@ -43,7 +44,7 @@ def independent_followup(evidence, original, call, persist, requests, *, additio
     for expert in EXPERTS:
         persist(phase=expert)
         value = opinion('expert_'+expert, expert_content(evidence, expert), Audit)
-        opinions[expert] = validated_audit(value, len(evidence.paths))
+        opinions[expert] = validated_audit(value, len(evidence.paths), review_dimensions(evidence.manifest['context']))
         persist(experts=copy.deepcopy(opinions))
     independent = {'mode': 'independent', 'state': 'complete', 'evidence_token': evidence.token,
         'model_snapshot': original['model_snapshot'], 'experts': opinions,

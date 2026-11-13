@@ -46,6 +46,11 @@ export type MotionStage = {
 export type MotionPlan = {
   quality?: {
     version: number;
+    interactable?: {
+      initial_state: string; target_state: string; moving_parts: string[]; fixed_parts: string[];
+      motion_type: string; endpoint: string; hold: string;
+      reference_check: Record<string, {status: string; evidence: string}>;
+    };
     event_contract: string;
     appearance_contract: string;
     ending_contract: string;
@@ -67,7 +72,7 @@ export type MotionFrame = {
   review_status: string;
 };
 export type MotionReviewCheck = {
-  dimension: 'completeness' | 'equipment' | 'rhythm';
+  dimension: 'completeness' | 'equipment' | 'rhythm' | 'state_frame' | 'transition' | 'fixed_parts';
   frames: number[];
   evidence: string;
   status?: 'pass' | 'fail' | 'uncertain';
@@ -77,6 +82,9 @@ export type MotionReviewOpinion = { summary?: string; checks?: MotionReviewCheck
 export type MotionReview = MotionReviewOpinion & {
     state: string;
     verdict: 'pass' | 'fail' | 'uncertain';
+    motion_evidence?: {
+      alpha_changes?: {region: string; frame: number; compared_to: number | 'reference'; lost_pixels: number; gained_pixels: number}[];
+    };
     protocol?: 'experts_v1';
     requests?: {phase: string; state: string}[];
     expert_review?: {

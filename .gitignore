@@ -55,7 +55,7 @@ tests/game-engineering/__pycache__/
 # Local development instructions and host state (product Skills are distributed)
 [Aa][Gg][Ee][Nn][Tt].md
 [Aa][Gg][Ee][Nn][Tt][Ss].md
-# Shared root navigation ships with the project; other host instructions stay local.
+# Shared navigation ships at the root and in the issue register.
 !/AGENTS.md
 CLAUDE.md
 /CONTRIBUTING.md
@@ -127,8 +127,11 @@ logs/
 !/docs/论文方向与方法.md
 !/docs/论文-序列帧长动作生成.md
 !/docs/论文分支执行计划.md
-!/docs/N2交互物动画问题报告.md
-!/docs/N2交互物动画问题解决方案.md
+# Share written issue records. Keep raw runs and attachments in their existing locations.
+!/docs/问题清单/
+/docs/问题清单/**
+!/docs/问题清单/**/
+!/docs/问题清单/**/*.md
 !/docs/operations-manual.md
 !/docs/prop-art.md
 !/docs/reference-art.md

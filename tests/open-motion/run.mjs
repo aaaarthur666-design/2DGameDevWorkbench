@@ -128,6 +128,8 @@ try {
   assert.equal(objectWork.spec.object_id, 'fixture_door');
   assert.equal(objectWork.spec.object_type, 'interactable');
   assert.equal(objectWork.spec.character_id, undefined);
+  assert.equal(objectWork.status, 'ready');
+  assert.ok(objectWork.plan.quality.interactable.reference_check);
   assert.equal(objectWork.character.object_type, 'interactable');
   assert.equal(objectWork.character.facing, undefined);
   assert.equal(objectWork.character.weapon_hand, undefined);

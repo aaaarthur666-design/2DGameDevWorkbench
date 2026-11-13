@@ -5,7 +5,7 @@ import hashlib
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
+from pydantic import ValidationInfo, BaseModel, ConfigDict, Field, model_validator, model_serializer
 
 from ..object_identity import ObjectIdentity
 
@@ -72,8 +72,54 @@ class Requirement(Contract):
     evidence: str = Field(min_length=1, max_length=300)
 
 
+CHARACTER_DIMENSIONS = ('completeness', 'equipment', 'rhythm')
+PROP_DIMENSIONS = ('state_frame', 'transition', 'fixed_parts')
+QualityDimension = Literal['completeness', 'equipment', 'rhythm', 'state_frame', 'transition', 'fixed_parts']
+
+
+class PremiseCheck(Contract):
+    status: Literal['satisfied', 'mismatch', 'ambiguous']
+    evidence: str = Field(min_length=4, max_length=300)
+
+
+class ReferencePremises(Contract):
+    viewpoint: PremiseCheck
+    initial_state: PremiseCheck
+    part_ownership: PremiseCheck
+
+    def blockers(self):
+        labels = {'viewpoint': '视角', 'initial_state': '初态', 'part_ownership': '部件归属'}
+        return [f'{labels[key]}：{check.evidence}' for key, check in self if check.status != 'satisfied']
+
+
+class OpaqueRegion(Contract):
+    name: str = Field(min_length=1, max_length=80)
+    # Native coordinates on a 128px prop, right/bottom exclusive.
+    box: list[int] = Field(min_length=4, max_length=4)
+
+    @model_validator(mode='after')
+    def within_reference(self):
+        left, top, right, bottom = self.box
+        if not (0 <= left < right <= 128 and 0 <= top < bottom <= 128):
+            raise ValueError('Opaque monitoring region must be within the 128px reference')
+        return self
+
+
+class InteractableMotion(Contract):
+    initial_state: str = Field(min_length=1, max_length=300)
+    target_state: str = Field(min_length=1, max_length=300)
+    moving_parts: list[str] = Field(min_length=1, max_length=24)
+    fixed_parts: list[str] = Field(max_length=24)
+    motion_type: Literal['appearance_change', 'hinge_rotation', 'deformation', 'occluded_rigid_translation']
+    endpoint: str = Field(min_length=1, max_length=300)
+    hold: str = Field(min_length=1, max_length=300)
+    hold_frames: int = Field(default=0, ge=0, le=63, description="Additional playback ticks repeating the confirmed final frame")
+    reference_check: ReferencePremises
+    opaque_regions: list[OpaqueRegion] = Field(default_factory=list, max_length=24)
+
+
 class QualityCriterion(Contract):
-    dimension: Literal['completeness', 'equipment', 'rhythm']
+    dimension: QualityDimension
     criterion: str = Field(min_length=4, max_length=400)
 
 
@@ -90,19 +136,22 @@ class MotionQuality(Contract):
     ending_contract: str = Field(min_length=4, max_length=180)
     rhythm_contract: str = Field(min_length=4, max_length=180)
     playback_fps: float = Field(gt=0, le=60)
+    interactable: InteractableMotion | None = None
     criteria: list[QualityCriterion] = Field(min_length=3, max_length=3)
     key_poses: list[KeyPose] = Field(default_factory=list, max_length=6)
 
     @model_serializer(mode='wrap')
     def preserve_earlier_quality_hash(self, handler):
         data=handler(self)
+        if self.interactable is None: data.pop('interactable', None)
         if not self.key_poses:data.pop('key_poses',None)
         return data
 
     @model_validator(mode='after')
     def dimensions(self):
-        if {c.dimension for c in self.criteria} != {'completeness', 'equipment', 'rhythm'}:
-            raise ValueError('Quality criteria must cover completeness, equipment and rhythm exactly once')
+        expected = PROP_DIMENSIONS if self.interactable else CHARACTER_DIMENSIONS
+        if {c.dimension for c in self.criteria} != set(expected):
+            raise ValueError(f'Quality criteria must cover {expected} exactly once')
         return self
 
 
@@ -194,7 +243,8 @@ class PlanProposal(Contract):
 
     @model_validator(mode="after")
     def validate_sequence(self):
-        if sum(s.frame_count for s in self.stages) > 64:
+        hold = self.quality.interactable.hold_frames if self.quality and self.quality.interactable else 0
+        if sum(s.frame_count for s in self.stages) + hold > 64:
             raise ValueError("A complete animation supports at most 64 planned frames")
         if self.stages[0].first_frame != "original":
             raise ValueError("The first stage must use the original reference")
@@ -313,7 +363,35 @@ class TargetImage(Contract):
     note: str = Field(min_length=4, max_length=1000)
 
 
+def motion_transport_schema(schema_type, interactable):
+    """Specialize the model-facing schema while persisted records support both types."""
+    class MotionTransport(schema_type):
+        @classmethod
+        def model_json_schema(cls, *args, **kwargs):
+            schema = schema_type.model_json_schema(*args, **kwargs)
+            definitions = schema.get('$defs', {})
+            for definition in definitions.values():
+                dimension = definition.get('properties', {}).get('dimension', {})
+                if dimension.get('enum') == list(CHARACTER_DIMENSIONS + PROP_DIMENSIONS):
+                    dimension['enum'] = list(PROP_DIMENSIONS if interactable else CHARACTER_DIMENSIONS)
+            if 'MotionQuality' in definitions:
+                fields = definitions['MotionQuality']['properties']
+                if interactable:
+                    fields['interactable'] = {'$ref': '#/$defs/InteractableMotion'}
+                else:
+                    fields.pop('interactable', None)
+                    for unused in ('InteractableMotion', 'ReferencePremises', 'PremiseCheck', 'OpaqueRegion'):
+                        definitions.pop(unused, None)
+            return schema
+    return MotionTransport
+
+
+def prop_contract(plan):
+    return plan.quality.interactable if plan and plan.quality else None
+
+
 class PlanBinding(Contract):
+    unsupported_motion_acknowledged: Literal[True] | None = None
     version: Literal[1] = 1
     work_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     revision: int = Field(ge=1)
@@ -331,6 +409,7 @@ class PlanBinding(Contract):
     @model_serializer(mode='wrap')
     def preserve_binding(self, handler):
         data = handler(self)
+        if self.unsupported_motion_acknowledged is None: data.pop('unsupported_motion_acknowledged', None)
         if not self.end_targets: data.pop('end_targets', None)
         if self.visual_structure is None:data.pop('visual_structure',None)
         if self.generation_policy_version is None:data.pop('generation_policy_version',None)
@@ -338,9 +417,16 @@ class PlanBinding(Contract):
         return data
 
     @model_validator(mode="after")
-    def validate_budget_and_identity(self):
+    def validate_budget_and_identity(self, info: ValidationInfo):
         from .structure_control import validate_structure_binding
         validate_structure_binding(self.spec,self.visual_structure,self.reference_sha256,self.plan)
+        prop = prop_contract(self.plan)
+        if prop and self.plan.quality.version < 3:
+            raise ValueError('交互物计划需要真实帧检查点')
+        if prop and (self.spec.object_type != 'interactable' or prop.reference_check.blockers()):
+            raise ValueError('交互物合同与对象或起始图前提不符')
+        if prop and prop.motion_type == 'occluded_rigid_translation' and not self.unsupported_motion_acknowledged and not (info.context or {}).get('planning_only'):
+            raise ValueError('当前生成器不适合带遮挡的刚体平移，请明确确认是否尝试')
         stages = [t.stage for t in self.end_targets]
         if len(stages) != len(set(stages)) or any(s >= len(self.plan.stages) for s in stages):
             raise ValueError('Target images must identify unique existing segments')
@@ -389,6 +475,7 @@ class StageRun(Contract):
     review: dict[str, Any] | None = None
     accepted: dict[str, Any] | None = None
     repairs: list[dict[str, Any]] = Field(default_factory=list, max_length=2)
+    state_checkpoint: dict[str, Any] | None = None
     active_frames: list[dict[str, Any]] | None = None
     review_history: list[dict[str, Any]] = Field(default_factory=list)
     adjustment_history: list[dict[str, Any]] = Field(default_factory=list)
@@ -396,6 +483,7 @@ class StageRun(Contract):
     @model_serializer(mode='wrap')
     def preserve_legacy_stage(self, handler):
         data=handler(self)
+        if self.state_checkpoint is None: data.pop('state_checkpoint', None)
         if not self.adjustment_history:data.pop('adjustment_history',None)
         return data
 

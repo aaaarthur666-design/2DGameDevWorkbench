@@ -28,7 +28,7 @@ FROZEN=('work_id','revision','candidate','stage','source_job','source_token','so
 
 def frozen_inputs(task):
     # Old task hashes remain byte-equivalent; new structure is separately frozen.
-    return {**{k:task[k] for k in FROZEN},**{k:task[k] for k in ('visual_structure','structure_context_version','intent_format_version','range_policy','stage_definition','preserve_motion','edit_regions','spatial_policy','comparison_protocol','visibility_review_version') if k in task}}
+    return {**{k:task[k] for k in FROZEN},**{k:task[k] for k in ('interactable','visual_structure','structure_context_version','intent_format_version','range_policy','stage_definition','preserve_motion','edit_regions','spatial_policy','comparison_protocol','visibility_review_version') if k in task}}
 
 
 class AdjustmentInput(Contract):
@@ -141,9 +141,16 @@ class Adjustments:
             # source() already requires an unlocked segment and no submitted
             # continuation. This endpoint is not a frozen checkpoint yet.
             locked.remove(len(frames)-1)
+        if stage is not None and c.plan_execution.stages[stage].state_checkpoint:
+            pinned = c.plan_execution.stages[stage].state_checkpoint['frame']
+            locked.add(pinned)
+            if pinned == len(frames) - 1:
+                editable_end = False
         if stage is None:
             for row in c.plan_execution.timeline:
-                locked.update([row['start'],row['start']+row['count']-1])
+                end = row['start'] + row['count'] - 1
+                locked.add(row['start'])
+                locked.update(range(end - row.get('hold_frames', 0), end + 1))
         checks=report.get('checks',[])
         # These are suggestions, never a finding prerequisite or a preselection.
         suggestions=[{'dimension':x['dimension'],'text':x['evidence'],'frames':x['frames']} for x in checks if x.get('status')!='pass']
@@ -208,6 +215,8 @@ class Adjustments:
                 'models':self.registry.load().model_dump(mode='json') if hasattr(self.registry,'load') else copy.deepcopy(job.request.open_plan.model_snapshot),'protocol':work.spec.review_protocol or 'baseline',
                 'planning_calls':[],'generation_calls':[],'review_calls':[],'diagnostic':c.diagnostic_only,'seed':c.seed,
                 'message':'已保存修改任务，原版保持不变','source_goal':work.spec.description}
+            from .review_inputs import prop_review_context
+            task.update(prop_review_context(job.request.open_plan))
             task['intent_format_version']=4
             task['comparison_protocol']=1
             # Keep the source work's frozen reviewer policy; a newer deployment
@@ -270,7 +279,7 @@ class Adjustments:
                  'profile':self.registry.profile(role,task['models']).model_dump(mode='json')}
         task[bucket].append(request);self.save(task);receipt={}
         try:
-            options={}
+            options={'interactable': True} if task.get('interactable') else {}
             if phase=='intent' and task.get('intent_format_version') in (2,3,4) and request['profile']['provider']=='tokenhub' and request['profile']['model']=='kimi-k3.1-pro':
                 options['output_format']='json_schema';request['requested_output_format']='json_schema';self.save(task)
             result,meta=self.registry.send(role,content,schema,count,snapshot=task['models'],schema_name='motion_adjustment',on_response=receipt.update,**options)

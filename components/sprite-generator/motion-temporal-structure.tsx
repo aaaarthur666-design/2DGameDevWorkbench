@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { motionRequest, motionUrl, motionObjectId, motionObjectType, type MotionWork } from './open-motion-model';
+import { motionRequest, motionUrl, motionObjectId, type MotionWork } from './open-motion-model';
 import { MotionStructureHistory, StructureHistoryImage, temporalHistoryImage, type StructureHistoryEntry } from './motion-structure-history';
 import './motion-structure.css';
 
@@ -123,13 +123,7 @@ type MotionTemporalStructureProps = {
   children: ReactNode;
 };
 
-export function MotionTemporalStructure(props: MotionTemporalStructureProps) {
-  if (motionObjectType(props.work.spec) === 'interactable')
-    return <div className="motion-canvas motion-large">{props.children}</div>;
-  return <CharacterTemporalStructure {...props} />;
-}
-
-function CharacterTemporalStructure({
+export function MotionTemporalStructure({
   work,
   candidate,
   stage,

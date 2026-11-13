@@ -51,8 +51,8 @@ try {
   const objectOption = await objectPicker.locator('option[value="fixture_door"]').textContent();
   assert.match(objectOption, /交互物/); assert.doesNotMatch(objectOption, /朝左|朝右/);
   await objectPicker.selectOption('fixture_door');
-  await page.getByAltText('对象参考图', { exact: true }).waitFor();
-  assert.equal(await page.locator('.motion-reference .motion-structure').count(), 0, 'Object presets do not inherit character structure controls.');
+  await page.getByAltText('所选对象参考图', { exact: true }).waitFor();
+  assert.equal(await page.locator('.motion-reference .motion-structure').count(), 1, 'Interactables expose their reference structure controls.');
   assert.equal(await page.getByText('上传角色原图', { exact: true }).count(), 1, 'N1 does not add object-reference admission.');
   await objectPicker.selectOption('test_hero');
 
@@ -282,7 +282,7 @@ try {
   assert.equal(await page.getByLabel('对象要做什么',{exact:true}).inputValue(),'修改为鞠躬后坐下，结束保持坐姿');
   await page.setViewportSize({width:390,height:844});
   await page.locator('.motion-content').hover();await page.mouse.wheel(0,850);
-  assert.ok(await page.locator('.motion-content').evaluate(el=>el.scrollTop)>0);
+  await page.waitForFunction(()=>document.querySelector('.motion-content')?.scrollTop > 0);
   await page.screenshot({path:path.join(root,'mobile.png'),fullPage:true});
   // Real page rendering of rejected/interrupted planning. These responses are
   // browser-only fixtures; no production work or paid retry is created.

@@ -576,7 +576,7 @@
       "id": "reference-art",
       "name": "角色原图",
       "shortName": "角色原图",
-      "description": "使用 PixelLab 生成透明背景像素角色或交互物品原图。角色可移送序列帧；物品在交互物编辑器预览并采用。",
+      "description": "使用 PixelLab 生成透明背景的角色或交互物原图，两者都可移送为对应类型的动画参考。物品也可在交互物编辑器预览并采用。",
       "category": "production",
       "workflow": "workbench/workflows/reference-art-production.json",
       "ui": {
@@ -644,7 +644,7 @@
               "prop"
             ],
             "default": "character",
-            "description": "generate 的图片用途：character 角色；prop 独立侧视交互物品（128×128 透明 PNG），从交互物编辑器预览采用，不能 transfer 为角色。"
+            "description": "generate 的图片用途：character 角色；prop 交互物品（128×128 透明 PNG），可从交互物编辑器预览采用。移送保留 interactable 类型。"
           },
           "prompt": {
             "type": "string",
@@ -674,7 +674,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200,
-            "description": "transfer 必填，已完成的角色原图任务 ID（生成或导入）。移送不生成动画。"
+            "description": "transfer 必填，已完成的角色原图任务 ID（生成或导入），或 128 像素 PixelLab 物品生成任务 ID。移送只创建参考预设。"
           },
           "sourceImagePath": {
             "type": "string",
@@ -700,14 +700,14 @@
       "id": "sprite-generator",
       "name": "角色动画",
       "shortName": "角色动画",
-      "description": "按自由动作要求制作角色动画。专家制定通用分段与末姿势检查点；每段生成后须读取实际帧并明确确认，锁定末帧锚点后才继续。新任务可使用独立外观/运动专家与有界争议复核，每次检查最多五次视觉调用；模型意见不自动放行。规划、绘制与视觉调用分别受授权预算约束；旧方案保持原语义。",
+      "description": "按动作要求制作角色或交互物动画。专家制定通用分段与末姿势检查点；每段生成后须读取实际帧并明确确认，锁定末帧锚点后才继续。新任务可使用独立外观/运动专家与有界争议复核，每次检查最多五次视觉调用；模型意见不自动放行。规划、绘制与视觉调用分别受授权预算约束；旧方案保持原语义。",
       "category": "production",
       "workflow": "workbench/workflows/sprite-production.json",
       "ui": {
         "icon": "frames",
         "productionLine": "player",
         "entryTitle": "角色动画",
-        "starterHint": "选择角色，描述动作和结束姿势，查看方案后开始制作。",
+        "starterHint": "选择角色或交互物，描述动作和结束状态，查看方案后开始制作。",
         "stages": [
           "准备与描述",
           "查看制作方案",
@@ -720,7 +720,7 @@
         "route": "/tools/sprite-generator",
         "surface": "editor",
         "capabilities": [
-          "角色动作生成",
+          "角色与交互物动作生成",
           "播放检查",
           "逐帧修补",
           "精灵表导出"
@@ -780,6 +780,10 @@
             "type": "integer",
             "minimum": 1
           },
+          "allowUnsupportedMotion": {
+            "type": "boolean",
+            "description": "仅用于 generate-motion。用户看过当前方案并决定仍尝试带遮挡的刚体平移时传 true。"
+          },
           "planSha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
@@ -806,10 +810,11 @@
           "stageDecision": {
             "type": "string",
             "enum": [
+              "accept_state",
               "accept",
               "reject"
             ],
-            "description": "实际查看片段与末姿势后裁决；模型通过不能代替 Agent 或用户检查。"
+            "description": "accept_state 在交互物分段中单独锁定真实状态帧，过渡继续待审。accept 与 reject 裁决整个片段或修复。"
           },
           "planningAuthorized": {
             "type": "boolean",

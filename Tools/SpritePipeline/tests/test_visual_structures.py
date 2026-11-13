@@ -208,3 +208,26 @@ def test_http_contract_and_exact_version_images(setup):
     assert client.post(f'/v1/open-motion/structures/{identity}/corrections',json=payload).status_code==200
     assert client.post(f'/v1/open-motion/structures/{identity}/corrections',json=payload).json()['revision']==2
     assert counts['semantic']==1
+
+
+def test_prop_semantic_parser_receives_typed_reference_and_reuses_result(setup):
+    from object_test_fixtures import write_interactable
+    service, structures, _, counts = setup
+    preset = write_interactable(service.settings.root)
+    def parser(registry, data, models, *, object_type, on_request, on_response):
+        assert object_type == 'interactable'
+        counts['semantic'] += 1
+        on_request()
+        on_response({'response_id':'fixture-prop'})
+        part = {'id':'panel','name':'面板','kind':'other','box':[44,20,75,100],
+                'points':[{'x':60,'y':60,'label':1}],'evidence':'Visible fixed panel.'}
+        return StructureProposal(summary='Fixture panel', parts=[part]), {}
+    structures.parser = parser
+    pending = structures.create(preset.object_id, 'prop-structure-fixture', authorized=True)
+    structures.run(pending['id'])
+    analysis = structures.latest(preset.object_id)['analysis']
+    assert analysis['source']['object_type'] == 'interactable'
+    assert analysis['state'] == 'ready' and not analysis['document']['issues']
+    assert edit(structures, analysis, confirm=True)['document']['confirmation']
+    assert structures.create(preset.object_id, 'prop-structure-repeat', authorized=True)['id'] == pending['id']
+    assert counts == {'semantic':1,'local':1}

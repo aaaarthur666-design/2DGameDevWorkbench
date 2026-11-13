@@ -206,6 +206,14 @@ class PlanGeneration:
                     mapping.append({'frame':len(combined),'stage':stage,'raw_frame':item['raw_index'],
                                     **{k:item[k] for k in ('repair_attempt','repair_index') if k in item}})
                     combined.append(data)
+                prop = job.request.open_plan.plan.quality.interactable
+                if prop and stage == len(runs) - 1 and prop.hold_frames:
+                    # Playback entries point to the already confirmed real endpoint.
+                    timeline[-1].update(count=len(frames) + prop.hold_frames, hold_frames=prop.hold_frames)
+                    source = mapping[-1].copy()
+                    for _ in range(prop.hold_frames):
+                        mapping.append({**source, 'frame': len(combined), 'playback_hold': True})
+                        combined.append(frames[-1])
         elif job.request.open_plan.plan.quality:
             from .quality import assemble_quality_frames
             raw = [self.saved_frames(job_id,index,i) for i in range(len(runs))]

@@ -33,7 +33,7 @@ authorization; do not invent a target PNG or silently generate it.
 '''
 
 
-def freeze_structure(service,selection,reference_sha256):
+def freeze_structure(service,selection,reference_sha256, *, object_type):
     if selection is None:return None
     from .structures import VisualStructures
     structures=VisualStructures(service);value=structures.view(selection.analysis_id)
@@ -42,7 +42,7 @@ def freeze_structure(service,selection,reference_sha256):
         raise ConflictError('所选角色结构已过期，请重新核对后选择；未调用模型')
     if doc['issues'] or not doc['confirmation'] or value['pending']:
         raise ValidationHarnessError('先确认已核对的角色结构，再用于制作；未知部位可保留')
-    if value['source']['sha256']!=reference_sha256:
+    if value['source'].get('object_type','character') != object_type or value['source']['sha256']!=reference_sha256:
         raise ConflictError('结构与本次角色原图不一致；未调用模型')
     parts={p['id']:p for p in doc['data']['parts']};geometry=[]
     for mask in doc['masks']:

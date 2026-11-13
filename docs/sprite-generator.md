@@ -157,7 +157,7 @@ SPRITE_PIPELINE_API_TOKEN=optional-bearer-token
 
 N1 交互物动画沿用 SpriteFrames 导出，导出清单带 `object_id` / `object_type` 和兼容的 `character_id`，不写没有意义的 `source_facing`。资产目录与导入元数据使用 `objectId` / `objectType`，保留帧序、FPS、循环、锚点和来源；旧角色包继续按原规则读取。此处交付的是动画片段，不是 N5 的状态槽或过渡绑定。
 
-已有对象预设来自普通数据根的 `objects/<id>/object.json`，portable 模式则是 `presets/objects/<id>/object.json`；角色原目录继续可读。私有 portable 对象预设不提交到仓库。N1 没有开放 PixelLab 物品图 transfer、交互物上传、交互物合同模板、状态链或动画状态写回；这些仍需 N2 的真实可行性结果和后续开发。对象字段兼容与模拟测试不证明 PixelLab 对物品动画的生成品质。
+已有对象预设来自普通数据根的 `objects/<id>/object.json`，portable 模式则是 `presets/objects/<id>/object.json`；角色原目录继续可读。私有 portable 对象预设不提交到仓库。交互物可使用结构面板及专用规划与复核合同。128 像素 PixelLab 物品图可直接[移送到物品动画](prop-art.md#旧-pixellab-流程)。状态链与状态写回留待后续验证。对象字段兼容与模拟测试不证明 PixelLab 对物品动画的生成品质。
 
 ## Agent / MCP 接线
 
