@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from .artwork_library import ArtworkLibrary
-from .errors import NotFoundError, ValidationHarnessError
+from .collaboration.state_assets import resolve_asset
+from .errors import ConflictError, NotFoundError, ValidationHarnessError
 from .jsonio import inside
 
 
@@ -38,6 +39,13 @@ class AssetCatalog:
                 "previewKind": "animation" if source and source.suffix.lower() == ".gif" else "image",
                 "hasArtwork": True, "engineValidated": False,
             })
+        for job in summaries.values():
+            for saved in job.get("state_assets", []):
+                row = saved.copy()
+                path = self.service.store.resolve_job_path(job['job_id'], row.pop('previewPath'))
+                rows.append(dict(row, status='approved', statusLabel='已确认状态图' if row['kind'] == 'prop' else '已确认过渡',
+                                 createdAt=job['created_at'], updatedAt=job['updated_at'], previewKind='image',
+                                 availability='available' if path.is_file() else 'missing', hasArtwork=True))
         return {"assets": rows, "issues": [{"source": "sprite-pipeline", "message": "部分作业摘要损坏，作品目录可能不完整。"}] if any(j.get("status") == "invalid" for j in summaries.values()) else []}
 
     def paths(self, asset_id):
@@ -59,6 +67,14 @@ class AssetCatalog:
         return row, files
 
     def file(self, asset_id, key):
+        if asset_id.startswith(('motion-state:', 'motion-transition:')):
+            _, registered = resolve_asset(self.service, asset_id)
+            if key not in registered:
+                raise NotFoundError('状态链资产没有此文件')
+            path, expected = registered[key]
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise ConflictError('已确认的素材文件发生变化')
+            return path
         _row, files = self.paths(asset_id)
         value = files.get(key)
         if value is None or not value.is_file():
@@ -71,6 +87,14 @@ class AssetCatalog:
         asset = next((a for a in self.list()["assets"] if a["id"] == asset_id), None)
         if asset is None:
             raise NotFoundError("所选资产不存在或无法读取")
+        if asset.get('motionSource'):
+            row, registered = resolve_asset(self.service, asset_id)
+            files = []
+            for key, (path, expected) in registered.items():
+                if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                    raise ConflictError('已确认的素材文件发生变化')
+                files.append(dict(key=key, name=path.name, available=True, bytes=path.stat().st_size, sha256=expected))
+            return {**asset, **row, 'files': files}
         row, paths = self.paths(asset_id)
         files = []
         for key, file in paths.items():

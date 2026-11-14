@@ -33,6 +33,8 @@ export function AssetImportPicker({
   onClose,
   purposes,
   onImport,
+  onImportMotion,
+  motionSource,
   initialAsset = '',
   kind,
 }: {
@@ -40,6 +42,8 @@ export function AssetImportPicker({
   onClose: () => void;
   purposes: ImportPurpose[];
   onImport: (bundle: ImportBundle) => Promise<void>;
+  motionSource?: LibraryAsset['motionSource'];
+  onImportMotion?: (asset: LibraryAsset) => Promise<void>;
   initialAsset?: string;
   kind?: string;
 }) {
@@ -66,7 +70,7 @@ export function AssetImportPicker({
               : new URLSearchParams({
                   query,
                   purposes: purposeKey,
-                  ...(kind ? { kind } : {}),
+                  ...(kind ? { kind } : {}), ...(motionSource ? {motionSource} : {}),
                   limit: '24',
                   offset: String(page.offset),
                   ...(page.snapshot ? { snapshot: page.snapshot } : {}),
@@ -104,7 +108,7 @@ export function AssetImportPicker({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [open, query, page, purposeKey, refresh, initialAsset, kind]);
+  }, [open, query, page, purposeKey, refresh, initialAsset, kind, motionSource]);
   const choose = async (asset: LibraryAsset, purpose: ImportPurpose) => {
     if (lock.current) return;
     lock.current = true;
@@ -121,7 +125,8 @@ export function AssetImportPicker({
       },
     });
     try {
-      await onImport(await loadLibraryAsset(asset.id, purpose));
+      if (motionSource && onImportMotion) await onImportMotion(asset);
+      else await onImport(await loadLibraryAsset(asset.id, purpose));
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -132,7 +137,7 @@ export function AssetImportPicker({
     }
   };
   const visible = (catalog?.assets || []).filter(
-    (asset) => (!kind || asset.kind === kind) && purposesFor(asset, purposes).length,
+    (asset) => (!kind || asset.kind === kind) && (!motionSource || motionSource === asset.motionSource) && purposesFor(asset, purposes).length,
   );
   return (
     <Dialog

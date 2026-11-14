@@ -4,7 +4,7 @@ import sharp from 'sharp';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { KIT_VERSION, selectedProject, referencedAssets } from './contract.mjs';
+import { KIT_VERSION, appearanceAnimation, selectedProject, referencedAssets } from './contract.mjs';
 
 const genericRoot = 'addons/workbench_interaction';
 export const assetExtensions = {
@@ -111,7 +111,7 @@ function sceneFile(o, assetPaths, root) {
       ? o.behavior.states[o.behavior.initialToggle ? 1 : 0].appearance
       : {};
   const initialAsset = initial.assetId || o.visual.assetId;
-  const initialAnimation = initial.animation || o.visual.idleAnimation;
+  const initialAnimation = appearanceAnimation(initial, o.visual);
   const initialClip = o.visual.clips.find((c) => c.name === initialAnimation);
   const imageSize = assetPaths.get(initialAsset)?.dimensions;
   const firstFrame = initialClip?.frames[0];

@@ -9,6 +9,8 @@ export type ImportPurpose =
 export type LibraryAsset = {
   id: string;
   kind: string;
+  checkpointToken?: string | null; stateSha256?: string; planSha256?: string;
+  motionSource?: 'state' | 'transition';
   objectId?: string;
   objectType?: 'character' | 'interactable';
   origin?: string;

@@ -409,7 +409,9 @@ func _restore_appearance(preserve_feedback: bool = false) -> void:
 	animated.hide()
 	animated.stop()
 	var animation: String = _appearance.get("animation", "")
-	_play_clip(animation if not animation.is_empty() else config.visual.idleAnimation)
+	if animation.is_empty() and not _appearance.get("staticImage", false):
+		animation = config.visual.idleAnimation
+	_play_clip(animation)
 
 func _play_clip(name: String) -> bool:
 	if name.is_empty() or not animated.sprite_frames or not animated.sprite_frames.has_animation(name):

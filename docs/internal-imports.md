@@ -10,11 +10,12 @@
 | 物品原图或角色原图 | 用于交互物外观 | 绑定当前物件默认图片，保留状态图片和行为 |
 | 资产库动画 | 用于交互物动画 | 导入选定候选的有序帧、FPS 和循环设置，作为当前物件默认动画 |
 | 交互物编辑器 | 从资产库打开项目 / 导入原图或动画 | 打开完整项目，或把外观导入当前物件；不同版本保留独立项目 |
+| 交互物状态链 | 在素材区选择切换槽或序列条目的“状态图”或“进入过渡”，再从资产库选用 | 写入确认的静态图，或把已接受段绑定为进入该条目时播放一次的动画 |
 | 已完成 image-assets 图片任务 | 明确采用，或 `workbench_adopt_document_image` | 透明 prop 绑定指定交互物默认图片 |
 | 共享交互物工程 | `?document=<id>` / 文档工具 | 打开同一稳定身份与服务端版本，保留来源快照 |
 | 交互物静态槽 / 独立图片任务 | 图片编辑工具与共用工作区 | 读取真实源图、生成候选，再明确采用到绑定目标 |
 
-角色原图到序列帧的“用于制作序列帧”沿用既有 transfer 流程。PixelLab 物品原图尚不能 transfer 为动画参考；该扩展须等 N2 的可行性前提满足。图片不自动形成拾取、开关或剧情行为；动画导入不生成角色控制器，也不自动写入某个状态过渡。
+角色原图到序列帧的“用于制作序列帧”沿用既有 transfer 流程。N2 已接通物品原图到交互物动画对象库的移送。图片不自动形成拾取、开关或剧情行为；动画导入不生成角色控制器，也不自动写入某个状态过渡。
 
 ## 物品原图分类与旧记录
 
@@ -38,6 +39,8 @@
 `workbench_get_document` 返回可审阅内容与 revision。apply/save/restore/adopt 必须带 expectedRevision 和稳定 commandId；冲突返回 409。相同命令重试返回原提交版本，currentRevision 另报告当前头版本；二者不同则重读当前工程。加载远端前保留本机恢复副本，不用旧草稿覆盖新版本。
 
 `workbench_adopt_document_image` 只消费已完成 image-assets 任务，以 sourceTaskId + sha256 重读原 PNG，并指定已有 definitionId。采用保留行为与状态图片，是一次版本事务，不调用模型、导出或另建图片任务。不能用预览、缩略图或下载 URL 替代原图证据。
+
+写回状态链时，用 `workbench_list_assets` 按 `motionSource=state` 或 `transition` 查询，取所选资产详情的 `revision`。通过 `workbench_apply_document_commands` 提交 `import-motion-asset` 命令，指定 `assetId`、`assetRevision`、`definitionId`、`target`（`toggle-state` 或 `sequence-entry`）和从 0 开始的 `index`。文档提交仍使用 `expectedRevision` 和原 `commandId`。状态图覆盖该条目的待机动画继承。过渡按确认的帧序和 FPS 播放，最终段包含约定的末帧停留。采用回执中的 `frameHashes` 按播放顺序列出 SHA-256。
 
 validate/simulate 检查结构、媒体与有限交互事件，不代表 Godot 物理、真实音频或游戏存档。交互物导出继续使用 `interactable-editor` 的 `export-godot`；共享文档不提供观察图片或独立导出操作。
 

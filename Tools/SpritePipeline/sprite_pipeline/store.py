@@ -154,6 +154,7 @@ class JobStore:
 
     @staticmethod
     def _summary_from_job(job: JobRecord) -> dict[str, Any]:
+        from .collaboration.state_assets import catalog_rows
         terminal_candidates = {"approved", "rejected", "failed"}
         status_counts: dict[str, int] = {}
         for candidate in job.candidates:
@@ -238,6 +239,7 @@ class JobStore:
             "motion_message": (job.motion_control or {}).get("message"),
             "execution_only": job.request.motion_repair is not None,
             # Materials only: execution-only candidates stay in task history.
+            **({"state_assets": catalog_rows(job)} if job.character.object_type == "interactable" and job.request.open_plan else {}),
             "artworks": [
                 {
                     "candidate_index": candidate.candidate_index,
@@ -271,6 +273,7 @@ class JobStore:
         if (
             not isinstance(summary, dict)
             or summary.get("summary_schema_version") != _JOB_SUMMARY_SCHEMA_VERSION
+            or (summary.get("object_type") == "interactable" and summary.get("open_work_id") and "state_assets" not in summary)
             or summary.get("job_id") != directory.name
             or not isinstance(summary.get("status"), str)
             or not isinstance(summary.get("updated_at"), str)

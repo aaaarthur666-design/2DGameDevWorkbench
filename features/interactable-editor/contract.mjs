@@ -37,6 +37,7 @@ const appearance = z
   .object({
     assetId: text(),
     animation: text(),
+    staticImage: z.boolean().optional(),
     visible: z.boolean().default(true),
     solidEnabled: z.boolean().default(false),
     tint: z
@@ -53,6 +54,7 @@ const feedback = z.discriminatedUnion('type', [
   z.object({ type: z.literal('wait'), seconds: number(0.5, 0, 3600) }),
   z.object({
     type: z.literal('play_animation'),
+    importedTransition: z.literal(true).optional(),
     animation: text(),
     waitForEnd: z.boolean().default(true),
   }),
@@ -233,6 +235,9 @@ export function nextClipName(object) {
   while (object.visual.clips.some((clip) => clip.name === `clip_${index}`))
     index++;
   return `clip_${index}`;
+}
+export function appearanceAnimation(appearance, visual) {
+  return appearance.animation || (appearance.staticImage ? '' : visual.idleAnimation);
 }
 export function normalizeProject(input) {
   const p = projectSchema.parse(input);

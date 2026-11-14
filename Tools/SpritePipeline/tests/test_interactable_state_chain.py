@@ -57,7 +57,7 @@ class ArchiveProvider(FixtureProvider):
 
 
 @pytest.fixture
-def chain(tmp_path, monkeypatch):
+def chain(tmp_path, monkeypatch, request):
     service, ws = workspace_for(tmp_path, 'lamp', seed=2202)
     ws.model = LampPlanner('lamp')
     provider = ArchiveProvider()
@@ -67,6 +67,11 @@ def chain(tmp_path, monkeypatch):
     work = ws.create(spec, 'offline-lamp-chain', planning_authorized=True)
     plan = ws.plan(work.id)
     assert plan.status == 'ready', plan.message
+    if getattr(request, 'param', None) == 'catalog':
+        # Replay a frozen v3 production plan in an isolated store. The archive
+        # provider above supplies every byte. Fixture jobs never enter the catalog.
+        plan.spec.provider = 'pixellab'
+        ws.save(plan)
     work = ws.start(work.id, plan.revision, plan.plan_sha256)
     engine = PlanGeneration(service)
     engine.advance(work.job_id, provider, wait=True)
@@ -183,3 +188,83 @@ def test_reject_second_transition_keeps_b_and_does_not_publish_c(chain):
     assert client.get('candidates/1/stages/1/state-image').status_code == 409
     job = engine.advance(work.job_id, provider, wait=True)
     assert not job.candidates[0].frames and len(provider.inputs) == 2
+
+
+@pytest.mark.parametrize('chain', ['catalog'], indirect=True)
+def test_archive_asset_catalog_exposes_only_confirmed_material(chain):
+    service, work, engine, provider, client = chain
+    catalog = TestClient(create_api(service=service))
+
+    def assets():
+        rows = catalog.get('/v1/artworks').json()['data']['assets']
+        return {(r['motionSource'], r['stageIndex']): r for r in rows if r.get('motionSource')}
+
+    assert not assets()
+    decide(client, 0, 'accept_state', 2)
+    pinned = assets()
+    assert set(pinned) == {('state', None), ('state', 0)}
+    state = pinned['state', 0]
+    assert state['workId'] == work.id and state['workRevision'] == work.revision
+    assert state['rawIndex'] == 3 and state['stateSha256'] == sha256(provider.archive[3]).hexdigest()
+    decide(client, 0, 'accept', 2)
+    engine.advance(work.job_id, provider, wait=True)
+    decide(client, 1, 'accept')
+    rows = assets()
+    assert len(rows) == 5
+    for stage, indexes in [(0, [1, 2, 3]), (1, [4, 5, 6, 7, 7, 7])]:
+        edge = rows['transition', stage]
+        detail = catalog.get('/v1/artworks/' + edge['id']).json()['data']['asset']
+        expected = [provider.archive[i] for i in indexes]
+        assert detail['frameCount'] == len(expected) and detail['loop'] is False
+        assert detail['checkpointToken'] == rows['state', stage]['checkpointToken']
+        for i, frame in enumerate(expected):
+            params = {'asset_id': edge['id'], 'key': f'frame-{i}'}
+            assert catalog.get('/v1/artworks/file', params=params).content == frame
+    endpoint = service.get_job(work.job_id).candidates[0].plan_execution.stages[0].state_checkpoint
+    service.store.resolve_job_path(work.job_id, endpoint['path']).write_bytes(provider.archive[4])
+    assert catalog.get('/v1/artworks/' + state['id']).status_code == 409
+    assert catalog.get('/v1/artworks/' + rows['transition', 0]['id']).status_code == 409
+
+
+@pytest.mark.parametrize('chain', ['catalog'], indirect=True)
+def test_rejected_transition_keeps_pinned_state_importable(chain):
+    service, _, _, provider, client = chain
+    decide(client, 0, 'accept_state', 2)
+    decide(client, 0, 'reject')
+    catalog = TestClient(create_api(service=service))
+    rows = [r for r in catalog.get('/v1/artworks').json()['data']['assets'] if r.get('motionSource')]
+    assert [(r['motionSource'], r['stageIndex']) for r in rows] == [('state', None), ('state', 0)]
+    assert catalog.get('/v1/artworks/file', params={'asset_id': rows[1]['id'], 'key': 'source'}).content == provider.archive[3]
+    transition_id = rows[1]['id'].replace('motion-state:', 'motion-transition:')
+    assert catalog.get('/v1/artworks/' + transition_id).status_code == 404
+
+
+@pytest.mark.parametrize('chain', ['catalog'], indirect=True)
+def test_archive_writeback_to_shared_document(chain):
+    import os
+    import shutil
+    import socket
+    import subprocess
+    from pathlib import Path
+    from threading import Thread
+    import uvicorn
+
+    repository = Path(__file__).resolve().parents[3]
+    if not shutil.which('node') or not (repository / 'node_modules/zod').is_dir():
+        pytest.skip('Requires workbench Node dependencies for the cross-service writeback test')
+    service, work, engine, provider, client = chain
+    decide(client, 0, 'accept', 2)
+    engine.advance(work.job_id, provider, wait=True)
+    decide(client, 1, 'accept')
+    server = uvicorn.Server(uvicorn.Config(create_api(service=service), lifespan='off', log_level='error'))
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        sock.listen()
+        thread = Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True)
+        thread.start()
+        try:
+            subprocess.run(['node', 'tests/asset-import/state-chain.mjs'], check=True, timeout=90, cwd=repository,
+                           env={**os.environ, 'SPRITE_PIPELINE_API_URL': f'http://127.0.0.1:{sock.getsockname()[1]}'})
+        finally:
+            server.should_exit = True
+            thread.join(timeout=10)

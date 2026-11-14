@@ -1,5 +1,6 @@
 'use client';
 import type { ReactNode } from 'react';
+import { appearanceAnimation } from '@/features/interactable-editor/contract.mjs';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import {
   type Asset,
@@ -369,11 +370,13 @@ function AppearanceFields({
         value={value.assetId}
         onChange={(assetId) => onChange({ ...value, assetId })}
       />
-      {onEditImage && <><button type="button" disabled={imageBusy || !(value.assetId || object.visual.assetId) || !!value.animation || !!object.visual.idleAnimation} onClick={onEditImage}>局部调整此状态图片</button><p className="ie-note">{value.animation || object.visual.idleAnimation ? '此状态使用动画，静态图片调整只读；请先明确选择静态外观。' : !value.assetId ? '当前继承默认图片；采用仅覆盖此状态，默认图片与其他状态保留。' : '仅调整此状态图片；行为、动画片段和其他状态保留。'}</p></>}
+      {onEditImage && <><button type="button" disabled={imageBusy || !(value.assetId || object.visual.assetId) || !!appearanceAnimation(value, object.visual)} onClick={onEditImage}>局部调整此状态图片</button><p className="ie-note">{appearanceAnimation(value, object.visual) ? '此状态使用动画，静态图片调整只读；请先明确选择静态外观。' : !value.assetId ? '当前继承默认图片；采用仅覆盖此状态，默认图片与其他状态保留。' : '仅调整此状态图片；行为、动画片段和其他状态保留。'}</p></>}
+      <Check label="使用静态状态图" value={!!value.staticImage} onChange={staticImage =>
+        onChange({ ...value, staticImage, animation: staticImage ? '' : value.animation })} />
       <ClipSelect
         object={object}
         value={value.animation}
-        onChange={(animation) => onChange({ ...value, animation })}
+        onChange={(animation) => onChange({ ...value, animation, staticImage: false })}
       />
       <div className="ie-row">
         <Check

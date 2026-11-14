@@ -44,11 +44,11 @@ import {
 } from '@/lib/workbench/editor-session';
 import { listWorkItems, readWorkspaceDraft } from '@/lib/workbench/browser-store';
 import { AssetImportPicker } from '@/components/workbench/asset-import-picker';
-import { clearImportQuery, libraryAnimationTiming, readEditorHandoff, type ImportBundle, type ImportPurpose } from '@/lib/workbench/asset-import';
+import { clearImportQuery, libraryAnimationTiming, readEditorHandoff, type ImportBundle, type ImportPurpose, type LibraryAsset } from '@/lib/workbench/asset-import';
 import { normalizeProject } from '@/features/interactable-editor/contract.mjs';
 import { projectSchema } from '@/features/interactable-editor/contract.mjs';
 import { portableProject } from '@/features/interactable-editor/portable-project';
-import { readDocument } from '@/features/editor-documents/client';
+import { applyDocument, readDocument } from '@/features/editor-documents/client';
 import { useSharedDocument } from '@/features/editor-documents/use-shared-document';
 import { documentFingerprint, type DocumentSavedSnapshot } from '@/features/editor-documents/sync-controller.mjs';
 import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
@@ -84,7 +84,10 @@ async function flushPendingDrafts(pass: () => Promise<boolean>) {
 }
 export function InteractableEditor() {
   const { navigate } = useWorkbench();
-  const [library, setLibrary] = useState<{purposes: ImportPurpose[]; assetId?: string} | null>(null);
+  type MotionTarget = {target: 'toggle-state' | 'sequence-entry'; index: number; definitionId: string;
+    source: 'state' | 'transition'; guard: DocumentSavedSnapshot<InteractableProject>};
+  const [library, setLibrary] = useState<{purposes: ImportPurpose[]; assetId?: string; motion?: MotionTarget} | null>(null);
+  const [importDestination, setImportDestination] = useState('default');
   const [openProject, setOpenProject] = useState(false), [sharedOpen, setSharedOpen] = useState(false);
   const [localProjects, setLocalProjects] = useState<WorkItem[]>([]), [localProjectsError, setLocalProjectsError] = useState('');
   const [localProjectsLoading, setLocalProjectsLoading] = useState(false);
@@ -449,6 +452,45 @@ export function InteractableEditor() {
     setProject(next); setDraftWritable(true); setSelected(definitionId || next.objects[0]?.definitionId || ''); setExportIds([]); setResult(null);
     setMessage('项目与素材已导入；原项目保留。');
   };
+  const slotEntries = current.behavior.kind === 'toggle' ? current.behavior.states :
+    current.behavior.kind === 'sequence' ? current.behavior.entries : [];
+  const openLibrary = async () => {
+    try {
+      if (importDestination === 'default' || !slotEntries.length) {
+        setLibrary({purposes:['image','animation']});
+        return;
+      }
+      const [mode, position] = importDestination.split(':');
+      const index = Number(position);
+      if (!slotEntries[index]) throw new Error('请重新选择当前物件的导入位置。');
+      const fingerprint = await documentFingerprint(await portableProject(project));
+      await persist(true);
+      const guard = await shared.flushSaved();
+      if (guard.fingerprint !== fingerprint) throw new Error('工程已变化，请核对导入位置后重选。');
+      const source = mode === 'state' ? 'state' : 'transition';
+      setLibrary({purposes:[source === 'state' ? 'image' : 'animation'], motion:{
+        definitionId:current.definitionId, index, source, guard,
+        target:current.behavior.kind === 'toggle' ? 'toggle-state' : 'sequence-entry'}});
+    } catch (cause) {setError(true); setMessage(describeError(cause));}
+  };
+  const importMotion = async (asset: LibraryAsset) => {
+    const slot = library?.motion;
+    if (!slot || asset.motionSource !== slot.source) throw new Error('请选择当前用途的状态链素材。');
+    const {guard, target, index, definitionId} = slot;
+    if (await documentFingerprint(await portableProject(latest.current.project)) !== guard.fingerprint)
+      throw new Error('选择期间本机工程已变化，请重新打开资产库。');
+    const response = await fetch('/api/workbench/assets?' + new URLSearchParams({assetId:asset.id}), {cache:'no-store'});
+    const { asset: detail } = await response.json() as { asset?: LibraryAsset };
+    if (!response.ok || detail?.id !== asset.id || detail.motionSource !== slot.source ||
+      detail.checkpointToken !== asset.checkpointToken || detail.planSha256 !== asset.planSha256 ||
+      detail.stateSha256 !== asset.stateSha256 || !detail.revision) throw new Error('源素材已变化，请刷新后重新选择。');
+    const command = {type:'import-motion-asset', definitionId, target, index, assetId:asset.id, assetRevision:detail.revision};
+    const commandId = 'motion-' + await documentFingerprint([guard.document.id, guard.document.revision, command]);
+    const result = await applyDocument<InteractableProject>(guard.document.id, guard.document.revision, [command], commandId);
+    await shared.acceptAdopted(result.document, guard);
+    setError(false);
+    setMessage(slot.source === 'state' ? '已写入所选条目的状态图。' : '已绑定过渡，进入所选条目时播放一次。');
+  };
   const importFromLibrary = async (bundle: ImportBundle) => {
     if (latest.current.busy) throw new Error('请等待当前操作完成。');
     const target = {projectId: latest.current.project.projectId, definitionId: current.definitionId, previousAssetId: current.visual.assetId};
@@ -528,7 +570,7 @@ export function InteractableEditor() {
       {!ready && (
         <output className="wb-loading-veil">正在恢复交互物草稿…</output>
       )}
-      <AssetImportPicker open={!!library} onClose={()=>setLibrary(null)} purposes={library?.purposes || ['interactable']} initialAsset={library?.assetId} onImport={importFromLibrary} />
+      <AssetImportPicker open={!!library} onClose={()=>setLibrary(null)} purposes={library?.purposes || ['interactable']} initialAsset={library?.assetId} motionSource={library?.motion?.source} onImportMotion={importMotion} onImport={importFromLibrary} />
       <header className="ie-toolbar">
         <Box color="var(--theme-cyan)" />
         <strong>交互物编辑</strong>
@@ -705,7 +747,14 @@ export function InteractableEditor() {
               <Upload size={14} />
               导入图片 / 音效
             </button>
-            <button disabled={busy || !ready || !draftWritable} onClick={()=>setLibrary({purposes:['image','animation']})}>从资产库选用原图 / 动画</button>
+            {!!slotEntries.length && <label>导入位置<select value={importDestination} onChange={e => setImportDestination(e.target.value)}>
+              <option value="default">默认外观 / 动画</option>
+              {slotEntries.map((entry, index) => <optgroup key={index} label={`${index+1} · ${entry.name}`}>
+                <option value={`state:${index}`}>{entry.name} · 状态图</option>
+                <option value={`transition:${index}`}>{entry.name} · 进入过渡</option>
+              </optgroup>)}
+            </select></label>}
+            <button disabled={busy || !ready || !draftWritable} onClick={()=>void openLibrary()}>从资产库选用原图 / 动画</button>
             <div className="ie-asset-list">
               {project.assets.map((a) => (
                 <div key={a.id}>

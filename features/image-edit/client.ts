@@ -1,6 +1,6 @@
 import type { RegionSpec } from './core.mjs';
 import type { PixelSpan } from './pixel-controller.mjs';
-import type { Interactable } from '../interactable-editor/contract.mjs';
+import { appearanceAnimation, type Interactable } from '../interactable-editor/contract.mjs';
 
 export type ImageTargetRef =
   | { kind: 'interactable'; documentId: string; definitionId: string; slot?: 'visual' | 'toggle-state' | 'sequence-entry'; index?: number }
@@ -162,7 +162,7 @@ export function imageSlotChoices(object: Interactable) {
   const entries = object.behavior.kind === 'toggle' ? object.behavior.states : object.behavior.kind === 'sequence' ? object.behavior.entries : [];
   entries.forEach((entry, index) => {
     const slot = object.behavior.kind === 'toggle' ? 'toggle-state' : 'sequence-entry';
-    const hasImage = !!(entry.appearance.assetId || object.visual.assetId), animated = !!(entry.appearance.animation || object.visual.idleAnimation);
+    const hasImage = !!(entry.appearance.assetId || object.visual.assetId), animated = !!appearanceAnimation(entry.appearance, object.visual);
     choices.push({ value: `${slot}:${index}`, slot, index, label: `${slot === 'toggle-state' ? `${index ? 'B' : 'A'} 状态` : `第 ${index + 1} 步`} · ${entry.name}${entry.appearance.assetId ? '' : '（继承默认图）'}`, available: hasImage && !animated, reason: animated ? '此状态使用动画，只读' : !hasImage ? '没有静态源图片' : undefined });
   });
   return choices;

@@ -61,6 +61,6 @@ export function createDocument<T>(kind: DocumentKind, content: T, commandId = cr
 export function saveDocument<T>(id: string, expectedRevision: number, content: T, commandId = crypto.randomUUID(), options: DocumentMediaOptions = {}) {
   return request<DocumentResult<T>>(`/${encodeURIComponent(id)}/save${options.media ? `?media=${options.media}` : ''}`, { expectedRevision, content, commandId });
 }
-export function applyDocument<T>(id: string, expectedRevision: number, commands: Array<Record<string, unknown>>, commandId = crypto.randomUUID()) {
+export function applyDocument<T>(id: string, expectedRevision: number, commands: Array<Record<string, unknown>>, commandId: string = crypto.randomUUID()) {
   return request<DocumentResult<T>>(`/${encodeURIComponent(id)}/apply`, { expectedRevision, commands, commandId });
 }

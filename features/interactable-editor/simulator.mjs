@@ -1,3 +1,5 @@
+import { appearanceAnimation } from './contract.mjs';
+
 export function shapeContains(shape, x, y, radius = 0) {
   x -= shape.offset.x;
   y -= shape.offset.y;
@@ -95,8 +97,7 @@ export class InteractionSimulation {
     i.animation = null;
     this.playClip(
       i,
-      stateAppearance(i.definition, i.state).animation ||
-        i.definition.visual.idleAnimation,
+      appearanceAnimation(stateAppearance(i.definition, i.state), i.definition.visual),
     );
   }
   emit(name, i, extra = {}) {

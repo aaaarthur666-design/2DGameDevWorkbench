@@ -1896,6 +1896,9 @@
                                     "maxLength": 100000,
                                     "default": ""
                                   },
+                                  "staticImage": {
+                                    "type": "boolean"
+                                  },
                                   "visible": {
                                     "type": "boolean",
                                     "default": true
@@ -1964,6 +1967,10 @@
                                         "type": {
                                           "type": "string",
                                           "const": "play_animation"
+                                        },
+                                        "importedTransition": {
+                                          "type": "boolean",
+                                          "const": true
                                         },
                                         "animation": {
                                           "type": "string",
@@ -2058,6 +2065,9 @@
                                     "maxLength": 100000,
                                     "default": ""
                                   },
+                                  "staticImage": {
+                                    "type": "boolean"
+                                  },
                                   "visible": {
                                     "type": "boolean",
                                     "default": true
@@ -2126,6 +2136,10 @@
                                         "type": {
                                           "type": "string",
                                           "const": "play_animation"
+                                        },
+                                        "importedTransition": {
+                                          "type": "boolean",
+                                          "const": true
                                         },
                                         "animation": {
                                           "type": "string",
@@ -2250,6 +2264,10 @@
                               "type": {
                                 "type": "string",
                                 "const": "play_animation"
+                              },
+                              "importedTransition": {
+                                "type": "boolean",
+                                "const": true
                               },
                               "animation": {
                                 "type": "string",
