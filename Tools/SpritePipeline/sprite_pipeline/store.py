@@ -19,7 +19,7 @@ from .settings import HarnessSettings
 
 
 _JOB_ID = re.compile(r"^[0-9]{8}_[a-z0-9_]+_[0-9]{3}$")
-_JOB_SUMMARY_SCHEMA_VERSION = 3
+_JOB_SUMMARY_SCHEMA_VERSION = 2
 _JOB_SUMMARY_MAX_BYTES = 128 * 1024
 
 
@@ -154,7 +154,6 @@ class JobStore:
 
     @staticmethod
     def _summary_from_job(job: JobRecord) -> dict[str, Any]:
-        from .collaboration.state_assets import catalog_rows
         terminal_candidates = {"approved", "rejected", "failed"}
         status_counts: dict[str, int] = {}
         for candidate in job.candidates:
@@ -190,27 +189,14 @@ class JobStore:
         )
         from .motion_correction import active as motion_active
         needs_recovery = needs_recovery or (motion_active(job) and job.generation_requested_at is not None)
-        if job.request.open_plan and job.plan_control and job.generation_requested_at is not None:
-            needs_recovery = any(
-                c.plan_execution and not c.frames and c.status.value not in terminal_candidates and (
-                    any(r.state in {"submitting", "pending", "reviewing", "repairing", "complete"} for r in c.plan_execution.stages)
-                    or (job.plan_control.enabled and all(r.state not in {"failed", "unknown", "awaiting_review", "rejected"} for r in c.plan_execution.stages))
-                ) for c in job.candidates
-            )
-            needs_recovery = needs_recovery or any(c.frames and c.plan_execution and
-                (c.plan_execution.quality_review or {}).get('state') in {'pending','running'} for c in job.candidates)
         return {
             "summary_schema_version": _JOB_SUMMARY_SCHEMA_VERSION,
             "job_revision": job.revision,
             "job_id": job.job_id,
-            "open_work_id": job.request.open_plan.work_id if job.request.open_plan else None,
             "status": job.status.value,
             "updated_at": job.updated_at.isoformat(),
             "created_at": job.created_at.isoformat(),
             "provider": job.request.provider,
-            "object_id": job.character.object_id,
-            "object_type": job.character.object_type,
-            "object_name": job.character.display_name,
             "character_id": job.character.character_id,
             "character_name": job.character.display_name,
             "action_id": job.action.action_id,
@@ -239,7 +225,6 @@ class JobStore:
             "motion_message": (job.motion_control or {}).get("message"),
             "execution_only": job.request.motion_repair is not None,
             # Materials only: execution-only candidates stay in task history.
-            **({"state_assets": catalog_rows(job)} if job.character.object_type == "interactable" and job.request.open_plan else {}),
             "artworks": [
                 {
                     "candidate_index": candidate.candidate_index,
@@ -273,7 +258,6 @@ class JobStore:
         if (
             not isinstance(summary, dict)
             or summary.get("summary_schema_version") != _JOB_SUMMARY_SCHEMA_VERSION
-            or (summary.get("object_type") == "interactable" and summary.get("open_work_id") and "state_assets" not in summary)
             or summary.get("job_id") != directory.name
             or not isinstance(summary.get("status"), str)
             or not isinstance(summary.get("updated_at"), str)

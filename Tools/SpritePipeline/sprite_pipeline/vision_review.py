@@ -5,7 +5,6 @@ import hashlib
 import io
 import json
 import os
-import re
 from pathlib import Path
 from typing import Literal
 import httpx
@@ -129,14 +128,8 @@ class VisionReviewer:
         except Exception:
             raise ValidationHarnessError("视觉检查参考图或动画帧无法读取；尚未发送请求") from None
 
-    def _send(self, content, schema_type, provider, key, frame_count, on_request, *, schema_name="attack_motion_review", on_response=None, model_options=None, output_format=None):
-        if output_format not in (None, 'json_object', 'json_schema'):
-            raise ValidationHarnessError('未知的模型输出格式；未发送请求')
-        if provider != 'hunyuan' and output_format == 'json_object':
-            raise ValidationHarnessError('当前 Responses 适配使用既有严格 Schema；未发送请求')
-        info = dict(PROVIDERS[provider])
-        if model_options:
-            info['model'] = model_options['model']
+    def _send(self, content, schema_type, provider, key, frame_count, on_request):
+        info = PROVIDERS[provider]
         schema = schema_type.model_json_schema()
         def strict(value):
             if isinstance(value, dict):
@@ -153,7 +146,7 @@ class VisionReviewer:
             if "frames" in properties: properties["frames"]["items"].update(minimum=1, maximum=frame_count)
         body = {"model":info["model"], "store":False, "reasoning":{"effort":"high"}, "max_output_tokens":6000,
             "input":[{"role":"user", "content":content}],
-            "text":{"format":{"type":"json_schema", "name":schema_name, "strict":True, "schema":schema}}}
+            "text":{"format":{"type":"json_schema", "name":"attack_motion_review", "strict":True, "schema":schema}}}
         if provider == "hunyuan":
             chat_content=[]
             for part in content:
@@ -164,54 +157,16 @@ class VisionReviewer:
             chat_content.append({"type":"text","text":"Return exactly one JSON object matching this schema, without prose or Markdown. " + json.dumps(schema,ensure_ascii=False)})
             body={"model":info["model"],"stream":False,"temperature":0,"max_tokens":6000,
                   "messages":[{"role":"user","content":chat_content}],"response_format":{"type":"json_object"}}
-            if output_format == 'json_schema':
-                body['response_format']={'type':'json_schema','json_schema':{'name':schema_name,'strict':True,'schema':schema}}
-        if model_options:
-            limit = model_options['max_output_tokens']
-            effort = model_options['reasoning_effort']
-            if provider == 'hunyuan':
-                body.pop('temperature', None)  # Sampling constraints vary across foundation models.
-                body.pop('max_tokens', None)
-                token_parameter = model_options['token_parameter']
-                if token_parameter == 'auto':
-                    token_parameter = 'max_completion_tokens' if info['model'].startswith('kimi-k3') else 'max_tokens'
-                body[token_parameter] = limit
-                if info['model'] == HUNYUAN_MODEL:
-                    body['temperature'] = 0
-                if effort != 'auto': body['reasoning_effort'] = effort
-            else:
-                body['max_output_tokens'] = limit
-                if effort == 'auto': body.pop('reasoning', None)
-                else: body['reasoning'] = {'effort': effort}
         try:
-            with httpx.Client(timeout=model_options.get('timeout_seconds',180) if model_options else 180, follow_redirects=False) as client:
+            with httpx.Client(timeout=180, follow_redirects=False) as client:
                 if on_request is not None: on_request()
                 response=client.post(info["endpoint"], headers={"Authorization":"Bearer "+key}, json=body)
             if response.status_code != 200:
-                failure={'http_status':response.status_code}
-                # Keep bounded diagnostics, never raw provider bodies, echoed
-                # prompts, images or credentials. Existing request transport stays unchanged.
-                try:
-                    if response.status_code != 400:
-                        raise ValueError('Only malformed-request diagnostics are inspected')
-                    payload=response.json()
-                    error=payload.get('error') or payload.get('Response',{}).get('Error',{})
-                    if isinstance(error,dict):
-                        code=error.get('code') or error.get('Code') or error.get('type')
-                        if isinstance(code,str) and re.fullmatch(r'[A-Za-z][A-Za-z_.]{2,79}',code):failure['provider_error_code']=code
-                        message=str(error.get('message') or error.get('Message') or '').lower()
-                        for parameter in ('max_completion_tokens','max_tokens','reasoning_effort','response_format','image_url','model'):
-                            if parameter in message:failure['provider_error_parameter']=parameter;break
-                    request_id=response.headers.get('x-request-id') or response.headers.get('x-tc-requestid')
-                    if isinstance(request_id,str) and re.fullmatch(r'[A-Za-z0-9_-]{8,100}',request_id):failure['provider_request_id']=request_id
-                except (ValueError,TypeError,AttributeError):pass
-                if on_response is not None:on_response(failure)
-                hint='；参数：'+failure['provider_error_parameter'] if failure.get('provider_error_parameter') else ''
-                raise ValidationHarnessError(f"视觉检查请求失败（HTTP {response.status_code}{hint}）；未自动重试", details=failure)
+                raise ValidationHarnessError(f"视觉检查请求失败（HTTP {response.status_code}）；未自动重试")
             data=response.json()
             if provider == "hunyuan":
                 choices=data.get("choices",[])
-                if len(choices)!=1:
+                if len(choices)!=1 or choices[0].get("finish_reason")!="stop":
                     raise ValueError("incomplete visual review")
                 message=choices[0].get("message",{})
                 if message.get("refusal") or message.get("tool_calls"):
@@ -221,40 +176,21 @@ class VisionReviewer:
                 if data.get("status") != "completed":
                     raise ValueError("incomplete visual review")
                 output="".join(part.get("text", "") for item in data.get("output", []) if item.get("type")=="message" for part in item.get("content", []) if part.get("type")=="output_text")
-            response_model=data.get("model")
-            receipt={"requested_model":info["model"], "response_model":response_model,
-                     "response_id":data.get("id"),"usage":data.get("usage",{})}
-            if provider == 'hunyuan': receipt['finish_reason'] = choices[0].get('finish_reason')
-            if on_response is not None:
-                on_response({**receipt, "output_characters":len(output) if isinstance(output,str) else 0,
-                             "output_sha256":hashlib.sha256(output.encode()).hexdigest() if isinstance(output,str) else None})
-            if provider == 'hunyuan' and choices[0].get('finish_reason') != 'stop':
-                raise ValidationHarnessError('视觉模型输出未完成（finish_reason='+str(choices[0].get('finish_reason'))+'）；已保留用量回执，未重试')
-            if schema_name == "open_motion_plan" and isinstance(output,str):
-                # Accept a complete JSON Markdown envelope, never repair partial
-                # JSON or infer missing fields. The same strict model still validates.
-                fenced=re.fullmatch(r"\s*```(?:json)?\s*\n?(.*?)\n?```\s*",output,re.DOTALL)
-                if fenced: output=fenced.group(1)
             parsed=schema_type.model_validate_json(output)
+            response_model=data.get("model")
             if response_model is not None and response_model != info["model"]:
                 raise ValidationHarnessError("视觉服务回传的模型与请求不一致；未采纳结论")
-            return parsed,receipt
+            return parsed,{"requested_model":info["model"], "response_model":response_model,
+                           "response_id":data.get("id"),"usage":data.get("usage",{})}
         except ValidationHarnessError:
             raise
-        except httpx.TimeoutException as exc:
-            raise ValidationHarnessError('视觉模型请求超时；结果未知，未自动重试', details={'error_type':type(exc).__name__}) from None
         except ValidationError as exc:
             # Record schema error categories, never provider text, request bodies or secrets.
             errors=exc.errors(include_input=False)
             categories=sorted({item["type"] for item in errors})
             known={"phase","stage","code","status","verdict","grip_height","blade_tip","observations","frame","frames"}
             fields=sorted({part for item in errors for part in item["loc"] if part in known})
-            if schema_name == "open_motion_plan":
-                fields = sorted({".".join(str(part) for part in item["loc"]) + ": " + item["msg"] for item in errors})
-            if schema_name == 'motion_adjustment':
-                fields=sorted({str(item['loc'][0]) for item in errors if item['loc'] and item['loc'][0] in {'goal','preserve','method','provider_prompt','conflict'}})
-            raise ValidationHarnessError("视觉检查未取得有效结论；结构化字段无效（"+", ".join(categories+fields)+"），未自动重试",
-                details={'validation_fields':fields} if schema_name=='motion_adjustment' else {}) from None
+            raise ValidationHarnessError("视觉检查未取得有效结论；结构化字段无效（"+", ".join(categories+fields)+"），未自动重试") from None
         except Exception:
             raise ValidationHarnessError("视觉检查未取得有效结论；请人工检查，不会自动重新生成") from None
 

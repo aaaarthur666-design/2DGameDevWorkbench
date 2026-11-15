@@ -1,14 +1,11 @@
 'use client';
 /* oxlint-disable next/no-img-element -- Preserve animated asset previews. */
 /* oxlint-disable next/no-html-link-for-pages -- Native links use the workbench draft guard. */
-import { useEffect, useRef, useState } from 'react';
-import { assetLocationHref, readAssetLocation, type AssetLocation } from '@/lib/workbench/asset-navigation';
-import { AssetPackageImport } from './asset-package-import';
+import { useEffect, useState } from 'react';
+import manifest from '@/workbench/manifest.json';
 import {offerGodotExport} from '@/lib/workbench/godot-export';
 import { importLink } from '@/lib/workbench/asset-import';
 import { operationLabel } from '@/lib/workbench/work-items';
-import { ImageEditWorkspace } from '@/components/image-edit/image-edit-workspace';
-import { clearImageEditNavigation, readImageEditNavigation, writeImageEditNavigation, type ImageEditNavigation } from '@/features/image-edit/navigation';
 
 type Asset = {
   trashedAt?: string;
@@ -16,7 +13,7 @@ type Asset = {
   title: string;
   kind: string;
   origin?: string;
-  attachmentOnly?: boolean;
+  mapType?: 'project' | 'image';
   statusLabel: string;
   availability: string;
   previewKind?: string;
@@ -31,8 +28,14 @@ type Asset = {
   updatedAt?: string;
   hasArtwork?: boolean;
   files?: { key: string; path: string; available: boolean; sha256?: string }[];
-  readiness?: { issues: string[]; godotPackageAvailable?: boolean };
+  readiness?: { issues: string[] };
   revision?: string;
+  sceneRevision?: number;
+  sceneId?: string;
+  exportId?: string;
+  instanceCount?: number;
+  materialCount?: number;
+  tileCount?: number;
   createdAt?: string;
   history?: { taskId: string; operation: string; createdAt: string; status: string; viewPath: string }[];
 };
@@ -47,19 +50,12 @@ const labels: Record<string, string> = {
   character: '角色原图',
   prop: '物品原图',
   animation: '动画',
+  map: '地图',
   interactable: '交互物',
+  scene: '完整场景',
 };
-
+const route = manifest.agentAssets.assetCatalog.route;
 export function AssetLibrary() {
-  const pageElement = useRef<HTMLElement>(null);
-  function scrollHost() { return pageElement.current?.closest<HTMLElement>('.wb-route'); }
-  function scrollToPosition(top: number) {
-    const host = scrollHost();
-    if (host) host.scrollTo({ top }); else window.scrollTo(0, top);
-  }
-  const [hydrated, setHydrated] = useState(false);
-  const [packageOpen, setPackageOpen] = useState(false);
-  const [importedIds, setImportedIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState('');
@@ -76,56 +72,11 @@ export function AssetLibrary() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState('');
   const [failedPreviews, setFailedPreviews] = useState<string[]>([]);
-  const [localEditTask, setLocalEditTask] = useState<string | null>(null);
-  const [editNavigation, setEditNavigation] = useState<ImageEditNavigation | null>(null);
-  function applyLocation(value: AssetLocation) {
-    setQuery(value.query); setSearch(value.query); setKind(value.kind);
-    setScope(value.scope); setPage({ offset: value.offset, snapshot: value.snapshot });
-    setAssetId(value.asset); setAsset(null); setCatalog(null); setSelected([]);
-  }
-  const locationState: AssetLocation = { query: search, kind, scope, offset: page.offset, snapshot: page.snapshot, asset: assetId };
-  const listHref = assetLocationHref({ ...locationState, asset: '' });
-  function updateListing(patch: Partial<AssetLocation>) {
-    const next = { ...locationState, ...patch, asset: '' };
-    history.pushState(history.state, '', assetLocationHref(next));
-    applyLocation(next);
-    scrollToPosition(0);
-  }
-  function editorHref(href: string, id: string) {
-    const url = new URL(href, 'http://forge.local');
-    url.searchParams.set('returnTo', assetLocationHref({ ...locationState, asset: id }));
-    return url.pathname + url.search;
-  }
-  function rememberScroll() {
-    try { sessionStorage.setItem('forge-assets-scroll:' + listHref, String(scrollHost()?.scrollTop ?? window.scrollY)); } catch { /* Storage may be unavailable. */ }
-  }
-  function closePackages() {
-    setPackageOpen(false);
-    const url = new URL(location.href); url.searchParams.delete('import');
-    history.replaceState(history.state, '', url.pathname + url.search);
-  }
   useEffect(() => {
-    const sync = () => {
-      applyLocation(readAssetLocation(location.search));
-      setPackageOpen(new URLSearchParams(location.search).get('import') === 'package');
-    };
-    sync();
-    // oxlint-disable-next-line react/react-compiler -- Browser location is available only after hydration.
-    setHydrated(true);
-    const navigation = readImageEditNavigation(), selectedAsset = new URLSearchParams(location.search).get('asset');
-    if (navigation && selectedAsset?.startsWith('image:')) { setEditNavigation(navigation); setLocalEditTask(selectedAsset.slice(6)); }
-    window.addEventListener('popstate', sync);
-    return () => window.removeEventListener('popstate', sync);
+    // oxlint-disable-next-line react/react-compiler -- Hydrate the browser-only selection.
+    setAssetId(new URLSearchParams(location.search).get('asset') || '');
   }, []);
   useEffect(() => {
-    if (!catalog || assetId) return;
-    let scroll = 0;
-    try { scroll = Number(sessionStorage.getItem('forge-assets-scroll:' + listHref)) || 0; } catch { /* Optional restoration. */ }
-    const frame = requestAnimationFrame(() => scrollToPosition(scroll));
-    return () => cancelAnimationFrame(frame);
-  }, [catalog, assetId, listHref]);
-  useEffect(() => {
-    if (!hydrated) return;
     const controller = new AbortController();
     const params = assetId
       ? new URLSearchParams({ assetId })
@@ -134,7 +85,8 @@ export function AssetLibrary() {
           scope,
           offset: String(page.offset),
           limit: '24',
-          ...(kind ? { kind } : {}),
+          ...(kind ? { kind: kind === 'map-image' ? 'map' : kind } : {}),
+          ...(kind === 'map' ? { mapType: 'project' } : kind === 'map-image' ? { mapType: 'image' } : {}),
           ...(page.snapshot ? { snapshot: page.snapshot } : {}),
         });
     void (async () => {
@@ -160,7 +112,7 @@ export function AssetLibrary() {
       }
     })();
     return () => controller.abort();
-  }, [assetId, search, kind, page, reload, scope, hydrated]);
+  }, [assetId, search, kind, page, reload, scope]);
   async function confirmManagement() {
     if (!pending || managing) return;
     setManaging(true);
@@ -175,7 +127,7 @@ export function AssetLibrary() {
       setNotice(pending.operation === 'trash' ? `已将 ${data.count} 件素材移入回收站，源文件已保留。` : `已恢复 ${data.count} 件素材。`);
       setPending(null);
       setSelected([]);
-      updateListing({ offset: 0, snapshot: '' });
+      setPage({ offset: 0, snapshot: '' });
       setCatalog(null);
       setAsset(null);
       setReload((v) => v + 1);
@@ -214,9 +166,16 @@ export function AssetLibrary() {
   }
   function preview(a: Asset) {
     const previewKey = `${a.id}:${a.updatedAt}`;
+    const map = a.origin === 'map-project';
+    const frameStyle = map ? {
+      aspectRatio: '16 / 9', width: '100%',
+      backgroundColor: 'var(--theme-canvas)',
+      backgroundImage: 'conic-gradient(from 90deg, transparent 25%, var(--wb-line) 0 50%, transparent 0 75%, var(--wb-line) 0)',
+      backgroundSize: '16px 16px', borderRadius: 12,
+    } : {};
     return a.previewKind !== 'none' && a.availability === 'available' && !failedPreviews.includes(previewKey) ? (
       <img
-        src={a.previewUrl}
+        src={`${a.previewUrl}${map ? `&version=${encodeURIComponent(a.updatedAt || '')}` : ''}`}
         alt={
           a.candidateIndex ? `${a.title} · 候选 ${a.candidateIndex}` : a.title
         }
@@ -224,24 +183,28 @@ export function AssetLibrary() {
         onError={() => setFailedPreviews((keys) => keys.includes(previewKey) ? keys : [...keys, previewKey])}
         style={{
           width: '100%',
-          height: assetId ? 350 : 170,
+          height: map ? 'auto' : assetId ? 350 : 170,
           maxHeight: assetId ? 420 : undefined,
           objectFit: 'contain',
           imageRendering: 'pixelated',
           background: 'var(--theme-canvas)',
           borderRadius: 12,
+          ...frameStyle,
         }}
       />
     ) : (
-      <div style={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
+      <div style={{ minHeight: 120, display: 'grid', placeItems: 'center', ...frameStyle }}>
         {a.availability === 'missing'
           ? '文件暂不可读取'
-          : '交互逻辑 · 在编辑器查看'}
+          : map ? '暂无预览 · 打开并保存后更新'
+          : a.kind === 'scene'
+            ? '完整场景 · 源包与 Godot 包'
+            : '交互逻辑 · 在编辑器查看'}
       </div>
     );
   }
   return (
-    <main ref={pageElement} className="wb-page">
+    <main className="wb-page">
       <div className="wb-page-heading">
         <div>
           <div className="wb-eyebrow">FORGE / ASSETS</div>
@@ -249,23 +212,20 @@ export function AssetLibrary() {
           <p>查找已经保存的素材，整理后交接给游戏项目。</p>
         </div>
         {assetId ? (
-          <a className="wb-button" href={listHref}>
+          <a className="wb-button" href={route}>
             返回资产库
           </a>
         ) : (
-          <div className="wb-tool-links">
-          <button className="wb-button wb-primary" onClick={() => setPackageOpen(true)}>导入 Forge 素材包</button>
           <button
             className="wb-button"
             onClick={() => {
-              updateListing({ offset: 0, snapshot: '' });
+              setPage({ offset: 0, snapshot: '' });
               setReload((v) => v + 1);
               setFailedPreviews([]);
             }}
           >
             刷新资产
           </button>
-          </div>
         )}
       </div>
       {pending && (
@@ -302,13 +262,21 @@ export function AssetLibrary() {
             </h2>
             {asset.trashedAt && <p className="wb-notice">已移入回收站 · {new Date(asset.trashedAt).toLocaleString('zh-CN')}</p>}
             {preview(asset)}
-
+            {asset.origin === 'map-project' && (
+              <p>
+                {asset.tileCount ?? '未知'} 个地图块 · 最后保存 {asset.updatedAt ? new Date(asset.updatedAt).toLocaleString('zh-CN') : '未知'}
+                {asset.previewKind === 'image' && <a className="wb-button" href={asset.previewUrl} target="_blank" rel="noreferrer">放大预览</a>}
+              </p>
+            )}
             <p>
-              {labels[asset.kind]} · {asset.statusLabel}
+              {asset.kind === 'map' ? asset.origin === 'map-project' ? '地图工程' : '地图原图 / 历史素材' : labels[asset.kind]} · {asset.statusLabel}
               {asset.frameCount ? ` · ${asset.frameCount} 帧` : ''}
               {asset.width ? ` · ${asset.width} × ${asset.height}` : ''}
+              {asset.sceneRevision !== undefined ? ` · 场景版本 ${asset.sceneRevision}` : ''}
             </p>
-
+            {asset.kind === 'scene' && (
+              <p>包含 {asset.materialCount ?? '未知'} 件场景素材、{asset.instanceCount ?? '未知'} 个实例。可直接继续组装，也可下载源包备份。</p>
+            )}
             {asset.readiness?.issues.map((message) => (
               <p className="wb-notice" key={message}>
                 {message}
@@ -316,14 +284,15 @@ export function AssetLibrary() {
             ))}
             <div className="wb-tool-links">
               <button className="wb-button" disabled={managing || exporting} onClick={() => { setNotice(''); setPending({ operation: asset.trashedAt ? 'restore' : 'trash', assets: [asset] }); }}>{asset.trashedAt ? '恢复到资产库' : '移入回收站'}</button>
-              {!asset.trashedAt && !asset.attachmentOnly && asset.kind === 'character' && <a className="wb-button" href={importLink('reference-art', 'image', asset.id)}>用作角色参考</a>}
-              {!asset.trashedAt && asset.availability === 'available' && asset.id.startsWith('image:') && <button className="wb-button" onClick={() => setLocalEditTask(asset.id.slice('image:'.length))}>局部调整图片</button>}
-              {asset.kind === 'interactable' && <a className="wb-button" href={importLink('interactable-editor','interactable',asset.id)}>编辑交互物项目</a>}
-              {!asset.attachmentOnly && ['prop','character'].includes(asset.kind) && <a className="wb-button" href={importLink('interactable-editor','image',asset.id)}>用于交互物外观</a>}
+              {asset.origin === 'map-project' && asset.editorPath && <a className="wb-button" href={asset.editorPath}>继续编辑地图</a>}
+              {asset.kind === 'map' && <><a className="wb-button" href={importLink('map-stitcher','map',asset.id)}>导入地图编辑器</a><a className="wb-button" href={importLink('scene-composer','map',asset.id)}>用于制作场景</a></>}
+              {asset.kind === 'interactable' && <><a className="wb-button" href={importLink('interactable-editor','interactable',asset.id)}>编辑交互物项目</a><a className="wb-button" href={importLink('scene-composer','interactable',asset.id)}>加入场景</a></>}
+              {asset.kind === 'scene' && <a className="wb-button" href={importLink('scene-composer','scene',asset.id)}>继续组装此场景</a>}
+              {['prop','character','map'].includes(asset.kind) && asset.origin !== 'map-project' && <a className="wb-button" href={importLink('interactable-editor','image',asset.id)}>用于交互物外观</a>}
               {asset.kind === 'animation' && <a className="wb-button" href={importLink('interactable-editor','animation',asset.id)}>用于交互物动画</a>}
-              {asset.origin !== 'imported-package' && asset.editorPath && asset.kind !== 'interactable' && (
-                <a className="wb-button" href={editorHref(asset.editorPath, asset.id)}>
-                  在原工具中打开
+              {asset.editorPath && !['map','interactable','scene'].includes(asset.kind) && (
+                <a className="wb-button" href={asset.editorPath}>
+                  {asset.kind === 'map' ? '继续编辑地图' : '在原工具中打开'}
                 </a>
               )}
               <button
@@ -331,13 +300,15 @@ export function AssetLibrary() {
                 disabled={exporting}
                 onClick={() => void downloadAssets([asset.id])}
               >
-                {exporting ? '正在打包…' : '下载素材（ZIP）'}
+                {exporting ? '正在打包…' : asset.origin === 'map-project' ? '下载编辑源文件（ZIP）' : '下载素材（ZIP）'}
               </button>
             </div>
-            {(asset.origin !== 'imported-package' || asset.readiness?.godotPackageAvailable) && ['interactable','animation'].includes(asset.kind) && asset.revision && <button className="wb-button wb-primary" onClick={()=>offerGodotExport({name:asset.title,assetId:asset.id,revision:asset.revision})}>导出到游戏项目</button>}
+            {asset.origin === 'map-project' && asset.editorPath && <a className="wb-button" href={asset.editorPath}>在地图编辑器导出 Godot</a>}
+            {asset.origin !== 'map-project' && ['map','scene','interactable','animation'].includes(asset.kind) && asset.revision && <button className="wb-primary" onClick={()=>offerGodotExport({name:asset.title,assetId:asset.id,revision:asset.revision})}>导出到游戏项目</button>}
             <details style={{ marginTop: 20 }}>
               <summary>来源文件与版本</summary>
               <p>创建时间：{asset.createdAt ? new Date(asset.createdAt).toLocaleString() : '未知'}</p>
+              {asset.exportId && <p>场景导出记录：{asset.exportId}</p>}
               <p>版本指纹：{asset.revision}</p>
               {asset.files?.map((f) => (
                 <p key={f.key}>
@@ -363,14 +334,16 @@ export function AssetLibrary() {
       ) : (
         <>
           <nav className="wb-tool-links" aria-label="资产范围" style={{ marginBottom: 16 }}>
-            {(['active', 'trashed'] as const).map((value) => <button key={value} className="wb-button" aria-pressed={scope === value} onClick={() => { updateListing({ scope: value, offset: 0, snapshot: '' }); }}>{value === 'active' ? '已保存素材' : '回收站'}</button>)}
+            {(['active', 'trashed'] as const).map((value) => <button key={value} className="wb-button" aria-pressed={scope === value} onClick={() => { setScope(value); setSelected([]); setCatalog(null); setPage({ offset: 0, snapshot: '' }); }}>{value === 'active' ? '已保存素材' : '回收站'}</button>)}
           </nav>
           {scope === 'trashed' && <p className="wb-notice">这里的素材可以恢复。源文件仍保留在原处，不释放磁盘空间。</p>}
           <form
             className="wb-tool-links"
             onSubmit={(e) => {
               e.preventDefault();
-              updateListing({ query: query.trim(), offset: 0, snapshot: '' });
+              setSearch(query.trim());
+              setCatalog(null);
+              setPage({ offset: 0, snapshot: '' });
             }}
           >
             <input
@@ -392,15 +365,18 @@ export function AssetLibrary() {
               className="wb-button"
               value={kind}
               onChange={(e) => {
-                updateListing({ kind: e.target.value, offset: 0, snapshot: '' });
+                setKind(e.target.value);
+                setCatalog(null);
+                setPage({ offset: 0, snapshot: '' });
               }}
             >
               <option value="">全部类型</option>
               {Object.entries(labels).map(([id, label]) => (
                 <option key={id} value={id}>
-                  {label}
+                  {id === 'map' ? '地图工程' : label}
                 </option>
               ))}
+              <option value="map-image">地图原图 / 历史素材</option>
             </select>
             <button className="wb-button" type="submit">
               查找
@@ -438,7 +414,6 @@ export function AssetLibrary() {
                 {catalog.assets.map((a) => (
                   <article
                     key={a.id}
-                    data-imported={importedIds.includes(a.id) || undefined}
                     style={{
                       border: '1px solid var(--wb-line)',
                       background: 'var(--wb-panel)',
@@ -447,23 +422,24 @@ export function AssetLibrary() {
                     }}
                   >
                     <a
-                      href={assetLocationHref({ ...locationState, asset: a.id })}
-                      onClick={rememberScroll}
-                      aria-label={`查看 ${a.title}${a.candidateIndex ? ` 候选 ${a.candidateIndex}` : ''}`}
+                      href={!a.trashedAt && a.origin === 'map-project' ? a.editorPath || a.viewPath : a.viewPath}
+                      aria-label={`${!a.trashedAt && a.kind === 'map' ? '继续编辑' : '查看'} ${a.title}${a.candidateIndex ? ` 候选 ${a.candidateIndex}` : ''}`}
                     >
                       {preview(a)}
                     </a>
                     <h2 style={{ fontSize: 16, marginTop: 12 }}>
-                      {a.title}{importedIds.includes(a.id) && <small> · 本次导入</small>}
+                      {a.title}
                       {a.candidateIndex ? ` · 候选 ${a.candidateIndex}` : ''}
                     </h2>
                     <p>
-                      {labels[a.kind]} ·{' '}
+                      {a.kind === 'map' ? a.origin === 'map-project' ? '地图工程' : '地图原图 / 历史素材' : labels[a.kind]} ·{' '}
                       {a.availability === 'missing'
                         ? '文件缺失'
                         : a.statusLabel}
                       {a.frameCount ? ` · ${a.frameCount} 帧` : ''}
+                      {a.sceneRevision !== undefined ? ` · 场景版本 ${a.sceneRevision}` : ''}
                     </p>
+                    {a.kind === 'map' && <p>{a.tileCount ?? '未知'} 个地图块 · {a.updatedAt ? new Date(a.updatedAt).toLocaleString('zh-CN') : '保存时间未知'}</p>}
                     <div className="wb-tool-links">
                       <label>
                         <input
@@ -483,18 +459,16 @@ export function AssetLibrary() {
                         />{' '}
                         选择素材
                       </label>
-                      <a href={assetLocationHref({ ...locationState, asset: a.id })} onClick={rememberScroll} className="wb-button">
+                      <a href={a.viewPath} className="wb-button">
                         查看详情
                       </a>
-                      {!a.trashedAt && a.editorPath && <a className="wb-button" href={editorHref(a.editorPath, a.id)} onClick={rememberScroll}>继续编辑</a>}
                     </div>
                   </article>
                 ))}
               </div>
               {!catalog.assets.length && (
                 <p>
-                  当前范围没有匹配的已保存资产。可更换条件，或导入已有素材包。
-                  <button className="wb-button" onClick={() => setPackageOpen(true)}>导入 Forge 素材包</button>
+                  当前范围没有匹配的已保存资产。可更换条件，或到原工具保存作品后刷新。
                 </p>
               )}
               <div className="wb-tool-links" style={{ marginTop: 24 }}>
@@ -502,7 +476,7 @@ export function AssetLibrary() {
                   className="wb-button"
                   disabled={!page.offset}
                   onClick={() =>
-                    updateListing({
+                    setPage({
                       offset: Math.max(0, page.offset - 24),
                       snapshot: catalog.snapshot,
                     })
@@ -514,7 +488,7 @@ export function AssetLibrary() {
                   className="wb-button"
                   disabled={catalog.nextOffset === null}
                   onClick={() =>
-                    updateListing({
+                    setPage({
                       offset: catalog.nextOffset!,
                       snapshot: catalog.snapshot,
                     })
@@ -528,18 +502,6 @@ export function AssetLibrary() {
           {!catalog && !error && <p>正在读取已保存资产…</p>}
         </>
       )}
-      {packageOpen && <AssetPackageImport onClose={closePackages} onImported={(ids) => {
-        setImportedIds(ids); updateListing({ query: '', kind: '', scope: 'active', offset: 0, snapshot: '' });
-        setReload(value => value + 1);
-        setNotice(`已完成素材包导入，共 ${ids.length} 件素材。`);
-      }} />}
-      {localEditTask && <ImageEditWorkspace target={{ kind: 'image-task', taskId: localEditTask }} initialEditId={editNavigation?.editId} initialCandidateVersion={editNavigation?.candidateVersion} onNavigationChange={writeImageEditNavigation} onClose={() => { setLocalEditTask(null); setEditNavigation(null); clearImageEditNavigation(); }} onAdopt={async receipt => {
-        if (!receipt.adoption.assetId) throw new Error('图片变体未返回素材身份。');
-        const nextId = receipt.adoption.assetId;
-        setLocalEditTask(null); setEditNavigation(null); clearImageEditNavigation(); setAsset(null); setAssetId(nextId); setReload(value => value + 1);
-        const url = new URL(location.href); url.searchParams.set('asset', nextId); history.replaceState(null, '', url.pathname + url.search);
-        setNotice('局部调整版本已保存为新素材，原图保留。');
-      }} />}
     </main>
   );
 }

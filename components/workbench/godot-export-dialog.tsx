@@ -1,5 +1,4 @@
 'use client';
-/* oxlint-disable next/no-html-link-for-pages -- WorkbenchProvider guards navigation. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dialog,
@@ -16,7 +15,6 @@ import {
 } from '@/features/godot-export/package.mjs';
 import { gameHandoff } from '@/features/godot-export/handoff.mjs';
 import type { GodotExportOffer } from '@/lib/workbench/godot-export';
-import { readGameDelivery, gameDeliveryHref } from '@/lib/workbench/game-export-client';
 import {
   publishEditorSession,
   removeEditorSession,
@@ -47,6 +45,8 @@ const states: Record<string, string> = {
   needs_attention: '接入需要处理',
 };
 const kinds: Record<string, string> = {
+  scene: '完整场景',
+  map: '地图',
   interactable: '交互物',
   animation: '角色动画',
 };
@@ -308,13 +308,21 @@ export function GodotExportDialog() {
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
-                    setDelivery(await readGameDelivery(delivery.deliveryId));
+                    const data = await request('settings');
+                    token.current = data.token;
+                    const found = data.deliveries.find(
+                      (d: Delivery) => d.deliveryId === delivery.deliveryId,
+                    );
+                    if (found) setDelivery(found);
+                    else
+                      setNote(
+                        '此记录不在最近列表中，请让 WorkBuddy 查询确切交付。',
+                      );
                   })
                 }
               >
                 刷新接入进度
               </Button>
-              <a className="wb-button" href={gameDeliveryHref(delivery.deliveryId)} onClick={() => setOffer(null)}>查看交付记录</a>
             </div>
             {delivery.integration && (
               <p>

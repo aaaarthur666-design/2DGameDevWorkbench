@@ -3,18 +3,16 @@ import manifest from '@/workbench/manifest.json';
 import { readWorkspaceDraft, saveWorkspaceDraft } from './browser-store';
 
 export type ImportPurpose =
+  | 'map'
   | 'interactable'
+  | 'scene'
   | 'image'
   | 'animation';
 export type LibraryAsset = {
   id: string;
   kind: string;
-  checkpointToken?: string | null; stateSha256?: string; planSha256?: string;
-  motionSource?: 'state' | 'transition';
-  objectId?: string;
-  objectType?: 'character' | 'interactable';
   origin?: string;
-  attachmentOnly?: boolean;
+  mapType?: 'project' | 'image';
   title: string;
   revision?: string;
   statusLabel?: string;
@@ -32,31 +30,16 @@ export type ImportBundle = {
     candidateIndex?: number;
     fps?: number;
     loop?: boolean;
-    frameDurations?: number[];
-    anchor?: [number, number];
-    sourceFacing?: 'left' | 'right';
-    facing?: 'left' | 'right';
-    definitionIds?: string[];
     width?: number;
     height?: number;
   };
   files: { file: File; sha256: string }[];
 };
-/** Durations are frame weights: the actual time is duration / fps seconds. */
-export function libraryAnimationTiming(asset: ImportBundle['asset'], frameCount: number) {
-  const { fps, loop } = asset;
-  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps < 0.1 || fps > 120 || typeof loop !== 'boolean')
-    throw new Error('此动画的播放设置超出交互物支持范围（0.1–120 FPS）；原素材仍保留在资产库。');
-  const durations = asset.frameDurations ?? Array<number>(frameCount).fill(1);
-  if (durations.length !== frameCount || durations.some((duration) => !Number.isFinite(duration) || duration < 0.01 || duration > 100))
-    throw new Error('动画帧时长缺失或超出交互物支持范围（每帧 0.01–100）；原素材仍保留在资产库。');
-  return { fps, loop, durations };
-}
 export function purposesFor(asset: LibraryAsset, purposes: ImportPurpose[]) {
   return manifest.assetImports.filter(
     (rule) =>
-      !asset.attachmentOnly && purposes.includes(rule.id as ImportPurpose) &&
-      rule.kinds.includes(asset.kind),
+      purposes.includes(rule.id as ImportPurpose) &&
+      rule.kinds.includes(asset.kind) && (asset.origin !== 'map-project' || rule.id === 'map'),
   );
 }
 export function importLink(
@@ -74,18 +57,10 @@ export function importLink(
     )
   )
     throw new Error('不支持的导入目标。');
-  const params = new URLSearchParams({ importAsset: assetId, importPurpose: purpose });
-  if (typeof location !== 'undefined') {
-    const source = new URL(location.href);
-    if (source.pathname === '/assets') {
-      source.searchParams.set('asset', assetId); source.searchParams.delete('import');
-      params.set('returnTo', source.pathname + source.search);
-    }
-  }
   return (
     route +
     '?' +
-    params
+    new URLSearchParams({ importAsset: assetId, importPurpose: purpose })
   );
 }
 export async function loadLibraryAsset(
@@ -177,6 +152,27 @@ export async function loadLibraryAsset(
   }
   return { purpose, asset: metadata.asset, files };
 }
+export async function mapImportFile(bundle: ImportBundle): Promise<File> {
+  const file = bundle.files[0].file;
+  if (!file.type.startsWith('image/')) return file;
+  // An image-only map becomes a center tile; it has no invented collision polygons.
+  const zip = new JSZip();
+  zip.file('map.png', await file.arrayBuffer());
+  zip.file(
+    'map_stitch_state.json',
+    JSON.stringify({
+      format: 'pixelwork-map-stitch-state',
+      version: 2,
+      source: { path: 'map.png', fileName: file.name, type: file.type },
+      tiles: {},
+    }),
+  );
+  return new File(
+    [await zip.generateAsync({ type: 'blob' })],
+    'pixelwork-state.zip',
+    { type: 'application/zip' },
+  );
+}
 export function clearImportQuery() {
   const url = new URL(location.href);
   for (const key of ['importAsset', 'importPurpose', 'handoff'])
@@ -184,8 +180,8 @@ export function clearImportQuery() {
   history.replaceState(history.state, '', url);
 }
 export async function storeEditorHandoff(
-  target: 'interactable-editor',
-  purpose: 'interactable',
+  target: 'scene-composer' | 'interactable-editor' | 'map-stitcher',
+  purpose: 'map' | 'interactable',
   payload: unknown,
 ) {
   const key = 'import-' + crypto.randomUUID();
@@ -202,7 +198,7 @@ export async function readEditorHandoff(target: string) {
     throw new Error('内部移送身份无效。');
   const record = await readWorkspaceDraft<{
     target: string;
-    purpose: 'interactable';
+    purpose: 'map' | 'interactable';
     payload: unknown;
   }>(key);
   if (!record || record.target !== target)
