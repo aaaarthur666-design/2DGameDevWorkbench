@@ -1,4 +1,17 @@
 import { assetSchema, projectSchema } from './contract.mjs';
+import { imageBytesDataUrl, imageBytesSha256, readImageAsset } from '../image-assets/browser-client.mjs';
+
+export async function readImagePropAsset(taskId, request = fetch) {
+  const image = await readImageAsset(taskId, 'prop', request);
+  const originId = await imageBytesSha256(new TextEncoder().encode(taskId));
+  return assetSchema.parse({
+    id: `prop_${originId.slice(0, 32)}`,
+    name: `${image.name}.png`,
+    mime: 'image/png',
+    source: imageBytesDataUrl(image.bytes),
+    generation: image.generation,
+  });
+}
 
 export async function propArtJson(url, init, request = fetch) {
   const response = await request(url, {

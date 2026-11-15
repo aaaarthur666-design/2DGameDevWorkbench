@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .errors import ProviderConfigurationError, ProviderPermanentError, ValidationHarnessError
 from .service import SpritePipelineService
+from . import prop_reference
 
 
 class ReferenceRequest(BaseModel):
@@ -31,6 +32,12 @@ class ReferenceRequest(BaseModel):
     facing: Literal["right", "left"] = "right"
     seed: int | None = Field(default=None, ge=0, le=2147483647)
     size: Literal[64, 128] = 128
+
+
+class PropTransferRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sourceTaskId: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$")
+    identityDescription: str = Field(default="", max_length=1000)
 
 
 class KeyRequest(BaseModel):
@@ -160,10 +167,15 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
             return {"status": "failed", "error": str(exc)}
         return {"status": "completed", "image": base64.b64encode(image).decode("ascii")}
 
+    @router.post("/transfer-prop")
+    def transfer_prop(body: PropTransferRequest):
+        identity = prop_reference.transfer(service, body.sourceTaskId, body.identityDescription.strip())
+        return {"objectId": identity, "objectType": "interactable"}
+
     @router.post("/import")
     def import_reference(body: ImportRequest):
         image = validate_reference_image(body.image, body.size)
-        with import_lock, tempfile.TemporaryDirectory(prefix="reference-import-") as directory:
+        with import_lock, service.store.global_lock("reference-preset-" + body.characterId), tempfile.TemporaryDirectory(prefix="reference-import-") as directory:
             identity = body.prompt
             if body.reuseIdentity and service.presets.character_exists(body.characterId):
                 existing, _ = service.presets.load_character(body.characterId)

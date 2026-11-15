@@ -65,6 +65,7 @@ class FramesBody(_Body):
 class ApproveBody(_Body):
     reviewer: str = Field(default="api", min_length=1, max_length=100)
     acknowledge_warnings: bool = False
+    review_note: str = Field(default='', max_length=2000)
 
 
 class RejectBody(_Body):
@@ -141,6 +142,8 @@ def create_api(
     from .asset_catalog import create_asset_router
 
     app.include_router(create_asset_router(service))
+    from .collaboration.api import create_router as create_open_motion_router
+    app.include_router(create_open_motion_router(service))
     static_dir = Path(__file__).resolve().parent / "static"
 
     class _NoStoreStaticFiles(StaticFiles):
@@ -517,6 +520,7 @@ def create_api(
             candidate_index,
             reviewer=body.reviewer,
             acknowledge_warnings=body.acknowledge_warnings,
+            review_note=body.review_note,
         )
         return {"schema_version": 1, "ok": True, "data": {"job": _job(job)}}
 

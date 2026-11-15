@@ -45,9 +45,15 @@ export async function GET() {
         character_name: label(job.character_name),
         action_id: label(job.action_id),
         action_name: label(job.action_name),
+        open_work_id: label(job.open_work_id),
       }));
+    const motion = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/open-motion`, {
+      cache: 'no-store', signal: AbortSignal.timeout(3500),
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    }).then(async r => r.ok ? await r.json() as { works?: Record<string,unknown>[] } : null).catch(() => null);
+    const works = Array.isArray(motion?.works) ? motion.works.filter(w => !w.diagnostic_only) : [];
     return Response.json(
-      { jobs },
+      { jobs, works },
       { headers: { 'cache-control': 'no-store' } },
     );
   } catch {

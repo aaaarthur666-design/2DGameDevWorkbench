@@ -55,6 +55,7 @@ export function PropArtPanel({
   const [prompt, setPrompt] = useState('');
   const [selected, setSelected] = useState<StoredTask | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [motionTarget, setMotionTarget] = useState<{source: string; id: string} | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [message, setMessage] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
@@ -197,6 +198,30 @@ export function PropArtPanel({
         setBusy(false);
         onBusy(false);
       }
+    }
+  };
+  const transfer = async () => {
+    if (actionLock.current || disabled || !selected || !png) return;
+    actionLock.current = true;
+    setBusy(true);
+    onBusy(true);
+    try {
+      const result = await propArtJson<{status: string; outputs: string[]; error?: string}>('/api/workbench/tasks', {
+        method: 'POST', headers: {'content-type': 'application/json'},
+        body: JSON.stringify({capabilityId: 'reference-art', input: {operation: 'transfer', sourceTaskId: selected.id}}),
+      });
+      const file = result.outputs?.find(value => value.endsWith('/result.json'));
+      if (result.status !== 'completed' || !file) throw new Error(result.error || '物品移送未完成。');
+      const handoff = await propArtJson<{objectId: string; sourceTaskId: string}>(artifactUrl(file));
+      if (handoff.sourceTaskId !== selected.id || !/^reference_[a-f0-9]{24}$/.test(handoff.objectId))
+        throw new Error('物品移送响应无效。');
+      if (alive.current) setMotionTarget({source: selected.id, id: handoff.objectId});
+      void refresh();
+    } catch (error) {
+      if (alive.current) setMessage((error as Error).message);
+    } finally {
+      actionLock.current = false;
+      if (alive.current) { setBusy(false); onBusy(false); }
     }
   };
   const adopt = async () => {
@@ -352,6 +377,9 @@ export function PropArtPanel({
                   <Download size={14} />
                   下载 PNG
                 </a>
+                {motionTarget && motionTarget.source === selectedId
+                  ? <a href={`/tools/sprite-generator?object=${motionTarget.id}`} target="_blank" rel="noreferrer">打开物品动画</a>
+                  : <button disabled={busy || disabled} onClick={() => void transfer()}>移送到物品动画</button>}
               </div>
               <button
                 className="ie-primary"

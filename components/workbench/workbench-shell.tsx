@@ -4,11 +4,9 @@ import {
   ArrowRight,
   ArrowUpRight,
   Box,
-  Map,
   PersonStanding,
 } from 'lucide-react';
 import { useWorkbench } from './workbench-provider';
-import { ModuleIcon } from './module-icon';
 
 export function WorkbenchShell() {
   const { lines, setQueueOpen } = useWorkbench();
@@ -16,7 +14,7 @@ export function WorkbenchShell() {
     <main className="wb-page wb-home">
       <div className="wb-eyebrow">ASSET PRODUCTION</div>
       <h1>开始制作游戏资产</h1>
-      <p className="wb-intro">选择序列帧或场景，进入对应的制作流程。</p>
+      <p className="wb-intro">选择角色制作或交互物制作，也可从资产库选用已有素材。</p>
       <div className="wb-production-lines">
         {lines.map((line) => (
           <a
@@ -39,13 +37,13 @@ export function WorkbenchShell() {
               ) : (
                 <div className="wb-map-preview">
                   <div className="wb-map-block">
-                    <Map strokeWidth={1} />
+                    <Box strokeWidth={1} />
                   </div>
                   <div className="wb-map-block">
                     <Box strokeWidth={1} />
                   </div>
                   <div className="wb-map-block">
-                    <Map strokeWidth={1} />
+                    <Box strokeWidth={1} />
                   </div>
                 </div>
               )}
@@ -63,7 +61,7 @@ export function WorkbenchShell() {
                   <span key={stage}>
                     {i > 0 && (
                       <span aria-hidden="true">
-                        {line.id === 'player' ? '→' : '＋'}
+                        →
                       </span>
                     )}
                     {stage}
@@ -79,49 +77,6 @@ export function WorkbenchShell() {
           已有作品？继续上一次制作 <ArrowRight size={14} />
         </button>
         <span>每次专注一件资产</span>
-      </div>
-    </main>
-  );
-}
-
-export function SceneWorkflow() {
-  const { modules, lines } = useWorkbench();
-  const line = lines.find((l) => l.id === 'scene');
-  return (
-    <main className="wb-page wb-scene" data-accent={line?.accent}>
-      <div className="wb-breadcrumb">
-        <a href="/">开始</a>
-        <span>/</span>
-        <span>场景</span>
-      </div>
-      <div className="wb-eyebrow">BUILD YOUR WORLD</div>
-      <h1>制作素材，组装场景。</h1>
-      <p className="wb-intro">从生成地图原图开始，也可导入已有地图；制作交互物后再组装场景。</p>
-      <div className="wb-scene-stages">
-        {modules
-          .filter((m) => m.productionLine === line?.id)
-          .map((m) => (
-            <article className="wb-scene-stage" key={m.id}>
-              <span className="wb-stage-icon">
-                <ModuleIcon icon={m.icon} className="size-6" />
-              </span>
-              <h2>{m.entryTitle}</h2>
-              <p>{m.starterHint}</p>
-              <div className="wb-scene-entry-actions">
-                {(m.entryActions ?? [{ label: `进入${m.shortName}工具`, href: m.href }]).map((action, index) => (
-                  <a className={`wb-button${index === 0 ? ' wb-primary' : ''}`} href={action.href} key={action.href}>
-                    {action.label}<ArrowRight size={16} />
-                  </a>
-                ))}
-              </div>
-            </article>
-          ))}
-      </div>
-      <div className="wb-scene-handoff">
-        <div>
-          <h2>一起组成你的场景</h2>
-          <p>在场景组装中摆放交互物、右键调整遮挡，并导出完整 Godot 场景。</p>
-        </div>
       </div>
     </main>
   );

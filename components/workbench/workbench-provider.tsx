@@ -27,6 +27,8 @@ import {
   mergeWorkItems,
   taskWorkItems,
   spriteWorkItem,
+  openMotionWorkItem,
+  type OpenMotionSummary,
   type WorkItem,
   type StoredTask,
   type SpriteJob,
@@ -59,6 +61,7 @@ function useWorkbenchState() {
   const [navigationError, setNavigationError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const refreshLock = useRef(false);
   const navigating = useRef(false);
@@ -88,6 +91,7 @@ function useWorkbenchState() {
       return response.json() as Promise<{
         tasks?: StoredTask[];
         jobs?: SpriteJob[];
+        works?: OpenMotionSummary[];
         nextOffset?: number | null;
         snapshot?: string;
       }>;
@@ -113,9 +117,9 @@ function useWorkbenchState() {
           if (mounted.current) {
             setSprites(
               capabilityModule
-                ? data.jobs.map((job: SpriteJob) =>
+                ? [...data.jobs.filter((job: SpriteJob) => !data.works?.some(work => work.id === job.open_work_id)).map((job: SpriteJob) =>
                     spriteWorkItem(job, capabilityModule.href),
-                  )
+                  ), ...(data.works || []).map(work => openMotionWorkItem(work, capabilityModule.href))]
                 : [],
             );
             setSpriteOnline(true);
@@ -243,6 +247,8 @@ function useWorkbenchState() {
     navigate,
     guideOpen,
     setGuideOpen,
+    helpOpen,
+    setHelpOpen,
     queueOpen,
     setQueueOpen,
   };

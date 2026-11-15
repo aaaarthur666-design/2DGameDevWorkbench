@@ -35,6 +35,9 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async () => {
+  const testRun = process.env.WORKBENCH_TEST_RUN;
+  if (testRun && !/^[a-z0-9][a-z0-9_-]{0,79}$/i.test(testRun))
+    throw new Error('WORKBENCH_TEST_RUN must be a simple isolated build identifier.');
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -45,6 +48,7 @@ export default defineConfig(async () => {
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
   return {
+    ...(testRun ? { cacheDir: `work/test-runs/${testRun}/vite-cache` } : {}),
     css: { postcss: { plugins: [tailwindcss()] } },
     server: {
       strictPort: true,

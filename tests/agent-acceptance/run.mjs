@@ -101,12 +101,17 @@ try {
   assert.equal(engineering.createsTask, false);
   await access(path.join(root, engineering.skill));
   await access(path.join(root, engineering.guide));
-  assert.match(listed.conversationGuidance.text, /AskUserQuestion/);
+  const motionGuide = listed.conversationGuidance.topics.find(topic => topic.id === 'motion');
+  assert.equal(motionGuide.capabilityId, 'sprite-generator');
+  const motion = value(await call('workbench_get_guidance', { topic: motionGuide.id }));
+  assert.equal(motion.text, await readFile(path.join(root, motionGuide.source), 'utf8'));
+  assert.equal(motion.createsTask, false);
   const description = value(
     await call('workbench_describe_capability', {
       capabilityId: 'sprite-generator',
     }),
   );
+  assert(description.guidanceTopics.some(topic => topic.id === motionGuide.id));
   assert(
     description.capability.inputSchema.properties.operation.enum.includes(
       'approve',
@@ -302,6 +307,7 @@ try {
     SPRITE_PIPELINE_DATA_DIR: managedData,
     SPRITE_PIPELINE_EXPORTS_DIR: path.join(managedData, 'exports'),
     SPRITE_PIPELINE_IMPORT_USER_CREDENTIALS: '0',
+    SPRITE_PIPELINE_IMPORT_USER_ASSETS: '0',
   });
   const offline = value(await call('workbench_get_environment'));
   // CI's system Python can run fixture tests without an installed app venv.
@@ -367,7 +373,7 @@ async function freePort() {
   return port;
 }
 async function waitForService(url) {
-  for (let n = 0; n < 100; n++) {
+  for (let n = 0; n < 600; n++) {
     if (startupError)
       throw new Error(
         'SpritePipeline Python 无法启动，请运行 npm run sprite-pipeline:setup。' +

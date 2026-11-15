@@ -2,7 +2,7 @@
 
 `reference-art` 是工作台独立能力。它使用 PixelLab Pixflux 生成 64×64 或 128×128 透明背景像素角色，供现有序列帧工作区直接使用。输入和输出以 `workbench/manifest.json` 为准。
 
-物品原图复用本适配器的 `generate`，传入 `subject: prop`，从交互物编辑器制作与采用，不能执行角色 transfer。角色请求省略 subject 保持原行为。详见[物品原图](prop-art.md)。
+物品原图复用本适配器的 `generate`，传入 `subject: prop`，从交互物编辑器制作与采用。`transfer` 按已保存源任务的 subject 分派：角色创建角色预设，128×128 PixelLab 物品创建交互物预设。角色请求省略 subject 保持原行为。详见[物品原图](prop-art.md)。
 
 ## 使用流程
 
@@ -13,6 +13,12 @@
 5. 点击“用于制作序列帧”。原图被创建为可复用角色预设，随后在序列帧生成页预选该角色、显示参考图、名称与外观提示词。选择动作后再主动生成动画。
 
 重复移送同一原图会复用相同角色 ID，不重复创建角色；若相同 ID 的内容已发生变化则拒绝覆盖。移送验证源任务身份、登记产物、SHA-256、图片尺寸与 Alpha。它不缩放、不重画、不提交动画。
+
+原图预览下的“角色外观约束（可选）”最多 300 字符，移送时通过 `identityDescription` 单独保存；它描述需要保持的配色、装备、比例和轮廓，不改写原生图提示词，也不承载动作或站姿要求。留空维持既有默认移送行为。切换原图记录时按源任务隔离草稿，并恢复该原图最近一次成功移送的外观约束；不会沿用另一角色的文字。同源角色已经移送后仍保留不可变身份合同，不会因改填文字覆盖已有角色。
+
+角色动画准备页展开“上传角色原图”时也可填写同名可选字段，按既有上传接口最多 1000 字符，通过 `identity_description` 进入新角色预设。选择已有角色、成功上传或打开另一个作品后，新上传字段不会携带前一角色的文字。角色名称、朝向、图片大小和透明度仍由原有接口校验；填写这些文字不会规划或绘图。
+
+已有角色图片可在资产详情选择“用作角色参考”，或在角色原图页点击“从资产库选用角色原图”。选择器先按角色类型筛选再分页；选用通过既有 `operation: import` 保存一条真实的本地导入记录，不调用图片生成服务。原图必须是最多 2,000,000 字节、64×64 或 128×128 的 PNG，且同时具有可见像素和透明背景；不会自动缩放、重新绘制或推断其他尺寸的角色预设。导入后仍需主动点击移送按钮才能进入角色动画。导入记录可以通过 `?task=` 刷新恢复，来自资产详情的 `returnTo` 继续保留。
 
 ## 架构与密钥
 
@@ -48,8 +54,14 @@ npm run workbench -- status <task-id> --json
 
 生成输入：`operation: generate`，必需 prompt，可选 name、facing（right/left）及 seed、size（64/128）。移送输入包含 `operation: transfer` 与 `sourceTaskId`，可选不超过 300 字符的 identityDescription 仅描述外观；名称、提示词和朝向来自已保存的源任务。移送任务产出 `result.json`，包含 characterId、sourceTaskId 和序列帧打开链接。MCP 通过通用工作台任务工具执行；使用 get_result 读取移送的 characterId，使用 read_artifact 查看原图，无需直接读取磁盘 JSON。
 
+本地导入输入为 `operation: import`，`sourceImagePath`（仓库内 PNG 路径）与 `sourceImage`（严格的 `data:image/png;base64,...`）二选一，二者使用同一尺寸、像素和透明度校验。`sourceImage` 的原始字节上限为 2,000,000；最多 2,666,690 个字符包含 data URL 前缀。`prompt` 是导入时补充的展示描述，`result.json` 将其标为 `description-added-on-import`，不冒充原始生成提示词；`model=null`、`providerCalled=false` 和实际字节哈希表明本次只保存已有图片。
+
 ## 验证
 
 `npm run test:reference-art` 覆盖准备、配置缺失、异步恢复、产物校验、移送和 HTTP；SpritePipeline 的 `tests/test_reference_art.py` 覆盖官方请求结构、一次提交、密钥共用与不回显、图片校验、幂等角色导入及真实 Gradio 角色选择回调。测试使用模拟服务或内存传输，不产生 PixelLab 费用。真实付费生成需要用户在界面或 Agent 中另行发起。
 
 长于 300 字符的生图提示词默认不原样附入动画提示，改用参考图身份锁定，避免“站立不动”等原图要求污染动作或超过动画 API 上限。完整生图提示保留在源任务。物品原图仍固定 128×128。
+
+## 与对象库存的边界
+
+开放动作的 objects 库存支持选择已有角色或交互物预设；本页仍只生成、导入与移送角色参考。旧 `?character=` 深链继续有效，开放动作另接受 `?object=`。上传不创建交互物预设，PixelLab 物品的移送操作见[物品原图](prop-art.md#旧-pixellab-流程)。详见[序列帧对象身份](sprite-generator.md#对象身份与预设n1)。

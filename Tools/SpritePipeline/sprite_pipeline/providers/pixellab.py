@@ -299,6 +299,10 @@ class PixelLabProvider(SpriteProvider):
 
         endpoint = "animate-with-text-v3"
         if request.edit_frames is not None:
+            side=max(reference.width,reference.height)
+            edit_limit=16 if side<=64 else 9 if side<=80 else 4
+            if len(request.edit_frames)>edit_limit:
+                raise ProviderPermanentError('PixelLab animation edit frame limit exceeded for this image size',details={'maximum':edit_limit,'frame_count':len(request.edit_frames),'width':reference.width,'height':reference.height})
             normalized = []
             try:
                 for content in request.edit_frames:

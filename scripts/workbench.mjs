@@ -78,10 +78,15 @@ Commands:
   list [--json]
   describe <capability-id> [--json]
   doctor [--json]
-  agent <guidance|environment|start|frontend|present|frontend-context|presets|tasks|result|artifact|interactable-template|assets|asset|asset-manifest|game-exports|game-export|export-to-game|install-game-export|complete-game-export> [--input <json-file>] [--json]
+  agent <guidance|environment|start|frontend|present|frontend-context|presets|tasks|result|artifact|interactable-template|assets|asset|asset-manifest|game-exports|game-export|export-to-game|install-game-export|complete-game-export|documents|document-get|document-create|document-save|document-apply|document-restore|document-validate|document-simulate|document-adopt-image> [--input <json-file>] [--json]
   prepare <capability-id> --input <json-file> [--json]
   run <capability-id> --input <json-file> [--json]
   status <task-id> [--json]
+
+Image editing agent operations: image-inspect, image-resolve,
+  image-part-context, image-part-suggest, image-part-get, image-plan-prepare, image-plan-get,
+  image-review-record, image-critic-prepare, image-critic-get, image-critic-run, image-edit,
+  image-apply, image-session-create, image-session-get (canonical Bridge required).
 `;
 }
 

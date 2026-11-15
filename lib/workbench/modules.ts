@@ -2,10 +2,8 @@ import manifest from '@/workbench/manifest.json';
 
 export type WorkbenchModuleIcon =
   | 'frames'
-  | 'map'
   | 'interactable'
-  | 'reference'
-  | 'scene';
+  | 'reference';
 
 export type WorkbenchModule = {
   id: string;
@@ -33,7 +31,7 @@ export type WorkbenchModule = {
 export const workbenchModules: readonly WorkbenchModule[] = [
   ...manifest.capabilities,
   ...manifest.editorModules,
-].map((capability) => ({
+].filter((capability) => !('embedded' in capability.ui && capability.ui.embedded)).map((capability) => ({
   id: capability.id,
   executable: 'connector' in capability,
   name: capability.name,
@@ -45,16 +43,7 @@ export const workbenchModules: readonly WorkbenchModule[] = [
   entryActions: ('entryActions' in capability.ui ? capability.ui.entryActions : undefined) as WorkbenchModule['entryActions'],
   stages: capability.ui.stages,
   href: capability.ui.route,
-  icon:
-    capability.ui.icon === 'scene'
-      ? 'scene'
-      : capability.ui.icon === 'reference'
-        ? 'reference'
-        : capability.ui.icon === 'interactable'
-          ? 'interactable'
-          : capability.ui.icon === 'map'
-            ? 'map'
-            : 'frames',
+  icon: capability.ui.icon === 'reference' ? 'reference' : capability.ui.icon === 'interactable' ? 'interactable' : 'frames',
   accent: capability.ui.accent === 'cyan' ? 'cyan' : 'violet',
   capabilities: capability.ui.capabilities,
   status:

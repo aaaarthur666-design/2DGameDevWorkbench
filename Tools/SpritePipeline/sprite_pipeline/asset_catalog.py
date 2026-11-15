@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import zipfile
 from pathlib import Path
 from typing import Any
 
 from .artwork_library import ArtworkLibrary
-from .errors import NotFoundError, ValidationHarnessError
+from .collaboration.state_assets import resolve_asset
+from .errors import ConflictError, NotFoundError, ValidationHarnessError
 from .jsonio import inside
 
 
@@ -30,11 +33,19 @@ class AssetCatalog:
                 "createdAt": job.get("created_at", row.get("created_at")), "updatedAt": row["updated_at"],
                 "availability": "available" if source else "missing",
                 "characterId": row.get("character_id"), "actionId": job.get("action_id"),
+                **({"objectId": job["object_id"], "objectType": job["object_type"]} if job.get("object_id") else {}),
                 "jobId": row.get("job_id"), "candidateIndex": row.get("candidate_index"),
                 "candidateCount": job.get("candidate_count"), "frameCount": material.get("frame_count"),
                 "previewKind": "animation" if source and source.suffix.lower() == ".gif" else "image",
                 "hasArtwork": True, "engineValidated": False,
             })
+        for job in summaries.values():
+            for saved in job.get("state_assets", []):
+                row = saved.copy()
+                path = self.service.store.resolve_job_path(job['job_id'], row.pop('previewPath'))
+                rows.append(dict(row, status='approved', statusLabel='已确认状态图' if row['kind'] == 'prop' else '已确认过渡',
+                                 createdAt=job['created_at'], updatedAt=job['updated_at'], previewKind='image',
+                                 availability='available' if path.is_file() else 'missing', hasArtwork=True))
         return {"assets": rows, "issues": [{"source": "sprite-pipeline", "message": "部分作业摘要损坏，作品目录可能不完整。"}] if any(j.get("status") == "invalid" for j in summaries.values()) else []}
 
     def paths(self, asset_id):
@@ -56,6 +67,14 @@ class AssetCatalog:
         return row, files
 
     def file(self, asset_id, key):
+        if asset_id.startswith(('motion-state:', 'motion-transition:')):
+            _, registered = resolve_asset(self.service, asset_id)
+            if key not in registered:
+                raise NotFoundError('状态链资产没有此文件')
+            path, expected = registered[key]
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise ConflictError('已确认的素材文件发生变化')
+            return path
         _row, files = self.paths(asset_id)
         value = files.get(key)
         if value is None or not value.is_file():
@@ -68,6 +87,14 @@ class AssetCatalog:
         asset = next((a for a in self.list()["assets"] if a["id"] == asset_id), None)
         if asset is None:
             raise NotFoundError("所选资产不存在或无法读取")
+        if asset.get('motionSource'):
+            row, registered = resolve_asset(self.service, asset_id)
+            files = []
+            for key, (path, expected) in registered.items():
+                if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                    raise ConflictError('已确认的素材文件发生变化')
+                files.append(dict(key=key, name=path.name, available=True, bytes=path.stat().st_size, sha256=expected))
+            return {**asset, **row, 'files': files}
         row, paths = self.paths(asset_id)
         files = []
         for key, file in paths.items():
@@ -82,7 +109,50 @@ class AssetCatalog:
         metadata: dict[str, Any] = {}
         if row["kind"] == "animation":
             job = self.service.get_job(row["job_id"])
-            metadata = {"width": job.character.cell_width, "height": job.character.cell_height, "facing": job.character.facing, "fps": job.action.fps}
+            candidate = next(c for c in job.candidates if c.candidate_index == row["candidate_index"])
+            metadata = {
+                "width": job.character.cell_width, "height": job.character.cell_height,
+                **({"facing": job.character.facing} if job.character.object_type == "character" else {}), "fps": job.action.fps, "loop": job.action.loop,
+                "productionRevision": job.revision,
+                **({"objectId": job.character.object_id, "objectType": job.character.object_type}
+                   if not job.character._legacy_identity else {}),
+                "anchor": [job.character.anchor.x, job.character.anchor.ground_y],
+                "animationRepresentations": [{
+                    "representation": "frames", "frameKeys": [f"frame-{frame.index}" for frame in candidate.frames],
+                    "fps": job.action.fps, "loop": job.action.loop,
+                    "anchor": [job.character.anchor.x, job.character.anchor.ground_y],
+                    **({"sourceFacing": job.character.facing} if job.character.object_type == "character" else {}),
+                    "jobId": job.job_id, "candidateIndex": candidate.candidate_index,
+                }],
+            }
+            # Exported playback can differ from the raw frame sequence. Preserve its
+            # own contract only when it matches this exact candidate and sheet.
+            godot = paths.get("godot")
+            sheet = paths.get("sheet")
+            if godot and godot.is_file() and sheet and sheet.is_file():
+                try:
+                    with zipfile.ZipFile(godot) as package:
+                        names = [name for name in package.namelist() if name.endswith("/export.json")]
+                        if len(names) != 1 or package.getinfo(names[0]).file_size > 1024 * 1024:
+                            raise ValueError("ambiguous export contract")
+                        contract = json.loads(package.read(names[0]))
+                    if (contract.get("format") != "sprite-pipeline-godot" or
+                            contract.get("job_id") != job.job_id or
+                            contract.get("candidate_index") != candidate.candidate_index or
+                            contract.get("sheet_sha256") != hashlib.sha256(sheet.read_bytes()).hexdigest()):
+                        raise ValueError("export representation differs from current candidate")
+                    metadata["animationRepresentations"].append({
+                        "representation": "sheet", "sheetKey": "sheet", "godotKey": "godot",
+                        "fps": contract.get("fps"), "loop": contract.get("loop"),
+                        "regions": contract.get("source_region_px"), "anchor": contract.get("anchor"),
+                        **({"sourceFacing": contract["source_facing"]} if "source_facing" in contract else {}),
+                        "sheetSha256": contract["sheet_sha256"],
+                        "jobId": job.job_id, "candidateIndex": candidate.candidate_index,
+                    })
+                except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+                    # The file remains downloadable, but no unchecked relationship
+                    # between an old export and the current frames is asserted.
+                    pass
         elif row["kind"] == "character":
             character, _ = self.service.presets.load_character(row["character_id"])
             metadata = {"width": character.cell_width, "height": character.cell_height, "facing": character.facing}

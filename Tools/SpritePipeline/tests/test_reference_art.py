@@ -187,3 +187,43 @@ def test_native_64_reference_preserves_size_through_generation_and_transfer(serv
     with Image.open(preset_path.parent / character.reference_frame) as image:
         assert image.size == (64, 64)
     assert len(calls) == 2
+
+
+def test_prop_transfer_only_admits_verified_registered_png(service, tmp_path, monkeypatch):
+    from sprite_pipeline.jsonio import atomic_write_json, sha256_file
+    monkeypatch.delenv('WORKBENCH_TEST_RUN', raising=False)
+    repo = tmp_path / 'workbench-repo'
+    service.settings = replace(service.settings, install_root=repo/'Tools/SpritePipeline')
+    atomic_write_json(repo/'workbench/manifest.json', {'workspace': {'taskDirectory':'work/tasks','outputDirectory':'outputs'}})
+    task_id = 'archived-lamp'
+    folder = repo/'outputs'/task_id
+    folder.mkdir(parents=True)
+    png = folder/'reference.png'
+    png.write_bytes(base64.b64decode(image_base64()))
+    fields = {'operation':'generate', 'subject':'prop', 'prompt':'Indicator lamp', 'size':128}
+    task = {'id':task_id, 'input':fields, 'capabilityId':'reference-art', 'status':'completed',
+            'adapter':{'referenceJobId':'fixture-pixflux'}, 'outputs':['outputs/archived-lamp/reference.png','outputs/archived-lamp/result.json']}
+    task_file = repo/'work/tasks'/f'{task_id}.json'
+    atomic_write_json(task_file, task)
+    atomic_write_json(folder/'result.json', {'sha256':sha256_file(png),'model':'pixflux','width':128,'height':128})
+    with TestClient(create_api(service=service)) as client:
+        url = '/v1/reference-art/transfer-prop'
+        def transfer(**extra):
+            return client.post(url,json={'sourceTaskId':task_id,**extra})
+        assert transfer(image=image_base64()).status_code == 422
+        for invalid in ({'operation':'import'}, {'subject':'character'}, {'size':64}):
+            atomic_write_json(task_file,{**task,'input':{**fields,**invalid}})
+            assert transfer().status_code == 422
+        atomic_write_json(task_file,task)
+        first = transfer(identityDescription='Keep the original lens.')
+        assert first.status_code == 200,first.text
+        assert first.json() == transfer().json()
+        assert first.json()['objectType'] == 'interactable'
+        identity = first.json()['objectId']
+        preset, path = service.presets.load_object(identity,object_type='interactable')
+        assert (path.parent/preset.reference_frame).read_bytes() == png.read_bytes()
+        assert 'facing' not in preset.model_dump()
+        assert transfer(identityDescription='Change the lens.').status_code == 409
+        png.write_bytes(b'tampered pixels')
+        assert transfer().status_code == 409
+        assert not service.list_jobs()
