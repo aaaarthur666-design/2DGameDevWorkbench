@@ -7,14 +7,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { access, readFile, readdir } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
 import { loadManifest, agentRequest } from '../lib/workbench/runtime.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '..');
 const expectedTools = [
   'workbench_list_capabilities',
-  'workbench_get_guidance',
   'workbench_describe_capability',
   'workbench_prepare_task',
   'workbench_run_task',
@@ -52,7 +51,9 @@ const transport = new StdioClientTransport({
 
 try {
   await client.connect(transport);
-  assert.ok(client.getInstructions()?.trim());
+  assert.match(client.getInstructions(), /first user message/);
+  assert.match(client.getInstructions(), /present_files/);
+  assert.match(client.getInstructions(), /not a handshake browser side effect/);
   const environment = await client.callTool({
     name: 'workbench_get_environment',
     arguments: {},
@@ -89,32 +90,10 @@ try {
   const guide = await agentRequest(await loadManifest(), 'guidance');
   assert.deepEqual(capabilities.structuredContent.conversationGuidance, guide);
   assert.equal(guide.createsTask, false);
-  assert.equal(guide.providerCalled, false);
-  assert.equal(guide.topic, 'overview');
-  const manifest = await loadManifest();
-  assert.deepEqual(guide.topics, manifest.agentAssets.guidanceTopics);
-  assert.equal(guide.text, await readFile(path.join(repositoryRoot, guide.source), 'utf8'));
-  const taskDirectory = path.join(repositoryRoot, manifest.workspace.taskDirectory);
-  const tasksBeforeGuidance = await readdir(taskDirectory).catch(() => []);
-  assert.equal(listed.tools.find(tool => tool.name === 'workbench_get_guidance').annotations.readOnlyHint, true);
-  const overview = await client.callTool({ name: 'workbench_get_guidance', arguments: {} });
-  assert.deepEqual(overview.structuredContent, guide);
-  for (const topic of guide.topics) {
-    const response = await client.callTool({ name: 'workbench_get_guidance', arguments: { topic: topic.id } });
-    assert.ok(!response.isError, JSON.stringify(response));
-    const value = response.structuredContent;
-    assert.equal(value.source, topic.source);
-    assert.equal(value.text, await readFile(path.join(repositoryRoot, topic.source), 'utf8'));
-    assert.equal(value.topics, undefined, 'a requested topic does not reload all guidance');
-    assert.equal(value.createsTask, false);
-    assert.equal(value.providerCalled, false);
-    assert.deepEqual(JSON.parse(response.content[0].text), value, 'text-only clients receive the same topic');
-  }
-  for (const topic of ['unknown-topic', '../SECURITY.md', '']) {
-    const response = await client.callTool({ name: 'workbench_get_guidance', arguments: { topic } });
-    assert.ok(response.isError, 'unregistered topics and paths must be rejected');
-  }
-  assert.deepEqual(await readdir(taskDirectory).catch(() => []), tasksBeforeGuidance);
+  assert.match(guide.text, /AskUserQuestion/);
+  assert.match(guide.text, /角色与动作/);
+  assert.match(guide.text, /地图/);
+  assert.match(guide.text, /交互物/);
   await assert.rejects(
     agentRequest(await loadManifest(), 'guidance', { prompt: 'make a chest' }),
     /Invalid/,
@@ -151,15 +130,15 @@ try {
     throw new Error('Prepared task could not be read back.');
   }
 
-  const beforeUnknown = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
+  const beforeManual = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
   assert(!capabilities.structuredContent.capabilities.some((c) => c.id === 'map-stitcher'));
   for (const name of ['workbench_prepare_task', 'workbench_run_task', 'workbench_describe_capability']) {
     const blocked = await client.callTool({ name, arguments: { capabilityId: 'map-stitcher', ...(name === 'workbench_describe_capability' ? {} : { input: { operation: 'compose' } }) } });
     assert(blocked.isError);
-    assert.match(blocked.content[0].text, /Unknown capability/);
+    assert.match(blocked.content[0].text, /manual frontend/);
   }
-  const afterUnknown = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
-  assert.deepEqual(afterUnknown.structuredContent, beforeUnknown.structuredContent);
+  const afterManual = await client.callTool({ name: 'workbench_list_tasks', arguments: {} });
+  assert.deepEqual(afterManual.structuredContent, beforeManual.structuredContent);
   for (const kind of ['inspect', 'toggle', 'pickup', 'sequence']) {
     const candidate = await client.callTool({ name: 'workbench_interactable_template', arguments: { kind } });
     assert(!candidate.isError);
@@ -169,7 +148,7 @@ try {
   assert(!template.isError);
   assert.equal(template.structuredContent.createsTask, false);
   assert.equal(template.structuredContent.project.objects[0].behavior.kind, 'toggle');
-  assert.deepEqual((await client.callTool({ name: 'workbench_list_tasks', arguments: {} })).structuredContent, beforeUnknown.structuredContent);
+  assert.deepEqual((await client.callTool({ name: 'workbench_list_tasks', arguments: {} })).structuredContent, beforeManual.structuredContent);
   const project = template.structuredContent.project;
   project.objects[0].content.prompt = '按 E 开门';
   const saved = await client.callTool({ name: 'workbench_run_task', arguments: { capabilityId: 'interactable-editor', input: { operation: 'save-project', project } } });
@@ -216,7 +195,7 @@ try {
       capabilityId: 'interactable-editor',
       input: {
         operation: 'export-godot',
-        targetProfile: 'generic',
+        targetProfile: 'copyworms',
         project,
       },
     },
@@ -225,7 +204,7 @@ try {
   assert.equal(interaction.structuredContent?.status, 'completed');
   assert(
     interaction.structuredContent.outputs.some((output) =>
-      output.endsWith('/interactables.zip'),
+      output.endsWith('/interactables-copyworms.zip'),
     ),
   );
   const interactionTask = await client.callTool({

@@ -5,6 +5,7 @@ import net from 'node:net';
 import process from 'node:process';
 
 import sharp from 'sharp';
+import { mapProjectFixture } from '../helpers/map-project.mjs';
 import { loadManifest, agentRequest } from '../../lib/workbench/runtime.mjs';
 
 const port = await availablePort();
@@ -17,8 +18,7 @@ const child = spawn(process.execPath, ['scripts/workbench-http.mjs'], {
     GEMINI_API_KEY: '',
     OPENAI_API_KEY: '',
     TOKENHUB_API_KEY: '',
-    IMAGE_ASSETS_PROVIDER: '',
-    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --import=${new URL('../helpers/mock-keychain.mjs', import.meta.url).href}`.trim(),
+    MAP_STITCHER_IMAGE_PROVIDER: '',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
@@ -33,14 +33,18 @@ try {
   const health = await jsonFetch(`${baseUrl}/health`);
   assert.equal(health.ok, true);
   assert.equal(health.service, '2d-game-workbench-runtime');
-  const created = await jsonFetch(`${baseUrl}/v1/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'interactable', name: 'HTTP object', commandId: 'http-create' }) });
-  const documentUrl = `${baseUrl}/v1/documents/${created.document.id}`;
-  const apply = expectedRevision => fetch(`${documentUrl}/apply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision, commandId: `http-rename-${expectedRevision}`, commands: [{ type: 'rename', name: 'Updated object' }] }) });
-  assert.equal((await apply(1)).status, 200);
-  const stale = await fetch(`${documentUrl}/apply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedRevision: 1, commandId: 'http-stale', commands: [{ type: 'rename', name: 'Stale' }] }) });
-  assert.equal(stale.status, 409);
-  assert.equal((await jsonFetch(documentUrl)).document.revision, 2);
-  assert.equal((await jsonFetch(`${documentUrl}?revision=1`)).document.name, 'HTTP object');
+  const projectPng = await sharp({ create: { width: 16, height: 16, channels: 4, background: '#abcdef' } }).png().toBuffer();
+  const { bytes: projectBytes } = await mapProjectFixture(projectPng, 'map:http');
+  const projectUrl = `${baseUrl}/v1/map-stitcher/projects/map%3Ahttp`;
+  assert.equal((await fetch(projectUrl)).status, 404);
+  const saveProject = (revision) => fetch(projectUrl, { method: 'PUT',
+    headers: { 'content-type': 'application/zip', 'x-map-revision': String(revision) }, body: projectBytes });
+  assert.equal((await saveProject(0)).status, 200);
+  assert.equal((await saveProject(0)).status, 409);
+  const projectRead = await fetch(projectUrl);
+  assert.equal(projectRead.status, 200);
+  assert.equal(projectRead.headers.get('x-map-revision'), '1');
+  assert.deepEqual(Buffer.from(await projectRead.arrayBuffer()), Buffer.from(projectBytes));
 
   const guidanceResponse = await fetch(`${baseUrl}/v1/agent/guidance`, {
     method: 'POST',
@@ -52,18 +56,6 @@ try {
     await guidanceResponse.json(),
     await agentRequest(await loadManifest(), 'guidance'),
   );
-  const topicResponse = await fetch(`${baseUrl}/v1/agent/guidance`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ topic: 'motion' }),
-  });
-  assert.equal(topicResponse.status, 200);
-  assert.deepEqual(await topicResponse.json(), await agentRequest(await loadManifest(), 'guidance', { topic: 'motion' }));
-  for (const input of [{ topic: '../SECURITY.md' }, { topic: 'missing-topic' }, { source: 'SECURITY.md' }]) {
-    const invalid = await fetch(`${baseUrl}/v1/agent/guidance`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
-    });
-    assert.equal(invalid.status, 400);
-  }
 
   const template = await fetch(`${baseUrl}/v1/agent/interactable-template`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'pickup', name: '钥匙' }),
@@ -74,42 +66,42 @@ try {
   assert.equal(templateValue.project.objects[0].behavior.kind, 'pickup');
 
   const initialSettings = await jsonFetch(
-    `${baseUrl}/v1/image-assets/settings`,
+    `${baseUrl}/v1/map-stitcher/settings`,
   );
   assert.equal(initialSettings.active, false);
   assert.deepEqual(
     initialSettings.providers.map((provider) => provider.id),
-    ['gpt-image-2.6'],
+    ['nano-banana', 'gpt-image-2', 'hunyuan-image-3'],
   );
   assert.equal(JSON.stringify(initialSettings).includes('apiKey'), false);
 
   for (const apiKey of ['test-密钥', 'test key', 'test\nkey']) {
-    const invalid = await fetch(`${baseUrl}/v1/image-assets/settings`, {
+    const invalid = await fetch(`${baseUrl}/v1/map-stitcher/settings`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ provider: 'gpt-image-2.6', active: true, apiKey }),
+      body: JSON.stringify({ provider: 'gpt-image-2', active: true, apiKey }),
     });
     assert.equal(invalid.status, 400);
     const rejected = await invalid.json();
     assert.match(rejected.error, /密钥格式无效/);
     assert.ok(!JSON.stringify(rejected).includes(apiKey));
-    assert.deepEqual(await jsonFetch(`${baseUrl}/v1/image-assets/settings`), initialSettings);
+    assert.deepEqual(await jsonFetch(`${baseUrl}/v1/map-stitcher/settings`), initialSettings);
   }
 
-  const settingsResponse = await fetch(`${baseUrl}/v1/image-assets/settings`, {
+  const settingsResponse = await fetch(`${baseUrl}/v1/map-stitcher/settings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      provider: 'gpt-image-2.6',
+      provider: 'nano-banana',
       active: true,
       apiKey: 'runtime-test-secret',
     }),
   });
+  assert.equal(settingsResponse.status, 200);
   const savedSettings = await settingsResponse.json();
-  assert.equal(settingsResponse.status, 200, savedSettings.error);
   assert.equal(savedSettings.active, true);
-  assert.equal(savedSettings.provider, 'gpt-image-2.6');
+  assert.equal(savedSettings.provider, 'nano-banana');
   assert.equal(
-    savedSettings.providers.find((provider) => provider.id === 'gpt-image-2.6')
+    savedSettings.providers.find((provider) => provider.id === 'nano-banana')
       .configured,
     true,
   );
@@ -117,6 +109,15 @@ try {
     JSON.stringify(savedSettings).includes('runtime-test-secret'),
     false,
   );
+
+  const hunyuanSaved = await jsonFetch(`${baseUrl}/v1/map-stitcher/settings`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'hunyuan-image-3', active: true, apiKey: 'test-tokenhub-secret' }),
+  });
+  assert.equal(hunyuanSaved.provider, 'hunyuan-image-3');
+  assert.equal(hunyuanSaved.providers.find(p => p.id === 'hunyuan-image-3').configured, true);
+  assert.equal(hunyuanSaved.providers.find(p => p.id === 'nano-banana').configured, true);
+  assert.equal(JSON.stringify(hunyuanSaved).includes('test-tokenhub-secret'), false);
 
   const tile = await sharp({
     create: {
@@ -132,12 +133,12 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      capabilityId: 'image-assets',
+      capabilityId: 'map-stitcher',
       input: {
-        operation: 'process-image',
-        kind: 'prop',
-        image: `data:image/png;base64,${tile.toString('base64')}`,
-        alphaCleanupThreshold: 0,
+        operation: 'compose',
+        images: [`data:image/png;base64,${tile.toString('base64')}`],
+        columns: 1,
+        checkSeams: true,
       },
     }),
   });
@@ -145,7 +146,7 @@ try {
   const task = await response.json();
   assert.equal(task.status, 'completed');
   const artifact = task.outputs.find((value) =>
-    value.endsWith('/image.png'),
+    value.endsWith('stitched-map.png'),
   );
   assert(artifact);
 

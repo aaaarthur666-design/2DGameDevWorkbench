@@ -16,7 +16,6 @@ export function readPropArtAsset(
   taskId: string,
   request?: typeof fetch,
 ): Promise<Asset>;
-export function readImagePropAsset(taskId: string, request?: typeof fetch): Promise<Asset>;
 export function applyPropArt(
   project: InteractableProject,
   target: PropArtTarget,

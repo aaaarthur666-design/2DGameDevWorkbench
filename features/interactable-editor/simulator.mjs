@@ -1,5 +1,3 @@
-import { appearanceAnimation } from './contract.mjs';
-
 export function shapeContains(shape, x, y, radius = 0) {
   x -= shape.offset.x;
   y -= shape.offset.y;
@@ -97,7 +95,8 @@ export class InteractionSimulation {
     i.animation = null;
     this.playClip(
       i,
-      appearanceAnimation(stateAppearance(i.definition, i.state), i.definition.visual),
+      stateAppearance(i.definition, i.state).animation ||
+        i.definition.visual.idleAnimation,
     );
   }
   emit(name, i, extra = {}) {
@@ -125,16 +124,6 @@ export class InteractionSimulation {
     );
   }
   tick(delta) {
-    // A replay can advance several seconds at once. Finish each timed step
-    // at its own time, then give the following step or cooldown the remainder.
-    while (this.waiting?.remaining !== undefined && this.waiting.remaining < delta) {
-      const elapsed = Math.max(0, this.waiting.remaining);
-      this.tickSlice(elapsed);
-      delta -= elapsed;
-    }
-    this.tickSlice(delta);
-  }
-  tickSlice(delta) {
     this.time += delta;
     for (const i of this.objects) {
       if (i.animation?.feedback && this.time >= i.animation.ends) {

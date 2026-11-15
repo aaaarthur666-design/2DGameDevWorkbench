@@ -5,9 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
-from .collaboration.contracts import PlanBinding, PlanControl, PlanExecution
-from .object_identity import ObjectIdentity
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
@@ -37,11 +35,14 @@ class QAThresholds(StrictModel):
     alpha_visible_threshold: int = Field(default=1, ge=1, le=255)
 
 
-class ObjectPresetBase(ObjectIdentity, StrictModel):
+class CharacterPreset(StrictModel):
     schema_version: Literal[1] = 1
+    character_id: str
     display_name: str = Field(min_length=1, max_length=200)
     cell_width: int
     cell_height: int
+    facing: Literal["left", "right"] = "right"
+    weapon_hand: Literal["reference", "left", "right", "both"] = "reference"
     reference_frame: str = Field(min_length=1, max_length=260)
     master: str | None = Field(default=None, max_length=260)
     palette: str | None = Field(default=None, max_length=260)
@@ -53,7 +54,7 @@ class ObjectPresetBase(ObjectIdentity, StrictModel):
     transparent_background: bool = True
     qa: QAThresholds = Field(default_factory=QAThresholds)
 
-    @field_validator("object_id")
+    @field_validator("character_id")
     @classmethod
     def validate_id(cls, value: str) -> str:
         if not value or not all(ch.islower() or ch.isdigit() or ch == "_" for ch in value):
@@ -61,7 +62,7 @@ class ObjectPresetBase(ObjectIdentity, StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_cell(self) -> "ObjectPresetBase":
+    def validate_cell(self) -> "CharacterPreset":
         if self.cell_width != self.cell_height or self.cell_width not in (64, 128):
             raise ValueError("cell size must be exactly 64x64 or 128x128")
         if self.anchor.x >= self.cell_width or self.anchor.ground_y >= self.cell_height:
@@ -69,30 +70,6 @@ class ObjectPresetBase(ObjectIdentity, StrictModel):
         if self.safe_margin * 2 >= self.cell_width:
             raise ValueError("safe_margin leaves no usable canvas")
         return self
-
-
-class CharacterPreset(ObjectPresetBase):
-    object_type: Literal["character"] = "character"
-    facing: Literal["left", "right"] = "right"
-    weapon_hand: Literal["reference", "left", "right", "both"] = "reference"
-
-
-class InteractablePreset(ObjectPresetBase):
-    object_type: Literal["interactable"] = "interactable"
-
-    @model_validator(mode="after")
-    def validate_interactable_canvas(self):
-        if self.cell_width != 128:
-            raise ValueError("interactable references must use a 128x128 canvas")
-        return self
-
-
-ObjectPreset = CharacterPreset | InteractablePreset
-_OBJECT_PRESET_ADAPTER = TypeAdapter(ObjectPreset)
-
-
-def validate_object_preset(data) -> ObjectPreset:
-    return _OBJECT_PRESET_ADAPTER.validate_python(data)
 
 
 class ActionPreset(StrictModel):
@@ -206,10 +183,10 @@ class MotionRepairBinding(StrictModel):
     attempt_id: str = Field(pattern=r"^[0-9a-f]{32}$")
 
 
-class GenerationRequest(ObjectIdentity, StrictModel):
+class GenerationRequest(StrictModel):
     schema_version: Literal[1] = 1
+    character_id: str
     action_id: str
-    open_plan: PlanBinding | None = None
     attack_segment: AttackSegmentBinding | None = None
     motion_repair: MotionRepairBinding | None = None
     provider: Literal["pixellab", "fixture", "import"] = "pixellab"
@@ -224,19 +201,6 @@ class GenerationRequest(ObjectIdentity, StrictModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
-
-    @model_validator(mode="after")
-    def validate_open_plan(self):
-        if self.open_plan is not None:
-            spec = self.open_plan.spec
-            if (self.action_id != "motion_" + self.open_plan.work_id[:12]
-                    or self.object_id != spec.object_id or self.object_type != spec.object_type
-                    or self.provider != spec.provider
-                    or self.candidate_count != spec.candidate_count or self.seed != spec.seed
-                    or self.frame_count is not None or self.action_description is not None
-                    or self.loop is not None or self.attack_segment or self.motion_repair):
-                raise ValueError("Open-plan requests must match the frozen task without preset overrides")
-        return self
 
 class IssueSeverity(str, Enum):
     hard_failure = "hard_failure"
@@ -340,7 +304,7 @@ class CandidateRecord(StrictModel):
     last_polled_at: datetime | None = None
     provider_completed_at: datetime | None = None
     result_saved_at: datetime | None = None
-    submission_attempts: int = Field(default=0, ge=0, le=32)
+    submission_attempts: int = Field(default=0, ge=0, le=3)
     raw_request_path: str | None = None
     raw_response_path: str | None = None
     result_manifest_path: str | None = None
@@ -353,7 +317,6 @@ class CandidateRecord(StrictModel):
     qa_algorithm_version: str | None = None
     motion_review: dict[str, Any] | None = None
     attack_sequence: dict[str, Any] | None = None
-    plan_execution: PlanExecution | None = None
     # Defaults keep job.json files written by earlier harness versions readable.
     qa_issue_baseline: QAIssueBaseline | None = None
     qa_change_summary: QAChangeSummary | None = None
@@ -398,7 +361,7 @@ class JobRecord(StrictModel):
     generation_requested_at: datetime | None = None
     quota_before: dict[str, Any] | None = None
     quota_after: dict[str, Any] | None = None
-    character: ObjectPreset
+    character: CharacterPreset
     action: ActionPreset
     character_preset_path: str
     action_preset_path: str
@@ -407,7 +370,6 @@ class JobRecord(StrictModel):
     full_prompt: str
     candidates: list[CandidateRecord]
     motion_control: dict[str, Any] | None = None
-    plan_control: PlanControl | None = None
     export: ExportRecord | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
 

@@ -38,7 +38,7 @@ export type StoredTask = {
   requiredEnvironment?: string;
   createdAt?: string;
   updatedAt?: string;
-  adapter?: { propObjectId?: string; remoteJobId?: string; remoteStatus?: string; openWorkId?: string };
+  adapter?: { remoteJobId?: string; remoteStatus?: string };
 };
 export type SpriteJob = {
   job_id: string;
@@ -48,7 +48,6 @@ export type SpriteJob = {
   character_id?: string;
   action_name?: string;
   action_id?: string;
-  open_work_id?: string;
 };
 
 export const workStateLabels: Record<WorkItemState, string> = {
@@ -83,24 +82,14 @@ export function spriteState(
 
 export function spriteWorkItem(job: SpriteJob, href: string): WorkItem {
   return {
-    id: job.open_work_id ? `motion:${job.open_work_id}` : `sprite:${job.job_id}`,
+    id: `sprite:${job.job_id}`,
     capabilityId: 'sprite-generator',
     title: `${job.character_name || job.character_id || '角色'} · ${job.action_name || job.action_id || '动作'}`,
     updatedAt: job.updated_at,
     savedAt: job.updated_at,
-    href: job.open_work_id ? `${href}?work=${job.open_work_id}` : `${href}?job=${encodeURIComponent(job.job_id)}`,
+    href: `${href}?job=${encodeURIComponent(job.job_id)}`,
     ...spriteState(job.status),
   };
-}
-
-export type OpenMotionSummary = { id: string; title: string; status: string; job_status?: string; updated_at: string };
-export function openMotionWorkItem(work: OpenMotionSummary, href: string): WorkItem {
-  const state = work.job_status ? spriteState(work.job_status) : {
-    state: work.status === 'planning' ? 'running' as const : 'attention' as const,
-    detail: work.status === 'planning' ? '正在制定制作方案' : work.status === 'ready' ? '方案已保存，等待确认制作' : '方案需要处理', stage: 1,
-  };
-  return { id: `motion:${work.id}`, capabilityId: 'sprite-generator', title: work.title,
-    href: `${href}?work=${work.id}`, updatedAt: work.updated_at, savedAt: work.updated_at, ...state };
 }
 
 export function interactableItemId(projectId: string, objectId: string) {
@@ -116,13 +105,9 @@ export function taskWorkItems(
   for (const task of [...tasks].sort((a, b) =>
     (a.updatedAt || '').localeCompare(b.updatedAt || ''),
   )) {
-    const input = task.input || {};
-    const propObjectId = task.capabilityId === 'reference-art' && input.operation === 'transfer' ? task.adapter?.propObjectId : undefined;
-    const moduleId = propObjectId ? 'sprite-generator' : task.capabilityId === 'image-assets'
-      ? 'interactable-editor'
-      : task.capabilityId;
-    const capabilityModule = modules.find((m) => m.id === moduleId);
+    const capabilityModule = modules.find((m) => m.id === task.capabilityId);
     if (!capabilityModule) continue;
+    const input = task.input || {};
     const jobId =
       task.capabilityId === 'sprite-generator'
         ? task.adapter?.remoteJobId ||
@@ -139,9 +124,7 @@ export function taskWorkItems(
       ? project.objects.filter((o) => o && typeof o.definitionId === 'string')
       : [];
     const targets =
-      task.capabilityId === 'image-assets'
-        ? [{ id: `task:${task.id}`, title: typeof input.name === 'string' ? input.name : moduleId === 'interactable-editor' ? '透明物品候选' : '背景候选', href: `${capabilityModule.href}?imageTask=${encodeURIComponent(task.id)}` }]
-        : task.capabilityId === 'reference-art'
+      task.capabilityId === 'reference-art'
         ? [
             {
               id: `task:${task.id}`,
@@ -151,7 +134,7 @@ export function taskWorkItems(
                   : input.operation === 'transfer'
                     ? '原图已移送序列帧'
                     : input.subject === 'prop' ? '物品原图' : '角色原图',
-              href: propObjectId ? `${capabilityModule.href}?object=${encodeURIComponent(propObjectId)}` : input.subject === 'prop'
+              href: input.subject === 'prop'
                 ? `${modules.find((m) => m.id === 'interactable-editor')?.href || capabilityModule.href}?artTask=${encodeURIComponent(task.id)}`
                 : `${capabilityModule.href}?task=${encodeURIComponent(typeof input.sourceTaskId === 'string' ? input.sourceTaskId : task.id)}`,
             },
@@ -168,11 +151,11 @@ export function taskWorkItems(
             }))
           : [
               {
-                id: task.adapter?.openWorkId ? `motion:${task.adapter.openWorkId}` : jobId ? `sprite:${jobId}` : `task:${task.id}`,
+                id: jobId ? `sprite:${jobId}` : `task:${task.id}`,
                 title: jobId
                   ? `角色动画 · ${jobId}`
                   : `${capabilityModule.entryTitle} · ${operationLabel(input.operation)}`,
-                href: task.adapter?.openWorkId ? `${capabilityModule.href}?work=${task.adapter.openWorkId}` : jobId
+                href: jobId
                   ? `${capabilityModule.href}?job=${encodeURIComponent(jobId)}`
                   : `/advanced?tab=records&task=${encodeURIComponent(task.id)}`,
               },
