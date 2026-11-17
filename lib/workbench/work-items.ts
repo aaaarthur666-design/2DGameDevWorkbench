@@ -156,15 +156,21 @@ export function interactableItemId(projectId: string, objectId: string) {
 }
 
 export function unsubmittedPixelLabTask(task: StoredTask) {
-  if (!['reference-art', 'sprite-generator'].includes(task.capabilityId) ||
-      task.adapter?.referenceSha256 || task.adapter?.remoteJobId || task.adapter?.openWorkId ||
-      (task.outputs || []).some(output => /\.(png|webp|gif|jpe?g|zip)$/i.test(output))) return false;
-  if (task.status === 'not_submitted' && task.adapter?.submissionState === 'not_submitted') return true;
-  // Legacy records have no structured receipt. Fixed conclusive gateway
-  // messages are derivable; ambiguous transport failures remain visible.
-  const error = task.error || '';
-  return task.status === 'failed' && !/unknown|超时|无法确认|结果未知/i.test(error) &&
-    /PixelLab\s*(?:额度不足|当前任务过多|Key\s*无效)|(?:PixelLab[^\n]*HTTP\s*(?:402|429))/.test(error);
+  const hasSubmittedRemoteStatus = ['provider_pending', 'saving', 'review_required', 'approved', 'exported', 'submission_unknown'].includes(task.adapter?.remoteStatus || '');
+  const hasMediaOutput = (task.outputs || []).some(output => /\.(png|webp|gif|jpe?g|zip)$/i.test(output));
+  let result = false;
+  if (['reference-art', 'sprite-generator'].includes(task.capabilityId) && !task.adapter?.referenceSha256 && !hasMediaOutput) {
+    if (task.status === 'not_submitted' && task.adapter?.submissionState === 'not_submitted') {
+      result = true;
+    } else if (task.status === 'failed' && !hasSubmittedRemoteStatus) {
+      // Legacy records have no structured receipt. Fixed conclusive gateway
+      // messages are derivable; ambiguous transport failures remain visible.
+      const error = task.error || '';
+      result = !/unknown|超时|无法确认|结果未知/i.test(error) &&
+        /PixelLab\s*(?:额度不足|当前任务过多|Key\s*无效)|(?:PixelLab[^\n]*HTTP\s*(?:401|402|429))|insufficient PixelLab generation units/i.test(error);
+    }
+  }
+  return result;
 }
 
 /** Group execution attempts only when a durable asset identity is known. */
@@ -261,6 +267,7 @@ export function taskWorkItems(
               : workStateLabels[state]),
         updatedAt: task.updatedAt || task.createdAt || '',
         stage: state === 'completed' ? capabilityModule.stages.length - 1 : 0,
+        ...(task.adapter?.submissionState ? { submissionState: task.adapter.submissionState } : {}),
         ...(jobId && task.adapter?.remoteStatus
           ? spriteState(task.adapter.remoteStatus)
           : {}),

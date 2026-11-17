@@ -211,12 +211,8 @@ def create_router(service):
     def configure(body: Settings):
         registry = ModelRegistry(service.settings)
         config = registry.load()
-        if body.configuration is not None:
-            config = body.configuration
-        elif body.provider is not None:
-            provider = 'tokenhub' if body.provider == 'hunyuan' else 'openai'
-            config.default = config.default.model_copy(update={'provider':provider,'model':PROVIDERS[body.provider]['model']})
-        planning_provider = ('tokenhub' if body.provider == 'hunyuan' else 'openai') if body.provider else config.default.provider
+        provider_id = ('tokenhub' if body.provider == 'hunyuan' else 'openai') if body.provider is not None else None
+        planning_provider = provider_id or (body.configuration.default.provider if body.configuration is not None else config.default.provider)
         for provider, value in [(planning_provider,body.planning_key),('tokenhub',body.tokenhub_key),('openai',body.openai_key)]:
             registry.validate_key(provider,value)
         if body.planning_key:
@@ -225,7 +221,10 @@ def create_router(service):
         if body.openai_key: registry.save_key('openai',body.openai_key)
         if body.pixellab_key:
             service.configure_pixellab_api_key(body.pixellab_key)
-        registry.save(config)
+        if body.configuration is not None:
+            registry.save(body.configuration)
+        elif body.provider is not None:
+            registry.update_provider(provider_id, PROVIDERS[body.provider]['model'])
         return settings()
 
     @router.patch("/settings/roles/{role}")

@@ -73,6 +73,11 @@ class ImportRequest(ReferenceRequest):
     name: str = Field(min_length=1, max_length=80)
 
 
+class AttachReferenceRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    providerJobId: str = Field(pattern=r'^[A-Za-z0-9_-]{1,200}$')
+
+
 def _provider_request(service: SpritePipelineService, method: str, route: str, payload=None):
     key = service.settings.pixellab_api_key
     if not key:
@@ -192,12 +197,20 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
                 atomic_write_json(destination, record)
                 return public_record(record)
             if record['status'] == 'running' and not submit_only:
-                data = _provider_request(service, 'GET', '/background-jobs/' + record['remoteJobId'])
+                try:
+                    data = _provider_request(service, 'GET', '/background-jobs/' + record['remoteJobId'])
+                except ProviderPermanentError as exc:
+                    if exc.details.get('http_status') == 404:
+                        queue.release(record['requestKey'], state='failed')
+                        record.update(status='failed', message=exc.message, error=exc.as_dict())
+                        atomic_write_json(destination, record)
+                        return public_record(record)
+                    raise
                 state = data.get('status')
                 if data.get('id') != record['remoteJobId']:
                     raise ProviderPermanentError('PixelLab 返回了不匹配的任务。')
                 if state in {'completed', 'failed'}:
-                    queue.release(record['requestKey'])
+                    queue.release(record['requestKey'], state=state)
                 if state == 'failed':
                     record.update(status='failed', message='PixelLab 原图生成失败。')
                 elif state == 'completed':
@@ -301,10 +314,6 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
                 # Original job/queue evidence remains; a GET failure cannot replay a POST.
                 continue
     service.reference_art_recovery = recover_pending
-
-    class AttachReferenceRequest(BaseModel):
-        model_config = ConfigDict(extra='forbid')
-        providerJobId: str = Field(pattern=r'^[A-Za-z0-9_-]{1,200}$')
 
     @router.post('/jobs/{job_id}/attach-provider-job')
     def attach_reference(job_id: str, body: AttachReferenceRequest):

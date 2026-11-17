@@ -447,6 +447,8 @@ class PixelLabProvider(SpriteProvider):
         job_id = self._validate_job_id(provider_job_id)
         response = self._get_with_backoff(job_id)
         if response.status_code != 200:
+            if response.status_code == 404 and self._account_queue is not None:
+                self._account_queue.complete_by_provider_job_id(job_id, state='failed')
             self._raise_poll_status(response, job_id)
 
         try:
@@ -487,6 +489,8 @@ class PixelLabProvider(SpriteProvider):
                 usage=usage,
             )
         if provider_status == "failed":
+            if self._account_queue is not None:
+                self._account_queue.complete_by_provider_job_id(job_id, state='failed')
             return PollResult(
                 provider=self.name,
                 provider_job_id=job_id,
@@ -510,6 +514,8 @@ class PixelLabProvider(SpriteProvider):
                 unknown_status=provider_status,
             )
 
+        if self._account_queue is not None:
+            self._account_queue.complete_by_provider_job_id(job_id, state='completed')
         return self._completed_result(job_id, response_json, raw_response, usage)
 
     def get_balance(self) -> dict[str, Any]:
@@ -761,9 +767,11 @@ class PixelLabProvider(SpriteProvider):
         """Classify a non-200 POST response without retrying it."""
 
         status_code = int(response.status_code)
+        submission_unknown = status_code >= 500 and status_code != 529
         details = {
             "http_status": status_code,
-            "submission_unknown": status_code >= 500 and status_code != 529,
+            "submission_unknown": submission_unknown,
+            **({"submission_created": False} if not submission_unknown else {}),
             "safe_to_retry": status_code in {429, 529},
             "request": request_record,
             "response": self._best_effort_response_record(response),

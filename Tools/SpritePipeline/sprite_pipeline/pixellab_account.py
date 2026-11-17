@@ -11,7 +11,7 @@ import math
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from .errors import ProviderError, ProviderPermanentError, ProviderTemporaryError
+from .errors import ConflictError, ProviderError, ProviderPermanentError, ProviderTemporaryError
 from .jsonio import atomic_write_json, read_json
 
 
@@ -58,7 +58,13 @@ class PixelLabAccountQueue:
                 state['waiting'].append(request_key)
             if active and active.get('provider_job_id'):
                 self._save(state)  # A transient GET failure must not lose the enqueued intent.
-                remote = poll(active['provider_job_id'])
+                try:
+                    remote = poll(active['provider_job_id'])
+                except ProviderPermanentError as exc:
+                    if exc.details.get('http_status') == 404:
+                        remote = 'failed'
+                    else:
+                        raise
                 if remote in {'completed', 'failed'}:
                     state['receipts'][active['request_key']] = {**active, 'state': remote}
                     state['active'] = active = None
@@ -74,19 +80,62 @@ class PixelLabAccountQueue:
             self._save(state)
 
     def _still_waiting(self, request_key):
+        if request_key.startswith('reference:'):
+            identity = request_key.removeprefix('reference:')
+            ref_id = 'ref_' + hashlib.sha256(identity.encode()).hexdigest()[:32]
+            path = self.store.settings.jobs_dir / '.reference-art' / (ref_id + '.json')
+            if not path.exists():
+                return True
+            try:
+                return read_json(path).get('status') == 'queued'
+            except Exception:
+                return True
         if ':candidate:' not in request_key:
             return True
-        job_id = request_key.split(':candidate:', 1)[0]
+        job_id, rest = request_key.split(':candidate:', 1)
         try:
             job = self.store.load(job_id)
-            return not job.request.open_plan or bool(job.plan_control and job.plan_control.enabled)
+            if job.request.open_plan and not (job.plan_control and job.plan_control.enabled):
+                return False
+            if ':stage:' in rest:
+                cand_str, stage_str = rest.split(':stage:', 1)
+                candidate = next((c for c in job.candidates if c.candidate_index == int(cand_str)), None)
+                if candidate and candidate.plan_execution and 0 <= int(stage_str) < len(candidate.plan_execution.stages):
+                    return candidate.plan_execution.stages[int(stage_str)].state in {'created', 'submitting'}
+                return True
+            cand_idx = int(rest)
+            candidate = next((c for c in job.candidates if c.candidate_index == cand_idx), None)
+            if candidate is not None:
+                return candidate.status.value in {'created', 'submitting'}
+            return True
         except Exception:
             # Unreadable evidence is not proof that a queued authorization ended.
             return True
 
     def attach(self, request_key, provider_job_id):
         """Recover the existing slot after an explicit upstream-ID attachment."""
-        self._update(request_key, state='pending', provider_job_id=provider_job_id)
+        with self.locked():
+            state = self._load()
+            active = state['active']
+            if active and active['request_key'] == request_key:
+                if active.get('provider_job_id') and active['provider_job_id'] != provider_job_id:
+                    raise ConflictError('PixelLab 账户队列已绑定不同的远端编号')
+                active.update(state='pending', provider_job_id=provider_job_id)
+                state['receipts'][request_key] = dict(active)
+                self._save(state)
+                return
+            receipt = state['receipts'].get(request_key)
+            if receipt:
+                if receipt.get('provider_job_id') == provider_job_id:
+                    return
+                if receipt.get('provider_job_id') and receipt['provider_job_id'] != provider_job_id:
+                    raise ConflictError('PixelLab 账户队列已绑定不同的远端编号')
+                if receipt.get('state') in {'submitting', 'unknown'}:
+                    receipt.update(state='pending', provider_job_id=provider_job_id)
+                    self._save(state)
+                    return
+            state['receipts'][request_key] = {'request_key': request_key, 'state': 'pending', 'provider_job_id': provider_job_id}
+            self._save(state)
 
     def _update(self, request_key, **fields):
         with self.locked():
@@ -102,18 +151,27 @@ class PixelLabAccountQueue:
         with self.locked():
             return self._load()['receipts'].get(request_key)
 
-    def release(self, request_key):
+    def release(self, request_key, *, state='completed'):
         with self.locked():
-            state = self._load()
-            if state['active'] and state['active']['request_key'] == request_key:
-                active = state['active']
+            data = self._load()
+            if data['active'] and data['active']['request_key'] == request_key:
+                active = data['active']
                 if active.get('provider_job_id'):
-                    state['receipts'][request_key] = {**active, 'state': 'completed'}
+                    data['receipts'][request_key] = {**active, 'state': state}
                 elif active['state'] == 'submitting':
-                    state['receipts'][request_key] = {**active, 'state': 'not_submitted'}
-                state['active'] = None
-            state['waiting'] = [key for key in state['waiting'] if key != request_key]
-            self._save(state)
+                    data['receipts'][request_key] = {**active, 'state': 'not_submitted'}
+                data['active'] = None
+            data['waiting'] = [key for key in data['waiting'] if key != request_key]
+            self._save(data)
+
+    def complete_by_provider_job_id(self, provider_job_id, *, state='completed'):
+        with self.locked():
+            data = self._load()
+            active = data['active']
+            if active and active.get('provider_job_id') == provider_job_id:
+                data['receipts'][active['request_key']] = {**active, 'state': state}
+                data['active'] = None
+                self._save(data)
 
     def submit(self, request_key, poll, preflight, submit, job_id):
         self.reserve(request_key, poll)
@@ -162,11 +220,14 @@ def require_balance(balance, required=1):
 
 def submission_state(job):
     candidates = job.candidates
-    if any(candidate.frames or candidate.provider_job_id or candidate.status.value == 'submission_unknown' for candidate in candidates):
+    if any(candidate.frames or candidate.status.value == 'submission_unknown' for candidate in candidates):
         return None
-    if any((candidate.error or {}).get('code') == 'provider_queued' for candidate in candidates):
+    if any(candidate.status.value == 'created' and (candidate.error or {}).get('code') == 'provider_queued' for candidate in candidates):
         return 'queued'
+    if any(candidate.provider_job_id for candidate in candidates):
+        return None
     if any((candidate.error or {}).get('code') == 'insufficient_quota' or
+           (candidate.error or {}).get('details', {}).get('code') == 'insufficient_quota' or
            ((candidate.error or {}).get('details', {}).get('submission_created') is False and
             not (candidate.error or {}).get('details', {}).get('submission_unknown')) for candidate in candidates):
         return 'not_submitted'

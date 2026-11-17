@@ -134,10 +134,20 @@ class PlanGeneration:
                         self.s._refresh_job_status(current); current.touch('plan_stage_queued', stage=stage)
                     return False
                 unknown = not isinstance(exc, ProviderError) or bool(exc.details.get("submission_unknown"))
+                not_submitted = not unknown and isinstance(exc, ProviderError) and exc.details.get("submission_created") is False
                 with self.store.locked_job(job_id) as current:
                     c = self.candidate(current, index); r = self.validate(current, c)[stage]
-                    r.state = "unknown" if unknown else "failed"
-                    c.status = CandidateStatus.submission_unknown if unknown else CandidateStatus.failed
+                    if unknown:
+                        r.state = "unknown"
+                        c.status = CandidateStatus.submission_unknown
+                    elif not_submitted:
+                        r.state = "created"
+                        r.submission_attempts = 0
+                        c.status = CandidateStatus.created
+                        c.submission_attempts = sum(v.submission_attempts + len(v.repairs) for v in c.plan_execution.stages)
+                    else:
+                        r.state = "failed"
+                        c.status = CandidateStatus.failed
                     c.error = exc.as_dict() if isinstance(exc, ProviderError) else {"code": "submission_unknown", "message": "提交结果未知，不能自动重发"}
                     r.error = c.error; current.plan_control.enabled = False
                     current.plan_control.message = "请核对原请求" if unknown else "生成请求失败，原记录已保留"

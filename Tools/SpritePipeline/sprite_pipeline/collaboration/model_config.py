@@ -57,16 +57,24 @@ class ModelRegistry:
         self.path = settings.config_dir / 'open_motion_models.json'
 
     def load(self):
-        if self.path.exists():
-            return ModelConfiguration.model_validate(read_json(self.path))
-        legacy = VisionReviewer(self.settings)
-        return ModelConfiguration(default=ModelProfile(provider='tokenhub' if legacy.provider == 'hunyuan' else 'openai', model=legacy.info['model']))
+        with _CONFIG_LOCK:
+            if self.path.exists():
+                return ModelConfiguration.model_validate(read_json(self.path))
+            legacy = VisionReviewer(self.settings)
+            return ModelConfiguration(default=ModelProfile(provider='tokenhub' if legacy.provider == 'hunyuan' else 'openai', model=legacy.info['model']))
 
     def save(self, configuration):
         config = ModelConfiguration.model_validate(configuration)
         with _CONFIG_LOCK:
             atomic_write_json(self.path, config.model_dump(mode='json'))
         return config
+
+    def update_provider(self, provider_id, model):
+        """Atomically update only the default provider/model without touching roles."""
+        with _CONFIG_LOCK:
+            config = self.load()
+            config.default = config.default.model_copy(update={'provider': provider_id, 'model': model})
+            return self.save(config)
 
     def set_role(self, role, profile, expected_configuration_sha256):
         """Patch one public profile atomically; never touch keys or frozen works."""

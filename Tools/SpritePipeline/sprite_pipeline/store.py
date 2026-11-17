@@ -180,6 +180,7 @@ class JobStore:
             and any(
                 candidate.status.value in active_provider_states
                 or (candidate.error or {}).get("code") in {"insufficient_quota", "provider_queued"}
+                or (candidate.error or {}).get("details", {}).get("code") == "insufficient_quota"
                 or (
                     candidate.provider_status == "completed"
                     and bool(candidate.provider_job_id)

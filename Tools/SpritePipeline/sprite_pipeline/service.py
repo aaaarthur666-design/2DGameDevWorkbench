@@ -1256,11 +1256,20 @@ class SpritePipelineService:
             with self.store.locked_job(job_id) as failed_job:
                 failed = self._candidate(failed_job, candidate_index)
                 submission_unknown = bool(exc.details.get("submission_unknown"))
-                failed.status = CandidateStatus.submission_unknown if submission_unknown else CandidateStatus.failed
+                not_submitted = not submission_unknown and exc.details.get("submission_created") is False
+                if submission_unknown:
+                    failed.status = CandidateStatus.submission_unknown
+                elif not_submitted:
+                    failed.status = CandidateStatus.created
+                    failed.submission_attempts = 0
+                else:
+                    failed.status = CandidateStatus.failed
                 failed.error = exc.as_dict()
                 self._refresh_job_status(failed_job)
                 failed_job.touch(
-                    "candidate_submission_unknown" if submission_unknown else "candidate_submission_failed",
+                    "candidate_submission_unknown"
+                    if submission_unknown
+                    else "candidate_not_submitted" if not_submitted else "candidate_submission_failed",
                     candidate_index=candidate_index,
                     error=exc.as_dict(),
                 )
@@ -2035,8 +2044,12 @@ class SpritePipelineService:
                     raise ConflictError("当前片段没有待核对的提交")
                 if run.provider_job_id and run.provider_job_id != remote_id:
                     raise ConflictError("片段已有不同的远端编号")
+                stage_index = candidate.plan_execution.stages.index(run)
+                request_key = f"{job_id}:candidate:{candidate_index}:stage:{stage_index}"
                 run.provider_job_id = remote_id
                 run.state = "pending"
+            else:
+                request_key = f"{job_id}:candidate:{candidate_index}"
             if candidate.provider_job_id and candidate.provider_job_id != remote_id:
                 raise ConflictError("candidate already has a different provider job ID")
             if candidate.status not in (
@@ -2049,6 +2062,13 @@ class SpritePipelineService:
                     "candidate is not waiting for a recoverable provider job",
                     details={"status": candidate.status.value},
                 )
+            if self.settings.pixellab_api_key:
+                from .pixellab_account import PixelLabAccountQueue
+                PixelLabAccountQueue(
+                    self.store,
+                    self.settings.pixellab_api_key,
+                    self.settings.pixellab_base_url,
+                ).attach(request_key, remote_id)
             candidate.provider_job_id = remote_id
             candidate.provider_status = candidate.provider_status or "processing"
             candidate.submitted_at = candidate.submitted_at or utc_now()
@@ -2139,14 +2159,31 @@ class SpritePipelineService:
                     candidate.candidate_index
                     for candidate in job.candidates
                     if candidate.status == CandidateStatus.created
-                    and (candidate.error or {}).get("code") == "insufficient_quota"
+                    and (
+                        (candidate.error or {}).get("code") == "insufficient_quota"
+                        or (candidate.error or {}).get("details", {}).get("code") == "insufficient_quota"
+                        or (
+                            (candidate.error or {}).get("code") != "provider_queued"
+                            and (candidate.error or {}).get("details", {}).get("submission_created") is False
+                            and not (candidate.error or {}).get("details", {}).get("submission_unknown")
+                        )
+                    )
                 ]
                 if quota_blocked:
+                    reason = (
+                        "insufficient_quota"
+                        if any(
+                            (self._candidate(job, idx).error or {}).get("code") == "insufficient_quota"
+                            or (self._candidate(job, idx).error or {}).get("details", {}).get("code") == "insufficient_quota"
+                            for idx in quota_blocked
+                        )
+                        else "not_submitted"
+                    )
                     summary["attention_required"].append(
                         {
                             "job_id": job_id,
                             "candidate_indices": quota_blocked,
-                            "reason": "insufficient_quota",
+                            "reason": reason,
                         }
                     )
                 active = any(
@@ -3795,6 +3832,19 @@ class SpritePipelineService:
         }:
             job.status = JobStatus.review_required
         elif CandidateStatus.created in statuses:
-            job.status = JobStatus.provider_pending if any((candidate.error or {}).get('code') == 'provider_queued' for candidate in job.candidates) else JobStatus.created
+            if any((candidate.error or {}).get('code') == 'provider_queued' for candidate in job.candidates):
+                job.status = JobStatus.provider_pending
+            elif any(
+                (candidate.error or {}).get('code') == 'insufficient_quota'
+                or (candidate.error or {}).get('details', {}).get('code') == 'insufficient_quota'
+                or (
+                    (candidate.error or {}).get('details', {}).get('submission_created') is False
+                    and not (candidate.error or {}).get('details', {}).get('submission_unknown')
+                )
+                for candidate in job.candidates
+            ):
+                job.status = JobStatus.attention_required
+            else:
+                job.status = JobStatus.created
         else:
             job.status = JobStatus.review_required
