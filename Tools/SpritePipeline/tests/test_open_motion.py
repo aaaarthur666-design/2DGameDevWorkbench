@@ -104,6 +104,32 @@ def test_waiting_for_pixellab_account_does_not_start_a_plan_stage(setup, monkeyp
     assert len(provider.requests) == 1 and result.candidates[0].provider_job_id == 'remote-000001'
 
 
+def test_queued_candidate_index_clears_after_submit_so_other_candidates_are_not_starved(setup, monkeypatch):
+    from sprite_pipeline.providers.account import AccountSlotBusy
+
+    service, workspace, _, provider, _ = setup
+    work = ready(workspace, spec(candidate_count=2))
+    work = workspace.start(work.id, work.revision, work.plan_sha256)
+    busy = True
+
+    def account_slot():
+        if busy:
+            raise AccountSlotBusy('等待 PixelLab 账户空位')
+
+    monkeypatch.setattr(provider, 'check_account_slot', account_slot, raising=False)
+    monkeypatch.setattr(provider, 'get_balance', lambda: {'subscription': {'generations': 40}}, raising=False)
+    provider.name = 'pixellab'
+    provider.pending = True
+    queued = PlanGeneration(service).advance(work.job_id, provider, candidate_index=2)
+    assert queued.status == 'queued' and queued.queued_candidate_index == 2
+    busy = False
+    submitted = PlanGeneration(service).advance(work.job_id, provider)
+    assert submitted.queued_candidate_index is None
+    assert submitted.candidates[1].provider_job_id == 'remote-000001'
+    next_scan = PlanGeneration(service).advance(work.job_id, provider)
+    assert next_scan.candidates[0].provider_job_id == 'remote-000002'
+
+
 @pytest.mark.parametrize("description", ["拔出地面上的长剑，最后高举长剑", "受惊后倒退两步，最后保持惊讶姿势", "摘下帽子弯腰致意，最后保持鞠躬"])
 def test_novel_tasks_complete_without_presets(setup, description):
     service, workspace, planner, provider, fixture = setup

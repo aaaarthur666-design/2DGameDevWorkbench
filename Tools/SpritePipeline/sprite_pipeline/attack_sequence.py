@@ -226,6 +226,7 @@ class FixedAttackGeneration:
                         c.usage=(exc.details.get('response') or {}).get('usage') or {}
                         self.validate(c)[stage].update(provider_job_id=c.provider_job_id,usage=c.usage)
                     c.error=exc.as_dict() if isinstance(exc,ProviderError) else {'code':'submission_unknown','message':'提交结果未知，不会重试'}
+                    if current.queued_candidate_index==index:current.queued_candidate_index=None
                     self.s._refresh_job_status(current);current.touch('attack_stage_submission_stopped',candidate_index=index,stage=stage)
                 if isinstance(exc,ProviderError) and exc.details.get('submission_rejected'):return False
                 raise
@@ -236,6 +237,7 @@ class FixedAttackGeneration:
                 c.status=CandidateStatus.provider_pending;c.error=None;c.diagnostic_only=submission.diagnostic_only
                 c.usage=submission.raw_response.get('usage') or {}
                 self.validate(c)[stage]['usage']=c.usage
+                if current.queued_candidate_index==index:current.queued_candidate_index=None
                 self.s._refresh_job_status(current);current.touch('attack_stage_submitted',candidate_index=index,stage=stage,provider_job_id=submission.provider_job_id)
             atomic_write_json(folder/'submit.request.json',submission.request_record)
             atomic_write_json(folder/'submit.response.json',submission.raw_response)
@@ -340,7 +342,8 @@ class FixedAttackGeneration:
         with self.store.operation_lock(job_id,'attack_sequence',timeout_seconds=1):
             job=self.store.load(job_id)
             if not self.s._same_generation_account(job,provider):return job
-            targets=[candidate_index] if candidate_index is not None else [c.candidate_index for c in job.candidates]
+            selected_index=candidate_index if candidate_index is not None else job.queued_candidate_index
+            targets=[selected_index] if selected_index is not None else [c.candidate_index for c in job.candidates]
             if any(c.candidate_index not in targets and c.status in {CandidateStatus.submitting,CandidateStatus.submission_unknown,CandidateStatus.provider_pending,CandidateStatus.saving} for c in job.candidates):
                 raise ConflictError('另一个候选仍在执行，暂不能提交这个候选')
             for index in targets:
@@ -359,7 +362,7 @@ class FixedAttackGeneration:
                         try:
                             if not self.submit(job_id,index,stage,provider):break
                         except AccountSlotBusy as exc:
-                            self.s._queue_candidate(job_id,index,exc,provider,stage=stage,selected_index=candidate_index)
+                            self.s._queue_candidate(job_id,index,exc,provider,stage=stage,selected_index=selected_index)
                             return self.store.load(job_id)
                     if not self.poll(job_id,index,stage,provider,wait):break
                     if stage==len(runs)-1:self.assemble(job_id,index);break

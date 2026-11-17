@@ -894,8 +894,9 @@ class SpritePipelineService:
         if job.request.open_plan:
             from .collaboration.execution import PlanGeneration
             return PlanGeneration(self).advance(job_id, provider, wait=wait, candidate_index=candidate_index)
-        if candidate_index is not None:
-            targets = [self._candidate(job, candidate_index).candidate_index]
+        selected_index = candidate_index if candidate_index is not None else job.queued_candidate_index
+        if selected_index is not None:
+            targets = [self._candidate(job, selected_index).candidate_index]
         else:
             targets = [candidate.candidate_index for candidate in job.candidates]
 
@@ -952,7 +953,7 @@ class SpritePipelineService:
                             self._check_submission_quota(job_id, index, provider)
                             self._submit_candidate(job_id, index, provider)
                         except AccountSlotBusy as exc:
-                            self._queue_candidate(job_id, index, exc, provider, selected_index=candidate_index)
+                            self._queue_candidate(job_id, index, exc, provider, selected_index=selected_index)
                             break
                 current = self.store.load(job_id)
                 candidate = self._candidate(current, index)
@@ -994,6 +995,8 @@ class SpritePipelineService:
             error = ValidationHarnessError('无法读取 PixelLab 余额，未提交动画。', details={'submission_created': False})
             with self.store.locked_job(job_id) as job:
                 self._candidate(job, candidate_index).error = error.as_dict()
+                if job.queued_candidate_index == candidate_index:
+                    job.queued_candidate_index = None
                 self._refresh_job_status(job)
                 job.touch('generation_balance_unavailable', candidate_index=candidate_index)
             raise error from exc
@@ -1049,6 +1052,8 @@ class SpritePipelineService:
                         "submission_created": False,
                     },
                 }
+                if quota_job.queued_candidate_index == candidate_index:
+                    quota_job.queued_candidate_index = None
                 self._refresh_job_status(quota_job)
                 quota_job.touch(
                     "generation_blocked_by_quota",
@@ -1122,6 +1127,8 @@ class SpritePipelineService:
             candidate.usage = receipt['usage']
             candidate.submitted_at = candidate.submission_started_at or utc_now()
             candidate.error = None
+            if job.queued_candidate_index == candidate.candidate_index:
+                job.queued_candidate_index = None
             job.touch('provider_receipt_recovered', candidate_index=candidate.candidate_index, stage=stage)
         return receipt
 
@@ -1332,6 +1339,8 @@ class SpritePipelineService:
                 failed.provider_job_id = exc.details.get("provider_job_id")
                 failed.usage = (exc.details.get("response") or {}).get("usage") or {}
                 failed.error = exc.as_dict()
+                if failed_job.queued_candidate_index == candidate_index:
+                    failed_job.queued_candidate_index = None
                 self._refresh_job_status(failed_job)
                 failed_job.touch(
                     "candidate_submission_unknown" if submission_unknown else "candidate_submission_failed",
@@ -1359,6 +1368,8 @@ class SpritePipelineService:
             submitted.status = CandidateStatus.provider_pending
             submitted.usage = submission.raw_response.get("usage") or {}
             submitted.error = None
+            if submitted_job.queued_candidate_index == candidate_index:
+                submitted_job.queued_candidate_index = None
             submitted_job.status = JobStatus.provider_pending
             submitted_job.touch(
                 "candidate_submitted",

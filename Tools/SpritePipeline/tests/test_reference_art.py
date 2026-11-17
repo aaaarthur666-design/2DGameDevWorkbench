@@ -320,6 +320,24 @@ def test_animation_error_with_a_remote_id_has_a_recoverable_usage_receipt(servic
                                                        'usage': {'type': 'generations', 'generations': 2}}
 
 
+def test_generate_endpoint_only_returns_200_for_pre_submit_not_submitted(service, monkeypatch):
+    from sprite_pipeline.models import GenerationRequest
+
+    service.settings = replace(service.settings, pixellab_api_key='test-key')
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=available_balance(0, 0))), **kwargs))
+    job = service.create_job(GenerationRequest(character_id='diagnostic_dummy', action_id='idle', candidate_count=1))
+    with TestClient(create_api(service=service)) as client:
+        blocked = client.post(f'/v1/jobs/{job.job_id}/generate', json={'wait': False})
+        assert blocked.status_code == 200
+        assert blocked.json()['data']['job']['status'] == 'not_submitted'
+        with service.store.locked_job(job.job_id) as locked:
+            locked.motion_control = {'enabled': True, 'state': 'idle'}
+        invalid = client.post(f'/v1/jobs/{job.job_id}/generate', json={'wait': False})
+        assert invalid.status_code == 422
+
+
 def test_missing_key_and_invalid_payload_do_not_call_provider(service, monkeypatch):
     provider = Mock(side_effect=AssertionError('must not contact PixelLab'))
     monkeypatch.setattr(reference_art.httpx, 'Client', provider)

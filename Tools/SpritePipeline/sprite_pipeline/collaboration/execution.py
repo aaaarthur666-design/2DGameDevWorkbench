@@ -137,6 +137,8 @@ class PlanGeneration:
                         c.usage = r.usage = (exc.details.get("response") or {}).get("usage") or {}
                     c.error = exc.as_dict() if isinstance(exc, ProviderError) else {"code": "submission_unknown", "message": "提交结果未知，不能自动重发"}
                     r.error = c.error; current.plan_control.enabled = False
+                    if current.queued_candidate_index == index:
+                        current.queued_candidate_index = None
                     current.plan_control.message = "请核对原请求" if unknown else "生成请求失败，原记录已保留"
                     self.s._refresh_job_status(current); current.touch("plan_submission_stopped", stage=stage)
                 if isinstance(exc, ProviderError) and exc.details.get("submission_rejected"):
@@ -150,6 +152,8 @@ class PlanGeneration:
                 c.provider_job_id = submission.provider_job_id; c.provider_status = submission.status
                 c.status = CandidateStatus.provider_pending; c.submitted_at = utc_now()
                 c.diagnostic_only = submission.diagnostic_only; c.error = None
+                if current.queued_candidate_index == index:
+                    current.queued_candidate_index = None
                 current.plan_control.message = f"正在生成：{definition.name}"
                 self.s._refresh_job_status(current); current.touch("plan_stage_submitted", stage=stage, provider_job_id=submission.provider_job_id)
             atomic_write_json(folder / "submit.request.json", submission.request_record)
