@@ -121,10 +121,12 @@ export function spriteState(
 }
 
 export function spriteWorkItem(job: SpriteJob, href: string): WorkItem {
+  const charTitle = job.character_name || job.character_id || '角色';
+  const actionTitle = job.action_name || job.action_id || '动作';
   return {
     id: job.open_work_id ? `motion:${job.open_work_id}` : `sprite:${job.job_id}`,
     capabilityId: 'sprite-generator',
-    title: `${job.character_name || job.character_id || '角色'} · ${job.action_name || job.action_id || '动作'}`,
+    title: charTitle && actionTitle && actionTitle.toLowerCase().includes(charTitle.toLowerCase()) ? actionTitle : `${charTitle} · ${actionTitle}`,
     updatedAt: job.updated_at,
     savedAt: job.updated_at,
     href: job.open_work_id ? `${href}?work=${job.open_work_id}` : `${href}?job=${encodeURIComponent(job.job_id)}`,

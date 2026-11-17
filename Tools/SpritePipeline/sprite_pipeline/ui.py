@@ -3377,7 +3377,9 @@ def build_ui(
                 notice = _notice("error", "作品暂时无法打开", _human_error(exc))
                 updates.update({library_detail_title: notice, asset_catalog_status: notice})
                 return updates
-            title = f"{job.character.display_name} · {job.action.display_name or job.action.action_id}"
+            char_name = job.character.display_name
+            action_name = job.action.display_name or job.action.action_id
+            title = action_name if char_name and action_name and char_name.casefold() in action_name.casefold() else f"{char_name} · {action_name}"
             if candidate is not None:
                 title += f" · 候选 {_candidate_letter(candidate)}"
             updates[library_detail_title] = _notice("info", title, "已打开所选作品。可查看动画与逐帧画面，或进入播放检查。")
