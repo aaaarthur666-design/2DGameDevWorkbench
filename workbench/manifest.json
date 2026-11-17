@@ -325,6 +325,7 @@
         "workbench_restore_document",
         "workbench_validate_document",
         "workbench_simulate_document",
+        "workbench_get_motion_bindings",
         "workbench_adopt_document_image",
         "workbench_inspect_image_target",
         "workbench_resolve_image_region",
@@ -991,7 +992,7 @@
           },
           "autoExecute": {
             "type": "boolean",
-            "description": "用户已授权预算内直接制作时可启用；否则仅出方案。修改方案后需重新确认。"
+            "description": "仅用于 plan-motion。用户已授权预算内直接制作时可启用；否则仅出方案。revise-motion 禁止启用 autoExecute（修改后的方案需重新查看并确认制作）。"
           },
           "motionSpec": {
             "type": "object",

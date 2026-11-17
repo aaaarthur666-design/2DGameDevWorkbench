@@ -246,6 +246,18 @@ try {
       assert.equal(item.title, '主角 · 待机');
       assert.equal(item.href, '/tools/sprite-generator?job=job%201');
     }
+    assert.equal(
+      spriteWorkItem({ job_id: 'job-2', status: 'approved', updated_at: at, character_name: '红袍法师', action_name: '红袍法师原地举杖施法循环' }, '/tools/sprite-generator').title,
+      '红袍法师原地举杖施法循环',
+    );
+  });
+  test('home tool card preview CSS hover only shifts slides and ToolPreview effect avoids current object reference', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const css = await readFile('components/workbench/workbench.css', 'utf8');
+    const tsx = await readFile('components/workbench/workbench-shell.tsx', 'utf8');
+    assert.ok(!css.includes('.wb-tool-card-preview > *'));
+    assert.match(css, /\.wb-tool-card:hover\s+\.wb-preview-slide\s*\{/);
+    assert.match(tsx, /\[activeIndex,\s*currentKey,\s*currentMs,\s*reduced,\s*slides\.length\]/);
   });
   test('execution attempts for one sprite merge while different sprites stay separate', () => {
     const items = taskWorkItems(

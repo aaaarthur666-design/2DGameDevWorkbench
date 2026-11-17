@@ -135,6 +135,121 @@ assert(
     artifacts: [{ path: "outputs/example/preview.gif" }],
   }).preview,
 );
+// UI-06: do not prepend character name when action title already includes it.
+assert.equal(
+  taskPresentation(manifest, { ...sprite, status: "completed" }, {
+    result: {
+      character: { display_name: "红袍法师" },
+      action: { display_name: "红袍法师原地举杖施法循环" },
+    },
+  }).title,
+  "红袍法师原地举杖施法循环",
+);
+assert.equal(
+  taskPresentation(manifest, { ...sprite, status: "completed" }, {
+    result: {
+      character: { display_name: "红袍法师" },
+      action: { display_name: "举杖施法" },
+    },
+  }).title,
+  "红袍法师 · 举杖施法",
+);
+// REV-01: surface running stage review and whole-clip quality review progress + readyToDecide=false.
+const stageReviewRunning = taskPresentation(
+  manifest,
+  { ...sprite, status: "running", input: { operation: "generate-motion" }, adapter: { remoteStatus: "created" } },
+  {
+    result: {
+      openWorkId: "a".repeat(32),
+      jobRecord: {
+        job_id: "job-rev",
+        status: "created",
+        request: { open_plan: { revision: 1, plan_sha256: "b".repeat(64), spec: { review_protocol: "experts_v1", budget: { max_review_calls: 25 } }, plan: { quality: { version: 3 } } } },
+        candidates: [{
+          candidate_index: 1,
+          frames: [],
+          plan_execution: {
+            stages: [{
+              state: "reviewing",
+              review: { state: "running", protocol: "experts_v1", requests: [{}, {}], expert_review: { state: "running", phase: "appearance", calls_used: 2, max_calls: 5 } },
+            }],
+            quality_review: { state: "pending", requests: [] },
+          },
+        }],
+      },
+    },
+  },
+);
+assert.equal(stageReviewRunning.state, "running");
+assert.equal(stageReviewRunning.readyToDecide, false);
+assert.equal(stageReviewRunning.visualReview.scope, "stage");
+assert.equal(stageReviewRunning.visualReview.phase, "appearance");
+assert.equal(stageReviewRunning.visualReview.callsUsed, 2);
+assert.equal(stageReviewRunning.visualReview.maxCalls, 25);
+assert.match(stageReviewRunning.summary, /第 1 段/);
+assert.match(stageReviewRunning.summary, /外观专家/);
+
+const clipReviewRunning = taskPresentation(
+  manifest,
+  { ...sprite, status: "attention_required", input: { operation: "get-motion" }, adapter: { remoteStatus: "review_required" } },
+  {
+    result: {
+      openWorkId: "a".repeat(32),
+      jobRecord: {
+        job_id: "job-rev",
+        status: "review_required",
+        request: { open_plan: { revision: 1, plan_sha256: "b".repeat(64), spec: { review_protocol: "experts_v1", budget: { max_review_calls: 25 } }, plan: { quality: { version: 3 } } } },
+        candidates: [{
+          candidate_index: 1,
+          frames: [{ index: 0 }, { index: 1 }],
+          plan_execution: {
+            stages: [{ state: "accepted", review: { state: "complete", requests: [{}, {}, {}, {}, {}] } }],
+            quality_review: { state: "running", protocol: "experts_v1", requests: [{}, {}, {}], expert_review: { state: "running", phase: "motion", calls_used: 3, max_calls: 5 } },
+          },
+        }],
+      },
+    },
+  },
+);
+assert.equal(clipReviewRunning.state, "running");
+assert.equal(clipReviewRunning.readyToDecide, false);
+assert.equal(clipReviewRunning.visualReview.scope, "clip");
+assert.equal(clipReviewRunning.visualReview.phase, "motion");
+assert.equal(clipReviewRunning.visualReview.callsUsed, 8);
+assert.match(clipReviewRunning.summary, /整段动画/);
+assert.match(clipReviewRunning.summary, /运动专家/);
+
+// MCP-01: default mcpContent surfaces open-motion tokens & candidate errors/warnings without "orderedFrames".
+const stageToken = "c".repeat(64);
+const planSha = "d".repeat(64);
+const targetSha = "e".repeat(64);
+const mcpSummaryText = mcpContent("workbench_get_result", {
+  taskId: "t-open",
+  detailIncluded: false,
+  status: "attention_required",
+  presentation: taskPresentation(manifest, { ...sprite, status: "attention_required" }, {
+    result: { openWorkId: "a".repeat(32), pendingCheckpoints: [{ candidateIndex: 1, stageIndex: 0, stageToken }] },
+  }),
+  result: {
+    openWorkId: "a".repeat(32),
+    revision: 2,
+    planSha256: planSha,
+    targetSetSha256: targetSha,
+    pendingCheckpoints: [{ candidateIndex: 1, stageIndex: 0, stageToken }],
+    candidates: [{ candidateIndex: 1, status: "created", hardFailures: ["bad_alpha"], warnings: ["flicker"] }],
+    orderedFrames: ["frames/000.png"],
+  },
+});
+assert(!mcpSummaryText.includes("orderedFrames"));
+const mcpSummary = JSON.parse(mcpSummaryText);
+assert.equal(mcpSummary.openWorkId, "a".repeat(32));
+assert.equal(mcpSummary.revision, 2);
+assert.equal(mcpSummary.planSha256, planSha);
+assert.equal(mcpSummary.targetSetSha256, targetSha);
+assert.equal(mcpSummary.pendingCheckpoints[0].stageToken, stageToken);
+assert.deepEqual(mcpSummary.candidates[0].hardFailures, ["bad_alpha"]);
+assert.deepEqual(mcpSummary.candidates[0].warnings, ["flicker"]);
+
 console.log(
   "Presentation: exact identities, honest states, missing artifacts, animated preview and compact/full fallback passed.",
 );
