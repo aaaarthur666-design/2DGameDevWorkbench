@@ -85,7 +85,7 @@
 
 ## 制作记录
 
-记录以具体资产为单位：某个角色动作、一张物品原图、一个交互物。全局浮层称“制作记录”，动作页局部列表称“最近动作”，管理页称“全部制作记录”。顶栏“制作记录”按钮或首页“全部记录”打开浮层，用分段控件切换制作中与已完成，右上角图标按钮刷新，底部链接到“管理本机数据”；提供恢复入口与存在于任务记录中的产物下载；服务断连时浮层内提示并链接到服务状态。记录状态用带底色的标签显示。名称是生成的任务编号时显示工具名；适配器错误（`Adapter returned HTTP …`）显示为中文短句，原文保留在悬停提示中。
+记录以具体资产为单位：某个角色动作、一张物品原图、一个交互物。全局浮层称“制作记录”，动作页局部列表称“最近动作”，管理页称“全部制作记录”。顶栏“制作记录”按钮或首页“全部记录”打开浮层，用分段控件切换“制作中”与“历史”，右上角图标按钮刷新，底部链接到“管理本机数据”；提供恢复入口与存在于任务记录中的产物下载；服务断连时浮层内提示并链接到服务状态。记录状态用带底色的标签显示。名称是生成的任务编号时显示工具名；适配器错误（`Adapter returned HTTP …`）显示为中文短句，原文保留在悬停提示中。
 
 | 数据来源 | 标识与恢复方式 |
 | --- | --- |
@@ -142,4 +142,4 @@ Web 的同源 API 通过 `WORKBENCH_RUNTIME_URL` 访问默认位于 `127.0.0.1:8
 
 共享工程回归并入 `test:editor-documents`；结构历史与外观约束回归并入 `test:open-motion`；精确交付查询与分页回归并入 `test:game-export`。浏览器隔离夹具分别由 `tests/editor-documents/library-server.mjs`、`tests/authoring-gaps/web-server.mjs`、`tests/image-assets/dimensions-server.mjs` 和 `tests/game-export/history-server.mjs` 启动，打印可访问地址；使用真实组件与测试响应，不调用付费生成或修改正式素材。
 
-完整测试矩阵见 [使用与操作手册](operations-manual.md)，整体分层见 [系统架构](architecture.md)。
+完整测试与验证路由见[工作台开发导航](../workbench/guides/development.md)与 `package.json`，服务排错与备份见[使用与操作手册](operations-manual.md)，整体分层见[系统架构](architecture.md)。

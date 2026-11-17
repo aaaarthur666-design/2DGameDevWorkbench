@@ -161,7 +161,7 @@ Manifest 使用 camelCase；适配器转换为 Python API 的 snake_case。创�
 
 - **分段检查**：`get-motion-stage` 取指定候选与零基阶段的有序 PNG、目标和 token。`review-motion-stage` 绑定 `expectedRevision`、`stageToken`，携带 `stageDecision=accept|reject`、`reviewNote` 与必要的 `acknowledgeWarnings`；与 Web `POST /v1/open-motion/{work}/review-stage` 共用检查。接受冻结实际帧与末帧锚点，拒绝停止后续请求；重复接受不重新启用已暂停任务。只有已确认的真实快照可进入下一段。`pendingCheckpoints` 表示需要实际检查，不是生成失败。GET 不调用模型。
 - **段末目标与修复**：v4 增加 `target-motion-stage`（制作前本地绑定真实末图）、`repair-motion-stage`（已授权窗口修复）和 `review-motion-repair`（按预览 token 与人工依据采用/拒绝）。`get-motion-stage` 同时提供 `repairPreviews` 的完整有序图片。详情与索引约定见 [序列帧工作区](sprite-generator.md)。修复的源 token、请求编号、原始帧、失败回执和采用映射永久保留；未知提交不重发，生成预算为剩余正常分段预留调用，视觉预算包含历史复核与采用后的再次复核。
-- **质量合同**：开放动作质量合同使用 `motionSpec.timing_mode=auto|fixed` 和 `budget.max_review_calls`。v3 每候选需 `2 × 分段数 + 2` 次视觉调用，覆盖分段与最终动画，不得超过授权预算。新方案与模型配置冻结在原生 job 绑定中；v1/v2 方案验证旧哈希并使用旧语义。真实 API 请求使用编译后的完整提示词，原始帧与交付时间线各自有来源映射。最终视觉报告在 `plan_execution.quality_review`，分段报告与接受快照在各 `stages[].review/accepted`，保留回执、帧摘要和人工依据。模型报告不能自动采用。
+- **质量合同**：开放动作质量合同使用 `motionSpec.timing_mode=auto|fixed` 和 `budget.max_review_calls`。默认 `experts_v1` 协议每候选预留 `5 ×（分段数 + 1）` 次视觉调用（2 次基础观察/审核、2 次独立专家意见、至多 1 次争议复核），`baseline`（含旧 v3 兼容请求）每候选需 `2 × 分段数 + 2` 次视觉调用，覆盖分段与最终动画，均不得超过授权预算。新方案与模型配置冻结在原生 job 绑定中；v1/v2 方案验证旧哈希并使用旧语义。真实 API 请求使用编译后的完整提示词，原始帧与交付时间线各自有来源映射。最终视觉报告在 `plan_execution.quality_review`，分段报告与接受快照在各 `stages[].review/accepted`，保留回执、帧摘要和人工依据。模型报告不能自动采用。
 
 #### 对象身份
 
