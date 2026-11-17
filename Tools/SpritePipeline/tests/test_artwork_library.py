@@ -228,3 +228,34 @@ def test_workbench_link_opens_visible_details_for_exact_candidate(library_setup,
         assert service.get_job(job.job_id).model_dump_json() == before
     finally:
         ui.close()
+
+
+def test_animation_title_omits_duplicate_character_prefix_only_when_included(library_setup):
+    from types import SimpleNamespace
+    from sprite_pipeline.artwork_library import animation_title
+    from sprite_pipeline.asset_catalog import AssetCatalog
+    from sprite_pipeline.ui import build_ui
+
+    assert animation_title("红袍法师", "红袍法师原地举杖施法循环") == "红袍法师原地举杖施法循环"
+    assert animation_title("红袍法师", "施法循环") == "红袍法师 · 施法循环"
+    assert animation_title("Red Mage", "red mage cast loop") == "red mage cast loop"
+    assert animation_title("骑士", "攻击") == "骑士 · 攻击"
+
+    fixture, service, library = library_setup
+    job = service.create_job(fixture.create_request("import"))
+    with service.store.locked_job(job.job_id) as current:
+        current.character.display_name = "红袍法师"
+        current.action.display_name = "红袍法师原地举杖施法循环"
+    fixture.write_sequence(fixture.root / "inputs")
+    service.ingest_candidate(job.job_id, 1, fixture.root / "inputs")
+    assert library.get(f"animation:{job.job_id}:1")["title"] == "红袍法师原地举杖施法循环"
+    assert AssetCatalog(service).detail(f"animation:{job.job_id}:1")["title"] == "红袍法师原地举杖施法循环"
+    ui = build_ui(service=service)
+    try:
+        callback = next(fn for fn in ui.fns.values() if fn.name == "load_workbench_entry")
+        result = callback.fn(None, SimpleNamespace(query_params={"workbench_job": job.job_id, "workbench_candidate": "1"}))
+        updates = result if isinstance(result, dict) else dict(zip(callback.outputs, result))
+        assert not any("红袍法师 · 红袍法师" in str(value) for value in updates.values())
+        assert any("红袍法师原地举杖施法循环" in str(value) for value in updates.values())
+    finally:
+        ui.close()

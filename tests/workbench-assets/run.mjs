@@ -603,6 +603,31 @@ try {
     assert.equal(imageImport.files.length, 1, 'Only the adopted PNG is an image source, not the original provider copy.');
     assert.deepEqual(await imageZip.file(imageImport.files[0].path).async('nodebuffer'), png);
   }
+  await task('sprite-dedup-title', 'sprite-generator', { operation: 'get', jobId: 'dedup-job' }, {
+    'frames/candidate-01/frame-000.png': png,
+    'result.json': JSON.stringify({
+      jobId: 'dedup-job',
+      candidates: [{ candidateIndex: 1, status: 'approved' }],
+      jobRecord: {
+        character: { character_id: 'red_mage', display_name: '红袍法师' },
+        action: { action_id: 'custom_motion', display_name: '红袍法师原地举杖施法循环' },
+      },
+    }),
+  });
+  await task('sprite-prefix-title', 'sprite-generator', { operation: 'get', jobId: 'prefix-job' }, {
+    'frames/candidate-01/frame-000.png': png,
+    'result.json': JSON.stringify({
+      jobId: 'prefix-job',
+      candidates: [{ candidateIndex: 1, status: 'approved' }],
+      jobRecord: {
+        character: { character_id: 'knight', display_name: '骑士' },
+        action: { action_id: 'attack', display_name: '攻击' },
+      },
+    }),
+  });
+  const afterTitleChecks = await agentRequest(manifest, 'assets', { kind: 'animation', limit: 100 });
+  assert.equal(afterTitleChecks.assets.find((a) => a.id === 'animation:dedup-job:1').title, '红袍法师原地举杖施法循环');
+  assert.equal(afterTitleChecks.assets.find((a) => a.id === 'animation:prefix-job:1').title, '骑士 · 攻击');
   console.log('Recoverable asset trash: retained kinds, aliases, candidate isolation, atomic batch, durable MCP/HTTP views, pagination, offline restore and corrupt index passed; sources unchanged.');
   console.log(
     'Assets: complete record scan, pagination, exact candidates, provenance deduplication, file hashes, missing/escaped files, offline coverage, MCP/HTTP parity and actual ZIP bytes/candidate isolation/download errors passed; zero generation.',
