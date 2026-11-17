@@ -73,6 +73,7 @@ class OpenMotionWorkspace:
                 job = jobs.get(w.job_id, {})
                 rows.append({"id": w.id, "revision": w.revision, "title": w.plan.title if w.plan else w.spec.description[:60],
                              "status": w.status, "job_id": w.job_id, "job_status": job.get("status"),
+                             **({"submission_state": job.get("submission_state")} if job else {}),
                              "updated_at": max(w.updated_at, job.get("updated_at", "")),
                              "object_id": w.spec.object_id, "object_type": w.spec.object_type, "object_name": w.character["display_name"],
                              "character_name": w.character["display_name"], "diagnostic_only": w.spec.provider == "fixture"})
@@ -159,6 +160,7 @@ class OpenMotionWorkspace:
                 raise ValidationHarnessError("当前作品版本过多，请另建作品；历史版本保留")
             snapshot = work.model_dump(mode="json"); snapshot.pop("history")
             atomic_write_json(self.directory(work.id) / f"version-{work.revision}.json", snapshot)
+            previous = work.model_copy(deep=True)
             work.history.append({"revision": work.revision, "title": work.plan.title if work.plan else work.spec.description[:60], "job_id": work.job_id})
             work.revision += 1; work.spec = spec; work.request_key = request_key; work.request_sha256 = fingerprint
             work.version = 3
@@ -173,6 +175,8 @@ class OpenMotionWorkspace:
             work.generation_policy_version = DEFAULT_GENERATION_POLICY if spec.provider != 'fixture' else None
             work.visibility_review_version = DEFAULT_VISIBILITY_REVIEW if spec.provider != 'fixture' and spec.review_protocol=='experts_v1' else None
             work.visual_structure=structure
+            from .planning_recovery import reusable_messages
+            work.messages = reusable_messages(previous, work)
             self.service._atomic_write_bytes(self.directory(work.id) / f"reference-{work.revision}.png", data)
             self.save(work)
             return work
@@ -188,8 +192,12 @@ class OpenMotionWorkspace:
                 work.status = "planning_failed"
                 work.message = "规划曾被中断，已保留调用记录；请明确重新制定方案，不会自动重发"
                 self.save(work); return work
-            queue = [(role, "", None) for role in ("appearance", "motion", "strategy", "coordinator")]
-            contributed = set()
+            contributed = {message['role'] for message in work.messages
+                           if message.get('reused_from') and message.get('role') in {'appearance', 'motion', 'strategy'}
+                           and message.get('response', {}).get('action') == 'propose'}
+            queue = [(role, "", None) for role in ("appearance", "motion", "strategy", "coordinator") if role not in contributed]
+            corrected_roles = set()
+            pending_corrections = {}
             last_invalid_plan = None
             try:
                 from .frame_budget import planning_limits, plan_cost
@@ -210,19 +218,49 @@ class OpenMotionWorkspace:
                     from .structure_control import require_current_structure
                     require_current_structure(self.service,work.visual_structure,work.reference_sha256)
                     role, question, crop = queue.pop(0)
+                    correction = pending_corrections.pop(role, None)
+                    original_question = correction['original_question'] if correction else question
                     work.message = {"appearance": "正在核对原图特征", "motion": "正在安排动作与衔接", "strategy": "正在制定生成策略", "coordinator": "正在协调并校验方案"}[role]
                     work.planning_calls.append({"role": role, "state": "submitting", "started_at": now(), "request_id": uuid.uuid4().hex,
                                                 "reference_sha256": work.reference_sha256, "crop": crop})
+                    if correction:work.planning_calls[-1]['correction_of'] = correction['request_id']
                     if work.visual_structure:work.planning_calls[-1]['visual_structure_sha256']=work.visual_structure['sha256']
                     self.save(work)
-                    turn, receipt = self.model(role, work, reference, question=question, crop=crop)
-                    if role=='strategy' and work.generation_policy_version in (4,5):
-                        from .planning_draft import DraftInternalTurn
-                        turn=DraftInternalTurn.model_validate(turn)
-                    else:
-                        turn = ExpertTurn.model_validate(turn)
+                    receipt = {}
+                    returned = False
+                    try:
+                        turn, receipt = self.model(role, work, reference, question=question, crop=crop)
+                        returned = True
+                        if role=='strategy' and work.generation_policy_version in (4,5):
+                            from .planning_draft import DraftInternalTurn
+                            turn=DraftInternalTurn.model_validate(turn)
+                        else:
+                            turn = ExpertTurn.model_validate(turn)
+                    except (ValidationError, ValidationHarnessError) as exc:
+                        from .planning_recovery import correction_receipt, correction_question, validation_details
+                        if isinstance(exc, ValidationError) and returned:
+                            failure = {**receipt, **validation_details(exc.errors(include_input=False))}
+                        elif isinstance(exc, ValidationHarnessError):
+                            failure = correction_receipt(exc)
+                        else:
+                            failure = None
+                        if failure is None:
+                            raise
+                        call = work.planning_calls[-1]
+                        call.update(**failure, state='invalid_response', finished_at=now())
+                        if role in corrected_roles:
+                            raise ValidationHarnessError(f'{role} 的一次结构化修正仍未通过，已停止额外调用；已有专家结果和用量已保留')
+                        if len(work.planning_calls) >= work.spec.budget.max_planning_calls:
+                            raise ValidationHarnessError('结构化输出未通过且规划调用已到上限；未调用其他专家，已有结果和用量已保留')
+                        corrected_roles.add(role)
+                        pending_corrections[role] = {'request_id': call['request_id'], 'original_question': original_question}
+                        feedback = {key: failure[key] for key in ('validation_errors', 'validation_error_count') if key in failure}
+                        queue.insert(0, (role, correction_question(role, feedback, original_question), crop))
+                        self.save(work)
+                        continue
                     work.planning_calls[-1].update(state="completed", finished_at=now(), **receipt)
-                    work.messages.append({"role": role, "question": question, "response": turn.model_dump(mode="json"), "call": len(work.planning_calls)})
+                    work.messages.append({"role": role, "question": original_question, "response": turn.model_dump(mode="json"), "call": len(work.planning_calls)})
+                    if correction:work.messages[-1]['correction_of'] = correction['request_id']
                     if work.generation_policy_version==5:
                         from .planning_budget import defer
                         if defer(work,role,turn,queue):
@@ -283,9 +321,13 @@ class OpenMotionWorkspace:
                             # A successful model turn can ask the local validator
                             # for feedback, within the already authorized cap.
                             # Failed/ambiguous network requests are never retried.
-                            work.messages.append({"role":"validator", "response":{"action":"validation_feedback", "summary":problem}, "call":len(work.planning_calls)})
+                            work.messages.append({"role":"validator", "target_role":"coordinator", "response":{"action":"validation_feedback", "summary":problem}, "call":len(work.planning_calls)})
+                            if role in corrected_roles:
+                                raise ValidationHarnessError('协调专家的一次修正仍未通过，已停止额外调用；未提交生成。' + problem)
                             if len(work.planning_calls) >= work.spec.budget.max_planning_calls:
                                 raise ValidationHarnessError("方案校验未通过，规划调用已到上限；未提交生成。" + problem)
+                            corrected_roles.add(role)
+                            pending_corrections[role] = {'request_id': work.planning_calls[-1]['request_id'], 'original_question': original_question}
                             queue.insert(0, ("coordinator", "Local validator rejected the proposal. Correct ONLY the invalid plan, preserve the original task and return finalize: " + problem, None))
                             self.save(work)
                             continue

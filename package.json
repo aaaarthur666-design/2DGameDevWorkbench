@@ -23,7 +23,7 @@
     "workbench:http": "node scripts/workbench-http.mjs",
     "test:agent-acceptance": "node tests/agent-acceptance/run.mjs",
     "test:reference-art": "node tests/reference-art/run.mjs && node tests/reference-art/selection.mjs",
-    "test:mcp": "node scripts/test-workbench-mcp.mjs",
+    "test:mcp": "node scripts/test-workbench-mcp.mjs && node tests/workbench-presentation/result-summary.mjs",
     "test:interactable": "node tests/interactable-editor/run.mjs",
     "test:interactable-http": "node tests/interactable-editor/http.mjs",
     "test:interactable-web": "vinext build && node tests/interactable-editor/http.mjs --web",

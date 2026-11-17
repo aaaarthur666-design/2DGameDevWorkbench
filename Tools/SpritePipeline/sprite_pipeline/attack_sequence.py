@@ -198,6 +198,7 @@ class FixedAttackGeneration:
             self.s._check_submission_quota(job_id,index,provider,phase_frame_count=r['frame_count'])
             folder=self.directory(job_id,index,stage);folder.mkdir(parents=True,exist_ok=True)
             request=ProviderRequest(reference_image=first,last_frame=last,prompt=r['prompt'],frame_count=r['frame_count'],
+                request_key=f'{job_id}:candidate:{index}:attack:{stage}',
                 seed=(c.seed+stage*104729)%(2**31-1) if c.seed is not None else None,transparent_background=job.character.transparent_background)
             atomic_write_json(folder/'submit.intent.json',{'maximum_submission_attempts':1,'stage':stage,'frame_count':r['frame_count'],
                 'first_sha256':hashlib.sha256(first).hexdigest(),'last_sha256':hashlib.sha256(last).hexdigest() if last else None,
@@ -213,6 +214,14 @@ class FixedAttackGeneration:
                 self.s._refresh_job_status(current);current.touch('attack_stage_submitting',candidate_index=index,stage=stage)
             try:submission=provider.submit(request)
             except Exception as exc:
+                from .pixellab_account import PixelLabQueued
+                if isinstance(exc, PixelLabQueued):
+                    with self.store.locked_job(job_id) as current:
+                        c=self.candidate(current,index);self.validate(c)[stage].update(state='created',submission_attempts=0)
+                        c.status=CandidateStatus.created;c.error=exc.as_dict()
+                        c.submission_attempts=sum(x['submission_attempts'] for x in self.validate(c))
+                        self.s._refresh_job_status(current);current.touch('attack_stage_queued',candidate_index=index,stage=stage)
+                    return False
                 unknown=not isinstance(exc,ProviderError) or bool(exc.details.get('submission_unknown'))
                 with self.store.locked_job(job_id) as current:
                     c=self.candidate(current,index);self.validate(c)[stage].update(state='unknown' if unknown else 'failed')
@@ -228,6 +237,7 @@ class FixedAttackGeneration:
                 self.s._refresh_job_status(current);current.touch('attack_stage_submitted',candidate_index=index,stage=stage,provider_job_id=submission.provider_job_id)
             atomic_write_json(folder/'submit.request.json',submission.request_record)
             atomic_write_json(folder/'submit.response.json',submission.raw_response)
+            return True
 
     def poll(self,job_id,index,stage,provider,wait):
         job=self.store.load(job_id);c=self.candidate(job,index);r=self.validate(c)[stage]
@@ -340,7 +350,7 @@ class FixedAttackGeneration:
                     if all(r['state']=='complete' for r in runs):self.assemble(job_id,index);break
                     stage=next(i for i,r in enumerate(runs) if r['state']!='complete');r=runs[stage]
                     if r['state'] in {'unknown','submitting','failed'}:raise ConflictError('攻击片段已停止，不会重新提交')
-                    if r['state']=='created':self.submit(job_id,index,stage,provider)
+                    if r['state']=='created' and not self.submit(job_id,index,stage,provider):break
                     if not self.poll(job_id,index,stage,provider,wait):break
                     if stage==len(runs)-1:self.assemble(job_id,index);break
                 c=self.candidate(self.store.load(job_id),index)

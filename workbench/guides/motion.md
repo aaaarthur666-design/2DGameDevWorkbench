@@ -6,13 +6,13 @@
 
 读取当前对象库存和已有作品。新动作使用 `plan-motion`，在 `motionSpec.description` 保留用户原话，按请求设置 ending、候选数与预算；需要已有对象 preset，不需要动作 preset。新请求使用 motionSpec.object_id / object_type，类型从库存读取；旧 character_id 保持可读。128 px 物品经[导入、转换或 PixelLab 生成后移送](../../docs/prop-art.md#导入与转换为动画原图)可选。交互物可在 `motionSpec.interactable_skeleton` 按顺序列出状态（首个为原图，最多 5 个）；规划必须每对相邻状态一段，段数不符由本机校验退回，骨架写入冻结方案。交互物合同核对视角、初态与部件归属。遇到带遮挡的刚体平移，只有用户明确选择尝试才在 generate-motion 传 allowUnsupportedMotion。review-motion-stage 的 accept_state 可先锁定真实状态帧，过渡仍待确认。用户授权默认制作时可使用已配置模型和当前默认预算，普通参数无需再次确认。规划本身调用模型；纯讨论只读取信息。
 
-收到方案后处理真正未答的关键问题。`generate-motion` 绑定返回的 revision 与 planSha256；已授权连续制作可使用 autoExecute。追踪原 taskId 和 `?work=<openWorkId>`，换候选时保留精确版本与候选身份。
+收到方案后处理真正未答的关键问题。`generate-motion` 绑定返回的 revision 与 planSha256；已授权连续制作可在 `plan-motion` 使用 `autoExecute:true`。`revise-motion` 必须省略此字段或传 false，修改后重新查看方案并用新版本开始制作。追踪原 taskId 和 `?work=<openWorkId>`，换候选时保留精确版本与候选身份。
 
 PixelLab 规划会先读取可用单位。可在 `motionSpec.budget` 设置 `max_frames_per_request` 和 `max_total_frames`，后者含所有候选，播放停留不计绘图帧。余额未知时仍遵守用户上限；就绪方案展示预计单位，提交前再次核对额度。
 
 主评核对交互物时，仅外观描述差异按参考图写入合同，保留原话和处理依据，无需因此阻断或重做原图。影响运动、改变固定部件集合或要求裁决的差异在规划阶段处理。铰接和形变先选择已核对结构，每个部件按 ID 归入运动或固定清单；铰接另选固定部件上的可见轴点和运动端点。检查阶段结合实际帧、扣除运动遮挡后的固定区域像素变化及铰接半径。测量与模型意见冲突时，主评查看对应帧并记录裁决。
 
-模型与预算随任务冻结，修改设置影响新任务。新任务通常使用增强复核：基础观察/审核、外观与运动独立意见，有争议再一次复核；每段及整段最多五次。基础协议最多两次。额度从当前 schema 和方案读取，修复后的复查计入原任务账本。旧任务沿用已保存协议。
+模型与预算随任务冻结，修改设置影响之后的规划。按角色改模型时先读 `workbench_get_motion_models`，再用其 `configuration_sha256` 调 `workbench_set_motion_model`，只提交目标角色的 profile；`profile:null` 恢复默认模型。已有作品的冻结配置不随设置变化。新任务通常使用增强复核：基础观察/审核、外观与运动独立意见，有争议再一次复核；每段及整段最多五次。基础协议最多两次。额度从当前 schema 和方案读取，修复后的复查计入原任务账本。旧任务沿用已保存协议。
 
 涉及结构辅助、时序观察或规划稳定性时，读取[视觉结构协议](../../docs/visual-structures.md)：策略分析草案与可执行方案分开，预留后续专家预算；实际绘图文本不截断。结构确认不是画面采用或修改区域授权。遮挡、透视缩短与外观断裂保留不确定性及具体矛盾，不能凭单次模型意见自动通过、重绘或升级旧任务。
 
@@ -25,6 +25,10 @@ PixelLab 规划会先读取可用单位。可在 `motionSpec.budget` 设置 `max
 写回可带 `durations`（逐帧相对时长，数量等于过渡帧数）与 `playback: ping_pong`；这只改变交互物动画片段，原帧和导出不变。面板的确定性工具（固定部件回填、对齐、批量清理、同帧数旋转草稿）经 `local-frame-edits` 保存为完整播放备选，仍须对比后采用。倒放、旋转草稿、色调派生和上传的状态图属于派生素材：记录来源与哈希，必须人工播放并写明结论接受后才进入资产库，目前只在网页面板创建。
 
 ## 分段与完整检查
+
+`workbench_get_result` 默认返回动画摘要、候选硬错误/提醒和阶段 token；完整证据用 `detail:true` 读取 `detailPage.text`，按 `nextOffset` 连续读取并传回 `snapshot`，拼接后解析 JSON。快照变化时从零开始，避免混用版本。`get_task` 刷新进度；`get_result` 只读已有结果。
+
+复核期间继续查询原 `taskId`。`presentation.reviewProgress` 会显示当前候选与片段、检查项、在途调用、已完成/已用调用次数及任务总预算；`nextStep` 说明结束后要做的实际检查。此时 `nextActions` 只提供查询，分段报告完成后才出现 `review-motion-stage`，整段报告完成后才出现 `approve`，无需通过重复确认或采用探测进度。中断查询保留原请求身份和已有回执，不自动重发。
 
 出现 pendingCheckpoints 时，用 `get-motion-stage` 读取准确候选和零基 stage 的全序列。以实际 FPS 检查运动、末姿势、装备和接缝，再用原 token/revision 调 `review-motion-stage`，填写接受或拒绝及实际观察依据。用户已委托 Agent 检查时可直接裁决；用户保留选择时展示需要决定的画面。
 

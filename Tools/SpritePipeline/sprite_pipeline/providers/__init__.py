@@ -50,6 +50,8 @@ def get_provider(name: str, settings: "HarnessSettings") -> SpriteProvider:
 
     normalized_name = name.strip().lower() if isinstance(name, str) else ""
     if normalized_name == "pixellab":
+        from ..pixellab_account import PixelLabAccountQueue
+        from ..store import JobStore
         return PixelLabProvider(
             api_key=settings.pixellab_api_key,
             base_url=settings.pixellab_base_url,
@@ -57,6 +59,7 @@ def get_provider(name: str, settings: "HarnessSettings") -> SpriteProvider:
             poll_interval_seconds=settings.poll_interval_seconds,
             max_wait_seconds=settings.max_wait_seconds,
             max_response_bytes=settings.max_download_bytes,
+            account_queue=PixelLabAccountQueue(JobStore(settings), settings.pixellab_api_key, settings.pixellab_base_url),
         )
     if normalized_name == "fixture":
         return FixtureProvider(

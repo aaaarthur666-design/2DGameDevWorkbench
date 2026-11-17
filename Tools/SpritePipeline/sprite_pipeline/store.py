@@ -19,7 +19,7 @@ from .settings import HarnessSettings
 
 
 _JOB_ID = re.compile(r"^[0-9]{8}_[a-z0-9_]+_[0-9]{3}$")
-_JOB_SUMMARY_SCHEMA_VERSION = 3
+_JOB_SUMMARY_SCHEMA_VERSION = 4
 _JOB_SUMMARY_MAX_BYTES = 128 * 1024
 
 
@@ -179,7 +179,7 @@ class JobStore:
             and job.generation_requested_at is not None
             and any(
                 candidate.status.value in active_provider_states
-                or (candidate.error or {}).get("code") == "insufficient_quota"
+                or (candidate.error or {}).get("code") in {"insufficient_quota", "provider_queued"}
                 or (
                     candidate.provider_status == "completed"
                     and bool(candidate.provider_job_id)
@@ -199,8 +199,10 @@ class JobStore:
             )
             needs_recovery = needs_recovery or any(c.frames and c.plan_execution and
                 (c.plan_execution.quality_review or {}).get('state') in {'pending','running'} for c in job.candidates)
+        from .pixellab_account import submission_state
         return {
             "summary_schema_version": _JOB_SUMMARY_SCHEMA_VERSION,
+            "submission_state": submission_state(job),
             "job_revision": job.revision,
             "job_id": job.job_id,
             "open_work_id": job.request.open_plan.work_id if job.request.open_plan else None,

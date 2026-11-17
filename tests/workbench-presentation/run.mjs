@@ -4,6 +4,7 @@ import {
   taskPresentation,
   taskViewPath,
   mcpContent,
+  nativeTask,
 } from "../../lib/workbench/presentation.mjs";
 const manifest = JSON.parse(
   await readFile(
@@ -77,6 +78,12 @@ const animation = taskPresentation(
 );
 assert.equal(animation.preview.kind, "animation");
 assert.equal(animation.browserOpened, false);
+const named = taskPresentation(manifest, { ...sprite, status: 'completed' }, { result: {
+  character: { display_name: '红袍法师' }, action: { display_name: '红袍法师原地举杖施法循环' },
+} });
+assert.equal(named.title, '红袍法师原地举杖施法循环');
+assert.equal(taskPresentation(manifest, nativeTask({ job_id: 'refused', status: 'attention_required', submission_state: 'not_submitted' })).state, 'not_submitted');
+assert.match(taskPresentation(manifest, nativeTask({ job_id: 'queue', status: 'provider_pending', submission_state: 'queued' })).summary, /前序任务/);
 const saved = {
   ...base,
   capabilityId: "interactable-editor",
@@ -118,6 +125,21 @@ assert.equal(polled.taskId, "keep-original-task");
 assert.equal(polled.status, "running");
 assert.match(polled.issue, /上次保存的状态/);
 assert(!JSON.stringify(polled).includes("internal diagnostics"));
+const checkpointToken = 'f'.repeat(64);
+assert.equal(JSON.parse(mcpContent('workbench_get_result', {
+  ...rich, compactResult: true, result: { stageToken: checkpointToken },
+})).result.stageToken, checkpointToken);
+assert.equal(taskPresentation(manifest, { ...sprite, status: 'completed' }, {
+  result: { character: { display_name: '红袍法师' }, action: { display_name: '红袍法师原地施法' } },
+}).title, '红袍法师原地施法');
+assert.equal(taskPresentation(manifest, { ...sprite, status: 'not_submitted',
+  adapter: { submissionState: 'not_submitted' },
+}).state, 'not_submitted');
+const queued = taskPresentation(manifest, { ...sprite, status: 'running',
+  adapter: { submissionState: 'queued', submission: { status: 'queued', queuePosition: 2 } },
+});
+assert.equal(queued.state, 'running');
+assert.match(queued.summary, /第 2 位.*查询原任务/);
 const failedPresentation = {
   ...animation,
   issue: { summary: "请检查原任务。", detail: "long diagnostic details" },

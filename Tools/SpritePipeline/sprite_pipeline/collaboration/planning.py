@@ -126,6 +126,28 @@ instruction changes no action requirement, budget, or generation strategy.
 '''
 
 
+SCHEMA_LIMIT_INSTRUCTIONS = '''
+HARD STRUCTURED-OUTPUT BOUNDARIES (character counts include spaces/punctuation):
+- question is always a JSON string; use "" when unused, never null, an object or an array.
+- Every findings/requirements text and evidence is at most 300 characters.
+- Each quality event/appearance/ending/rhythm contract is at most 180 characters.
+- checkpoint.endpoint <=120, checkpoint.rhythm <=140, checkpoint.reason <=180 characters.
+- motion camera <=80; orientation/trajectory/entry/exit <=100; support <=120;
+  drive/generation_hint <=140; appearance <=180 characters. Key-pose descriptions <=120.
+- Every stage.frame_count is an even integer in [4,6,8,10,12,14,16], further bounded
+  by hard_drawing_limits. Divide phases using feasible even counts; never submit odd counts.
+- With a checked structure, every stage.structure_usage.part_ids must contain at least
+  one task-relevant ID from allowed_structure_usage.part_ids (at most 12). Optional
+  anchor_ids/relation_ids may be empty. Never invent an ID or cite an uncertain relation
+  as control evidence. Without a checked structure, omit structure_usage.
+These are hard schema limits, not permission to delete a user goal, alter event count,
+direction or ending, increase a budget, or invent evidence. Write concise complete
+constraints; if no faithful feasible plan fits, expose the critical conflict using the
+role's allowed consultation or final plan.questions. No local truncation or coercion
+will repair an invalid response. Follow the exact role-specific schema for all other limits.
+'''
+
+
 PROP_INSTRUCTIONS = """
 Plan an animation of an inanimate interactable. Record evidence from the actual
 reference, including viewpoint, initial_state and part_ownership
@@ -197,7 +219,8 @@ class PlanningModel:
         # Appearance and motion's first observations are independent. Later
         # consultations receive the actual peer proposals and supplied evidence.
         first = not any(m.get("role") == role for m in work.messages)
-        messages = [] if first and role in {"appearance", "motion"} else work.messages
+        messages = [] if first and role in {"appearance", "motion"} else [
+            message for message in work.messages if message.get('target_role') in (None, role)]
         if work.planning_format_version in (2,3):
             # The shared internal ExpertTurn adds null slots that do not belong
             # to the role's transport schema. Do not teach peers those wrappers.
@@ -277,6 +300,10 @@ The two final calls inspect the WHOLE clip, including seams.
             instructions = instructions.replace(
                 'Review allowance = candidate_count * (2*stage_count + 2).\nThe two final calls inspect the WHOLE clip, including seams.',
                 'Review allowance = candidate_count * 5 * (stage_count + 1). Each segment and the final WHOLE clip reserve two baseline calls, two independent opinions and at most one dispute call.\nDo not remove a useful segment or weaken the motion merely to fit the review allowance; ask a critical budget question if the required checks do not fit.')
+        limits = SCHEMA_LIMIT_INSTRUCTIONS
+        if work.planning_format_version not in (2, 3):
+            limits = limits.replace('allowed_structure_usage.part_ids', 'the supplied checked structure')
+        instructions += '\n' + limits
         content = [{"type": "input_text", "text": instructions + "\nROLE: " + role_instructions + "\nTASK DATA:\n" + json.dumps(data, ensure_ascii=False)},
                    {"type": "input_image", "image_url": "data:image/png;base64," + base64.b64encode(reference).decode(), "detail": "high"}]
         if crop is not None:

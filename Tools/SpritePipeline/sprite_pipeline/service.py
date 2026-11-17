@@ -1184,6 +1184,7 @@ class SpritePipelineService:
             transparent_background=snapshot.character.transparent_background,
             last_frame=last_frame,
             edit_frames=edit_frames,
+            request_key=f'{job_id}:candidate:{candidate_index}',
         )
         provider_dir = self.store.job_dir(job_id) / "provider"
         intent_path = provider_dir / f"{snapshot_candidate.candidate_id}.submit.intent.json"
@@ -1242,6 +1243,16 @@ class SpritePipelineService:
         try:
             submission = provider.submit(request)
         except ProviderError as exc:
+            from .pixellab_account import PixelLabQueued
+            if isinstance(exc, PixelLabQueued):
+                with self.store.locked_job(job_id) as queued_job:
+                    queued = self._candidate(queued_job, candidate_index)
+                    queued.status = CandidateStatus.created
+                    queued.submission_attempts = 0
+                    queued.error = exc.as_dict()
+                    queued_job.status = JobStatus.provider_pending
+                    queued_job.touch('candidate_queued', candidate_index=candidate_index, error=exc.as_dict())
+                return
             with self.store.locked_job(job_id) as failed_job:
                 failed = self._candidate(failed_job, candidate_index)
                 submission_unknown = bool(exc.details.get("submission_unknown"))
@@ -3784,6 +3795,6 @@ class SpritePipelineService:
         }:
             job.status = JobStatus.review_required
         elif CandidateStatus.created in statuses:
-            job.status = JobStatus.created
+            job.status = JobStatus.provider_pending if any((candidate.error or {}).get('code') == 'provider_queued' for candidate in job.candidates) else JobStatus.created
         else:
             job.status = JobStatus.review_required

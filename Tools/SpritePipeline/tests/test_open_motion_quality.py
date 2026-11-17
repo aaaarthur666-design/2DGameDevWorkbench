@@ -258,3 +258,30 @@ def test_invalid_key_does_not_publish_new_model_configuration(setup, monkeypatch
     assert result.status_code==422 and '启动环境' in result.text
     assert registry.load()==before
     assert 'another-isolated-key' not in result.text
+
+
+def test_role_model_patch_preserves_other_roles_and_rejects_stale_configuration(setup):
+    from fastapi.testclient import TestClient
+    from sprite_pipeline.api_app import create_api
+    s,_,_,_,_=setup
+    registry=ModelRegistry(s.settings)
+    original=ModelConfiguration(roles={'appearance':ModelProfile(model='first-vision')})
+    registry.save(original)
+    frozen=original.model_dump(mode='json')
+    client=TestClient(create_api(service=s))
+    current=client.get('/v1/open-motion/settings').json()
+    payload={'expected_configuration_sha256':current['configuration_sha256'],'profile':{'provider':'tokenhub','model':'kimi-k3.1-pro','reasoning_effort':'max'}}
+    updated=client.patch('/v1/open-motion/settings/roles/coordinator',json=payload)
+    assert updated.status_code==200
+    assert updated.json()['configuration']['roles']['appearance']==frozen['roles']['appearance']
+    assert registry.profile('coordinator').model=='kimi-k3.1-pro'
+    assert registry.profile('coordinator',frozen).model==original.default.model
+    stale=client.patch('/v1/open-motion/settings/roles/motion',json=payload)
+    assert stale.status_code==409
+    assert 'motion' not in registry.load().roles
+    malformed=client.patch('/v1/open-motion/settings/roles/motion',json={**payload,'profile':{'provider':'tokenhub','model':'glm-5.3'}})
+    assert malformed.status_code==422
+    cleared=client.patch('/v1/open-motion/settings/roles/coordinator',json={'expected_configuration_sha256':updated.json()['configuration_sha256'],'profile':None})
+    assert cleared.status_code==200
+    assert 'coordinator' not in registry.load().roles
+    assert client.patch('/v1/open-motion/settings/roles/invalid',json=payload).status_code==422

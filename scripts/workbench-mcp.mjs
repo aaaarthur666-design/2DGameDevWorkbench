@@ -10,6 +10,7 @@ import { mcpContent } from '../lib/workbench/presentation.mjs';
 import { previewInputs, previewTools } from '../lib/workbench/preview-follow-contract.mjs';
 import { WorkBuddyPreview } from '../lib/workbench/workbuddy-preview.mjs';
 import { guidanceTopics } from '../lib/workbench/agent-guidance.mjs';
+import { motionModelInputs, motionModelTools } from '../lib/workbench/motion-model-contract.mjs';
 import { queuePresentation } from '../lib/workbench/preview-follow.mjs';
 import { KINDS } from '../features/interactable-editor/contract.mjs';
 
@@ -383,7 +384,7 @@ const discoveryTools = [
   [
     'workbench_get_result',
     'result',
-    'Read a workbench taskId OR a native sprite jobId (exactly one). Optional candidateIndex selects an existing candidate. Returns a concise presentation and exact viewUrl plus structured results. Does not refresh, generate, create tasks or open a browser.',
+    'Read a taskId OR native sprite jobId (exactly one). Animation results default to bounded summaries with candidate warnings, stage tokens and next actions in both text and structured content. Full evidence uses detail:true and paginated JSON slices. Does not refresh, generate, create tasks or open a browser.',
     {
       taskId: z.string().min(1).optional(),
       jobId: z.string().min(1).max(200).optional(),
@@ -392,8 +393,11 @@ const discoveryTools = [
         .boolean()
         .optional()
         .describe(
-          'Return full technical JSON in text content for clients without structuredContent; use for frame review or debugging.',
+          'For animations, return a detailPage JSON text slice. Concatenate pages by nextOffset and pass the first page snapshot on subsequent calls. Default limit 6000, max 8000 characters.',
         ),
+      offset: z.number().int().min(0).optional(),
+      limit: z.number().int().min(1).max(8000).optional(),
+      snapshot: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     },
   ],
   [
@@ -403,6 +407,11 @@ const discoveryTools = [
     { taskId: z.string().min(1), artifactPath: z.string().min(1) },
   ],
 ];
+for (const [name, operation, description] of motionModelTools) {
+  registerTool(name, { description, inputSchema: motionModelInputs[operation].shape,
+    annotations: { readOnlyHint: operation === 'motion-models', destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  async input => agentRequest(await loadManifest(), operation, input));
+}
 for (const [name,operation,description] of gameExportTools) {
   registerTool(name,{description,inputSchema:gameExportInputs[operation].shape,annotations:{readOnlyHint:['game-exports','game-export'].includes(operation),destructiveHint:false,idempotentHint:true,openWorldHint:false}},async input=>agentRequest(await loadManifest(),operation,input));
 }

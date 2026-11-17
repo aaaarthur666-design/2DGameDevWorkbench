@@ -88,7 +88,9 @@ MCP `repair-motion-stage` 要求准确 `stageToken`、零基闭区间 `repairSta
 
 TokenHub Kimi K3 系列使用 `max_completion_tokens`，不发送固定采样值冲突的 temperature；其他兼容型号可手动指定 Token 参数。新型号仍须支持图片输入和结构化 JSON，未知权限、HTTP 失败或无效结构不会自动降级/换模型。参数依据 [TokenHub Kimi 官方说明](https://cloud.tencent.com/document/product/1823/132232)；用户可在配置中选择实际已开通的型号。
 
-MCP / CLI 使用同一能力的新操作：`plan-motion`、`revise-motion`、`get-motion`、`generate-motion`、`pause-motion`、`resume-motion`。输入由 manifest 的 `motionSpec` 约束；规划须 `planningAuthorized=true`，制作须 `expectedRevision` 与返回的 `planSha256`。仅在用户已授权预算内直接制作时使用 `autoExecute=true`。异步查询沿用 `workbench_get_task`，不要重复 run。作品链接为 `?work=<openWorkId>`；生成后继续用现有 check / review / approve / export 原生作业接口。
+MCP / CLI 使用同一能力的新操作：`plan-motion`、`revise-motion`、`get-motion`、`generate-motion`、`pause-motion`、`resume-motion`。输入由 manifest 的 `motionSpec` 约束；规划须 `planningAuthorized=true`，制作须 `expectedRevision` 与返回的 `planSha256`。`autoExecute=true` 仅适用于已获预算内直接制作授权的 `plan-motion`；`revise-motion` 必须省略或传 false，修改后查看方案，再用新 revision/hash 调 `generate-motion`。不支持的组合在创建工作台任务前拒绝。异步查询沿用 `workbench_get_task`，不要重复 run。作品链接为 `?work=<openWorkId>`；生成后继续用现有 check / review / approve / export 原生作业接口。
+
+外部 Agent 可用 `workbench_get_motion_models` 读取各角色配置与 `configuration_sha256`，再用 `workbench_set_motion_model` 更新一个角色，传 `expectedConfigurationSha256` 防止覆盖并发更新。此入口不接收 Key、不创建制作任务、不调用模型；`profile:null` 清除该角色覆盖。CLI/HTTP 的对应操作为 `motion-models` / `set-motion-model`，原生接口为 `PATCH /v1/open-motion/settings/roles/{role}`。已冻结作品保持原配置，后续规划使用更新后的设置。
 
 分段补充操作：`get-motion-stage` 读取指定 `candidateIndex` 与零基 `stageIndex`，返回实际帧文件、检查标准与 `stage.token`；`review-motion-stage` 使用 `expectedRevision`、原 `stageToken`、`stageDecision=accept|reject` 与实际 `reviewNote`。未通过或不确定的模型报告还需 `acknowledgeWarnings`。确认只解锁原任务的后续执行，不生成替代任务；模糊响应可按原 token 重试确认，不会重复提交绘图。片段通过不代表完整动画通过，最终采用仍需完整播放与人工结论。`get-motion-stage` 的 `stage.review` 和 `get-motion` 的候选 `quality_review` 包含 `protocol`、基础结论、独立意见、争议分类及实际请求账本；现有接口即可读取，不增加新 operation。页面默认显示结论和检查进度，依据与复核过程按需展开。
 

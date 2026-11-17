@@ -86,6 +86,9 @@ class RecoveryWorker:
         while not self._stop.is_set():
             try:
                 scan = self.service.recover_pending_jobs()
+                reference_recovery = getattr(self.service, 'reference_art_recovery', None)
+                if reference_recovery is not None:
+                    reference_recovery()
                 with self._state_lock:
                     self._last_scan = scan
                     self._last_error = None

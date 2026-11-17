@@ -6,6 +6,7 @@ from dataclasses import replace
 from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
 
 from test_open_motion import setup, spec
 from test_open_motion_checkpoints import CheckpointPlanner, accept
@@ -17,6 +18,7 @@ from sprite_pipeline.collaboration.dispute_review import Resolution
 from sprite_pipeline.collaboration.model_config import ModelProfile
 from sprite_pipeline.collaboration.repairs import LocalRepairs
 from sprite_pipeline.errors import ConflictError, ValidationHarnessError, ExportBlockedError
+from sprite_pipeline.api_app import create_api
 
 
 class ExpertRegistry:
@@ -118,11 +120,70 @@ def test_unknown_extra_request_is_preserved_without_retry(setup):
     s,ws,p,w,registry=production(setup);registry.fail_at=4
     engine=PlanGeneration(s);engine.advance(w.job_id,p,wait=True)
     report=s.store.load(w.job_id).candidates[0].plan_execution.stages[0].review
+    request_id=report['requests'][-1]['request_id']
     assert report['state']=='failed' and report['verdict']=='uncertain'
     assert report['expert_review']['baseline']['state']=='complete'
     assert report['requests'][-1]['state']=='failed_or_unknown'
     for _ in range(2):engine.advance(w.job_id,p,wait=True)
     assert len(registry.calls)==4 and len(p.requests)==1
+    restored=s.store.load(w.job_id).candidates[0].plan_execution.stages[0].review
+    assert restored['requests'][-1]['request_id']==request_id
+    assert restored['progress']['state']=='failed' and 'current_call' not in restored['progress']
+
+
+def test_stage_and_complete_review_progress_is_readable_during_every_call(setup):
+    s,ws,p,w,_=production(setup)
+    snapshots=[]
+    class Observable(ExpertRegistry):
+        def send(self,*args,**kwargs):
+            kwargs['on_response']({'response_id':f'fixture-response-{len(self.calls)+1}'})
+            return super().send(*args,**kwargs)
+    registry=Observable();s.open_motion_review_registry=registry
+    client=TestClient(create_api(service=s))
+    def observe(call_count):
+        before=len(registry.calls)
+        # Reading twice while the original call is in flight only observes it.
+        for _ in range(2):
+            response=client.get('/v1/open-motion/'+w.id)
+            assert response.status_code==200,response.text
+            candidate=response.json()['job']['candidates'][0]
+            execution=candidate['plan_execution']
+            stage=next((r for r in execution['stages'] if r['state']=='reviewing'),None)
+            report=stage['review'] if stage else candidate['quality_review']
+            progress=report['progress']
+            assert progress['state']=='running'
+            assert progress['calls_used']==len(report['requests'])
+            assert progress['calls_completed']==len(report['requests'])-1
+            assert progress['max_calls']==5
+            assert progress['current_call']['request_id']==report['requests'][-1]['request_id']
+            assert progress['current_call']['response_id']==f'fixture-response-{call_count}'
+            assert progress['current_call']['started_at']
+            assert '查询原任务' in progress['next_step']
+            assert progress['current_check'] in response.json()['job']['plan_control']['message']
+            if not stage:
+                with pytest.raises(ExportBlockedError,match='视觉验收尚未结束'):
+                    s.approve_candidate(w.job_id,1,reviewer='test')
+        assert len(registry.calls)==before
+        snapshots.append((progress['scope'],progress.get('stage_index'),progress['phase'],progress['calls_used']))
+    registry.after_send=observe
+    engine=PlanGeneration(s)
+    for stage in range(2):
+        engine.advance(w.job_id,p,wait=True)
+        report=s.store.load(w.job_id).candidates[0].plan_execution.stages[stage].review
+        assert report['progress']['state']=='complete' and report['progress']['phase']=='done'
+        assert report['progress']['calls_used']==report['progress']['calls_completed']==5
+        assert 'current_call' not in report['progress']
+        assert '原 token' in report['progress']['next_step']
+        accept(s,w,stage)
+    final=engine.advance(w.job_id,p,wait=True).candidates[0].plan_execution.quality_review
+    assert final['progress']['state']=='complete' and '采用结论' in final['progress']['next_step']
+    expected=['observe','audit','expert_appearance','expert_motion','dispute']
+    assert [snapshot[2] for snapshot in snapshots]==expected*3
+    assert [snapshot[3] for snapshot in snapshots]==list(range(1,6))*3
+    assert len({r['request_id'] for r in final['requests']})==5
+    before=len(registry.calls)
+    engine.advance(w.job_id,p,wait=True)
+    assert len(registry.calls)==before==15 and len(p.requests)==2
 
 
 def test_agreement_skips_dispute_but_still_waits_for_actual_frame_acceptance(setup):

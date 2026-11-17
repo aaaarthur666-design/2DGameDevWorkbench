@@ -90,6 +90,7 @@ class PlanGeneration:
             request = ProviderRequest(reference_image=first, last_frame=last, prompt=prompt,
                                       frame_count=definition.frame_count,
                                       seed=stage_seed(candidate.seed, stage),
+                                      request_key=f'{job_id}:candidate:{index}:stage:{stage}',
                                       transparent_background=True)
             from .generation_conditions import submission_conditions
             conditions = submission_conditions(job.request.open_plan,stage,prompt,hashlib.sha256(first).hexdigest(),
@@ -122,6 +123,16 @@ class PlanGeneration:
             try:
                 submission = provider.submit(request)
             except Exception as exc:
+                from ..pixellab_account import PixelLabQueued
+                if isinstance(exc, PixelLabQueued):
+                    with self.store.locked_job(job_id) as current:
+                        c = self.candidate(current, index); r = self.validate(current, c)[stage]
+                        r.state = 'created'; r.submission_attempts = 0; r.error = exc.as_dict()
+                        c.status = CandidateStatus.created; c.error = exc.as_dict()
+                        c.submission_attempts = sum(v.submission_attempts+len(v.repairs) for v in c.plan_execution.stages)
+                        current.plan_control.message = '同一 PixelLab 账户已有任务，已排队，尚未提交'
+                        self.s._refresh_job_status(current); current.touch('plan_stage_queued', stage=stage)
+                    return False
                 unknown = not isinstance(exc, ProviderError) or bool(exc.details.get("submission_unknown"))
                 with self.store.locked_job(job_id) as current:
                     c = self.candidate(current, index); r = self.validate(current, c)[stage]

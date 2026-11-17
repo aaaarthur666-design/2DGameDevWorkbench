@@ -1,5 +1,6 @@
 import { interactableMotionRoute } from './motion-routes';
 import type { WorkbenchModule } from './modules';
+import { motionTitle } from './motion-title.mjs';
 export function operationLabel(operation: unknown): string {
   const labels: Record<string, string> = { generate: '生成素材', import: '导入素材', transfer: '导入角色', 'save-project': '保存项目', 'export-godot': '导出 Godot', create: '创建作业', submit: '提交生成', get: '更新状态', review: '检查素材', export: '导出素材', approve: '确认素材', prepare: '准备输入' };
   return typeof operation === 'string' ? labels[operation] || '制作步骤' : '制作';
@@ -27,6 +28,7 @@ export type WorkItem = {
   stage?: number;
   taskIds?: string[];
   outputs?: string[];
+  submissionState?: string;
 };
 export type StoredTask = {
   id: string;
@@ -39,7 +41,10 @@ export type StoredTask = {
   requiredEnvironment?: string;
   createdAt?: string;
   updatedAt?: string;
-  adapter?: { propObjectId?: string; remoteJobId?: string; remoteStatus?: string; openWorkId?: string };
+  adapter?: { propObjectId?: string; remoteJobId?: string; remoteStatus?: string; openWorkId?: string;
+    submissionState?: string; queuePosition?: number; referenceSha256?: string;
+    orientationReview?: {state: string; matches: boolean; message?: string; sourceSha256?: string;
+      observation?: {view: string; facing: string; confidence: string; evidence: string}} };
 };
 export type SpriteJob = {
   job_id: string;
@@ -50,6 +55,7 @@ export type SpriteJob = {
   action_name?: string;
   action_id?: string;
   open_work_id?: string;
+  submission_state?: string;
 };
 
 /** A run identifier such as `20261110_reference_71f8…_001` is not a name. */
@@ -124,7 +130,8 @@ export function spriteWorkItem(job: SpriteJob, href: string): WorkItem {
   return {
     id: job.open_work_id ? `motion:${job.open_work_id}` : `sprite:${job.job_id}`,
     capabilityId: 'sprite-generator',
-    title: `${job.character_name || job.character_id || '角色'} · ${job.action_name || job.action_id || '动作'}`,
+    title: motionTitle(job.character_name || job.character_id || '角色', job.action_name || job.action_id || '动作'),
+    submissionState: job.submission_state,
     updatedAt: job.updated_at,
     savedAt: job.updated_at,
     href: job.open_work_id ? `${href}?work=${job.open_work_id}` : `${href}?job=${encodeURIComponent(job.job_id)}`,
@@ -132,7 +139,7 @@ export function spriteWorkItem(job: SpriteJob, href: string): WorkItem {
   };
 }
 
-export type OpenMotionSummary = { id: string; title: string; status: string; job_status?: string; updated_at: string; object_type?: string };
+export type OpenMotionSummary = { id: string; title: string; status: string; job_status?: string; updated_at: string; object_type?: string; submission_state?: string };
 export function openMotionWorkItem(work: OpenMotionSummary, href: string): WorkItem {
   // Interactable works open in the state-graph panel; the record stays one work item.
   if (work.object_type === 'interactable') href = interactableMotionRoute;
@@ -140,12 +147,24 @@ export function openMotionWorkItem(work: OpenMotionSummary, href: string): WorkI
     state: work.status === 'planning' ? 'running' as const : 'attention' as const,
     detail: work.status === 'planning' ? '正在制定制作方案' : work.status === 'ready' ? '方案已保存，等待确认制作' : '方案需要处理', stage: 1,
   };
-  return { id: `motion:${work.id}`, capabilityId: 'sprite-generator', title: work.title,
+  return { id: `motion:${work.id}`, capabilityId: 'sprite-generator', title: work.title, submissionState: work.submission_state,
     href: `${href}?work=${work.id}`, updatedAt: work.updated_at, savedAt: work.updated_at, ...state };
 }
 
 export function interactableItemId(projectId: string, objectId: string) {
   return `interactable:${projectId}:${objectId}`;
+}
+
+export function unsubmittedPixelLabTask(task: StoredTask) {
+  if (!['reference-art', 'sprite-generator'].includes(task.capabilityId) ||
+      task.adapter?.referenceSha256 || task.adapter?.remoteJobId || task.adapter?.openWorkId ||
+      (task.outputs || []).some(output => /\.(png|webp|gif|jpe?g|zip)$/i.test(output))) return false;
+  if (task.status === 'not_submitted' && task.adapter?.submissionState === 'not_submitted') return true;
+  // Legacy records have no structured receipt. Fixed conclusive gateway
+  // messages are derivable; ambiguous transport failures remain visible.
+  const error = task.error || '';
+  return task.status === 'failed' && !/unknown|超时|无法确认|结果未知/i.test(error) &&
+    /PixelLab\s*(?:额度不足|当前任务过多|Key\s*无效)|(?:PixelLab[^\n]*HTTP\s*(?:402|429))/.test(error);
 }
 
 /** Group execution attempts only when a durable asset identity is known. */
@@ -158,6 +177,7 @@ export function taskWorkItems(
     (a.updatedAt || '').localeCompare(b.updatedAt || ''),
   )) {
     const input = task.input || {};
+    if (unsubmittedPixelLabTask(task)) continue;
     const propObjectId = task.capabilityId === 'reference-art' && input.operation === 'transfer' ? task.adapter?.propObjectId : undefined;
     const moduleId = propObjectId ? 'sprite-generator' : task.capabilityId === 'image-assets'
       ? 'interactable-editor'
@@ -282,7 +302,7 @@ export function mergeWorkItems(...sources: WorkItem[][]): WorkItem[] {
         ],
       });
     }
-  return [...grouped.values()].sort((a, b) =>
+  return [...grouped.values()].filter(item => item.submissionState !== 'not_submitted').sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
 }

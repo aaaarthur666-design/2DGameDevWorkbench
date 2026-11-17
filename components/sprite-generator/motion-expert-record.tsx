@@ -21,11 +21,12 @@ const actions: Record<string, string> = {
 export function ExpertRecord({ work }: { work: MotionWork }) {
   return (
     <details>
-      <summary>专家协作记录 · {work.planning_calls.length} 次调用</summary>
+      <summary>专家协作记录 · 本版 {work.planning_calls.length} 次调用</summary>
       <div className="motion-expert-record">
         {work.messages.map((m, i) => (
           <article key={i}>
             <b>{motionPlanningRoles[m.role]} · {actions[m.response.action]}</b>
+            {m.reused_from && <small> · 复用第 {m.reused_from.revision} 版第 {m.reused_from.call} 次调用</small>}
             <p>{m.response.summary}</p>
             {m.response.question && <p>{m.response.question}</p>}
           </article>

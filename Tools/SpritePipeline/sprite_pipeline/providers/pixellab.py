@@ -109,6 +109,7 @@ class PixelLabProvider(SpriteProvider):
         http_client: Any | None = None,
         sleep_fn: Callable[[float], None] | None = None,
         monotonic_fn: Callable[[], float] | None = None,
+        account_queue: Any | None = None,
     ) -> None:
         """Validate configuration without importing httpx or opening a socket."""
 
@@ -162,6 +163,7 @@ class PixelLabProvider(SpriteProvider):
         self._client = http_client
         self._owns_client = False
         self._jobs: dict[str, _JobContext] = {}
+        self._account_queue = account_queue
 
     def __enter__(self) -> "PixelLabProvider":
         """Return this provider for use as a context manager."""
@@ -208,6 +210,28 @@ class PixelLabProvider(SpriteProvider):
         return self._client
 
     def submit(self, request: ProviderRequest) -> Submission:
+        if self._account_queue is None:
+            return self._submit(request)
+        from ..pixellab_account import require_balance
+        # Production callers freeze a stable identity before their first POST.
+        # The fallback also protects developer/legacy callers within this account.
+        request_key = request.request_key or 'legacy-' + hashlib.sha256(
+            request.reference_image + request.prompt.encode() + str(request.seed).encode()
+        ).hexdigest()
+        submitted, _balance = self._account_queue.submit(request_key, self._account_job_status,
+            lambda: require_balance(self.get_balance()), lambda: self._submit(request), lambda result: result.provider_job_id)
+        return submitted
+
+    def _account_job_status(self, job_id):
+        response = self._get_with_backoff(self._validate_job_id(job_id))
+        if response.status_code != 200:
+            self._raise_poll_status(response, job_id)
+        payload = self._json_object(response)
+        if payload.get('id', job_id) != job_id:
+            raise ProviderTemporaryError('PixelLab 账户队列返回了不匹配的任务。')
+        return payload.get('status')
+
+    def _submit(self, request: ProviderRequest) -> Submission:
         """Submit one PixelLab v3 job with only conclusive 429/529 retries.
 
         Transport failures, timeouts, and malformed 200 responses are reported
@@ -739,7 +763,7 @@ class PixelLabProvider(SpriteProvider):
         status_code = int(response.status_code)
         details = {
             "http_status": status_code,
-            "submission_unknown": False,
+            "submission_unknown": status_code >= 500 and status_code != 529,
             "safe_to_retry": status_code in {429, 529},
             "request": request_record,
             "response": self._best_effort_response_record(response),

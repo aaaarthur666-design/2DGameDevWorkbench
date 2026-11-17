@@ -12,6 +12,7 @@ import { taskViewPath, taskPresentation } from '../../lib/workbench/presentation
 import { createTestViteServer } from '../helpers/vite-server.mjs';
 import { verifyPlanningProgress } from './planning-progress.mjs';
 import { verifyMotionObjects } from './object-model.mjs';
+import { verifyReviewProgress } from './review-progress.mjs';
 import { listPresets } from '../../lib/workbench/agent-api.mjs';
 
 const root = path.resolve('work/test-runs', process.env.WORKBENCH_TEST_RUN, 'open-motion');
@@ -33,9 +34,11 @@ try {
   for (let n=0; n<100; n++) { try { await request('/health'); break; } catch { if (child.exitCode !== null || n===99) throw new Error(log || 'Test API startup failed'); await delay(100); } }
   process.env.SPRITE_PIPELINE_API_URL = base;
   const manifest = await loadManifest(), capability = findCapability(manifest, 'sprite-generator');
+  await verifyReviewProgress(manifest, capability);
   const motionSpec = { character_id:'test_hero', description:'角色低头检查手套，最后保持低头', provider:'fixture', review_protocol:'experts_v1', candidate_count:2, budget:{max_planning_calls:8,max_generation_calls:5,max_review_calls:35} };
   const input = { operation:'plan-motion', motionSpec, planningAuthorized:true };
   assert.deepEqual(validateInput(capability,input),[]);
+  assert.ok(validateInput(capability, { ...input, operation:'revise-motion', openWorkId:'a'.repeat(32), expectedRevision:1, autoExecute:true }).some(error => error.includes('revise-motion')));
   const { character_id: legacyCharacterId, ...commonSpec } = motionSpec;
   const modernSpec = { ...commonSpec, object_id: legacyCharacterId, object_type: 'character' };
   assert.deepEqual(validateInput(capability, { ...input, motionSpec: modernSpec }), []);

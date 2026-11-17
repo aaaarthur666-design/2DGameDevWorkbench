@@ -9,9 +9,11 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import hashlib
 import re
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -21,7 +23,9 @@ from fastapi import APIRouter
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
-from .errors import ProviderConfigurationError, ProviderPermanentError, ValidationHarnessError
+from .errors import ProviderConfigurationError, ProviderError, ProviderPermanentError, ValidationHarnessError
+from .jsonio import atomic_write_json, read_json
+from .pixellab_account import PixelLabAccountQueue, PixelLabQueued, require_balance
 from .service import SpritePipelineService
 from . import prop_reference
 from .pixel_prop_gateway import conversion
@@ -33,6 +37,7 @@ class ReferenceRequest(BaseModel):
     facing: Literal["right", "left"] = "right"
     seed: int | None = Field(default=None, ge=0, le=2147483647)
     size: Literal[64, 128] = 128
+    requestKey: str | None = Field(default=None, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$')
 
 
 class PropTransferRequest(BaseModel):
@@ -88,7 +93,11 @@ def _provider_request(service: SpritePipelineService, method: str, route: str, p
                 if response.status_code >= 300:
                     messages = {401: "PixelLab Key 无效。", 402: "PixelLab 额度不足。",
                                 429: "PixelLab 当前任务过多，请稍后再试。", 404: "PixelLab 任务不存在或已过期。"}
-                    raise ProviderPermanentError(messages.get(response.status_code, f"PixelLab 返回 HTTP {response.status_code}。"))
+                    raise ProviderPermanentError(messages.get(response.status_code, f"PixelLab 返回 HTTP {response.status_code}。"), details={
+                        'http_status': response.status_code,
+                        'submission_created': False if method == 'POST' and response.status_code < 500 else None,
+                        'submission_unknown': method == 'POST' and response.status_code >= 500,
+                    })
                 chunks = []
                 total = 0
                 for chunk in response.iter_bytes():
@@ -105,7 +114,7 @@ def _provider_request(service: SpritePipelineService, method: str, route: str, p
         # Never echo upstream bodies, URLs or exception text: they may contain secrets.
         message = ("提交结果无法确认，未自动重试。请检查 PixelLab 账户任务后再决定是否重新生成。"
                    if method == "POST" else "PixelLab 状态读取失败，可继续查询同一个任务。")
-        raise ProviderPermanentError(message) from exc
+        raise ProviderPermanentError(message, details={'submission_unknown': method == 'POST'}) from exc
 
 
 def validate_reference_image(encoded: str, expected_size: int | None = None) -> bytes:
@@ -135,6 +144,94 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
     router = APIRouter(prefix="/v1/reference-art")
     import_lock = threading.Lock()
 
+    def record_path(job_id):
+        return service.settings.jobs_dir / '.reference-art' / (job_id + '.json')
+
+    def account():
+        if not service.settings.pixellab_api_key:
+            raise ProviderConfigurationError('请先在原图或序列帧设置中保存 PixelLab API Key。')
+        return PixelLabAccountQueue(service.store, service.settings.pixellab_api_key, service.settings.pixellab_base_url)
+
+    def balance_preflight():
+        raw = _provider_request(service, 'GET', '/balance')
+        # Only numeric quota fields are evidence. Never persist arbitrary upstream strings.
+        subscription = raw.get('subscription')
+        safe = {'subscription': {key: value for key, value in (subscription.items() if isinstance(subscription, dict) else [])
+                                 if key in {'generations', 'remaining', 'remaining_generations', 'generations_remaining'}
+                                 and isinstance(value, (int, float)) and not isinstance(value, bool)}}
+        return require_balance(safe)
+
+    def submit_record(record):
+        data = _provider_request(service, 'POST', '/create-image-pixflux-background', record['payload'])
+        job_id = data.get('background_job_id')
+        if not isinstance(job_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', job_id):
+            raise ProviderPermanentError('PixelLab 未返回有效任务 ID，未自动重试。', details={'submission_unknown': True})
+        return job_id
+
+    def advance(job_id, *, submit_only=False):
+        destination = record_path(job_id)
+        with service.store.global_lock('reference-job-' + job_id, timeout_seconds=180):
+            record = read_json(destination)
+            queue = account() if record['status'] in {'queued', 'running'} else None
+            if record['status'] == 'queued':
+                try:
+                    receipt = queue.receipt(record['requestKey'])
+                    if receipt and receipt.get('provider_job_id'):
+                        remote, balance = receipt['provider_job_id'], record.get('balance', {})
+                    else:
+                        remote, balance = queue.submit(record['requestKey'],
+                            lambda remote: _provider_request(service, 'GET', '/background-jobs/' + remote).get('status'),
+                            balance_preflight, lambda: submit_record(record), lambda remote: remote)
+                    record.update(status='running', remoteJobId=remote, submissionState='submitted', balance=balance)
+                except PixelLabQueued as exc:
+                    record.update(submissionState='queued', queuePosition=exc.details['queue_position'], message=exc.message)
+                except ProviderError as exc:
+                    unknown = bool(exc.details.get('submission_unknown'))
+                    record.update(status='attention_required' if unknown else 'not_submitted',
+                        submissionState='unknown' if unknown else 'not_submitted', error=exc.as_dict(), message=exc.message)
+                atomic_write_json(destination, record)
+                return public_record(record)
+            if record['status'] == 'running' and not submit_only:
+                data = _provider_request(service, 'GET', '/background-jobs/' + record['remoteJobId'])
+                state = data.get('status')
+                if data.get('id') != record['remoteJobId']:
+                    raise ProviderPermanentError('PixelLab 返回了不匹配的任务。')
+                if state in {'completed', 'failed'}:
+                    queue.release(record['requestKey'])
+                if state == 'failed':
+                    record.update(status='failed', message='PixelLab 原图生成失败。')
+                elif state == 'completed':
+                    result = data.get('last_response')
+                    encoded = result.get('image', {}).get('base64') if isinstance(result, dict) and isinstance(result.get('image'), dict) else None
+                    try:
+                        image = validate_reference_image(encoded, record['input']['size']) if isinstance(encoded, str) else None
+                        if image is None:
+                            raise ValidationHarnessError('PixelLab 已结束任务，但没有返回原图。')
+                        record.update(status='completed', image=base64.b64encode(image).decode('ascii'))
+                    except ValidationHarnessError as exc:
+                        record.update(status='failed', message=str(exc))
+                elif state != 'processing':
+                    raise ProviderPermanentError('PixelLab 返回了未知任务状态。')
+                atomic_write_json(destination, record)
+        if record['status'] == 'completed':
+            from .reference_orientation import start_orientation_review
+            image = base64.b64decode(record['image'])
+            try:
+                review = start_orientation_review(service, destination, image, record['input']['facing'])
+            except Exception as exc:
+                # A missing/broken reviewer must not hide a successfully generated image.
+                review = {'state': 'uncertain', 'matches': False, 'sourceSha256': hashlib.sha256(image).hexdigest(),
+                    'expectedView': 'side', 'expectedFacing': record['input']['facing'], 'errorType': type(exc).__name__,
+                    'message': '视觉检查配置或启动失败，视角与朝向尚未验证；原图已保留，请人工核对。'}
+                with service.store.global_lock('reference-review-' + destination.stem):
+                    latest = read_json(destination); latest['orientationReview'] = review; atomic_write_json(destination, latest)
+            record['orientationReview'] = review
+        return public_record(record)
+
+    def public_record(record):
+        return {key: record[key] for key in ('status', 'submissionState', 'remoteJobId', 'queuePosition', 'balance',
+            'message', 'image', 'orientationReview', 'error') if key in record} | {'jobId': record['id']}
+
     @router.get("/settings")
     def settings():
         return {"configured": bool(service.settings.pixellab_api_key), "model": "pixflux", "size": 128}
@@ -152,16 +249,27 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
                    "no_background": True, "view": "side", "direction": "east" if body.facing == "right" else "west"}
         if body.seed is not None:
             payload["seed"] = body.seed
-        data = _provider_request(service, "POST", "/create-image-pixflux-background", payload)
-        job_id = data.get("background_job_id")
-        if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", job_id):
-            raise ProviderPermanentError("PixelLab 未返回有效任务 ID，未自动重试。")
-        return {"jobId": job_id, "status": "running"}
+        account()  # Configuration failures do not create a provider request.
+        identity = body.requestKey or uuid.uuid4().hex
+        job_id = 'ref_' + hashlib.sha256(identity.encode()).hexdigest()[:32]
+        destination = record_path(job_id)
+        with service.store.global_lock('reference-job-' + job_id):
+            if destination.exists():
+                saved = read_json(destination)
+                if saved['payload'] != payload:
+                    raise ValidationHarnessError('相同原图请求身份不能改用不同内容。')
+            else:
+                atomic_write_json(destination, {'version': 1, 'id': job_id, 'requestKey': 'reference:' + identity,
+                    'status': 'queued', 'submissionState': 'queued', 'payload': payload,
+                    'input': body.model_dump(exclude={'requestKey'})})
+        return advance(job_id, submit_only=True)
 
     @router.get("/jobs/{job_id}")
     def status(job_id: str):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", job_id):
             raise ValidationHarnessError("无效的任务 ID。")
+        if record_path(job_id).exists():
+            return advance(job_id)
         data = _provider_request(service, "GET", "/background-jobs/" + job_id)
         state = data.get("status")
         if data.get("id") != job_id:
@@ -181,6 +289,35 @@ def create_reference_router(service: SpritePipelineService) -> APIRouter:
         except ValidationHarnessError as exc:
             return {"status": "failed", "error": str(exc)}
         return {"status": "completed", "image": base64.b64encode(image).decode("ascii")}
+
+    def recover_pending():
+        directory = service.settings.jobs_dir / '.reference-art'
+        for destination in directory.glob('ref_*.json'):
+            try:
+                record = read_json(destination)
+                if record['status'] in {'queued', 'running'} or (record.get('orientationReview') or {}).get('state') == 'checking':
+                    advance(record['id'])
+            except Exception:
+                # Original job/queue evidence remains; a GET failure cannot replay a POST.
+                continue
+    service.reference_art_recovery = recover_pending
+
+    class AttachReferenceRequest(BaseModel):
+        model_config = ConfigDict(extra='forbid')
+        providerJobId: str = Field(pattern=r'^[A-Za-z0-9_-]{1,200}$')
+
+    @router.post('/jobs/{job_id}/attach-provider-job')
+    def attach_reference(job_id: str, body: AttachReferenceRequest):
+        if not re.fullmatch(r'ref_[a-f0-9]{32}', job_id) or not record_path(job_id).exists():
+            raise ValidationHarnessError('原图请求身份不存在。')
+        with service.store.global_lock('reference-job-' + job_id):
+            record = read_json(record_path(job_id))
+            if record['status'] != 'attention_required' or record.get('submissionState') != 'unknown':
+                raise ValidationHarnessError('此原图请求不处于未知提交状态。')
+            account().attach(record['requestKey'], body.providerJobId)
+            record.update(status='running', submissionState='submitted', remoteJobId=body.providerJobId)
+            atomic_write_json(record_path(job_id), record)
+        return public_record(record)
 
     @router.post("/transfer-prop")
     def transfer_prop(body: PropTransferRequest):

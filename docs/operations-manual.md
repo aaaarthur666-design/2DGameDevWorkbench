@@ -353,7 +353,8 @@ WorkBuddy 在首次用户消息后检查前端，离线时启动一次并等待�
 | workbench_list_assets | 分页盘点实际持久资产 |
 | workbench_get_asset | 单件资产证据和准确详情链接 |
 | workbench_get_asset_manifest | 已选素材的描述清单，不复制文件 |
-| workbench_get_result | 读取已有结果、候选和展示链接 |
+| workbench_get_result | 读取已有结果摘要、候选检查与阶段 token；动画完整 JSON 用 detail:true 按 offset/limit/snapshot 分页 |
+| workbench_get_motion_models / workbench_set_motion_model | 读取公开模型配置；带配置哈希更新一个角色，已有冻结配置保持原样 |
 | workbench_read_artifact | 读取登记图片；GIF 仅返回首帧 |
 
 启动工具会改变进程状态，但不安装依赖或生成素材。prepare/run 会创建记录；查找、模板和清单不创建制作任务。get_task 可以更新原任务状态，get_result 只读取已有结果。不能调用 run 来轮询进度。

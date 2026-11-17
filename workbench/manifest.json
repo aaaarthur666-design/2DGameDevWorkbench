@@ -341,6 +341,9 @@
         "workbench_apply_image_candidate",
         "workbench_get_image_edit",
         "workbench_get_result",
+        "workbench_get_motion_models",
+        "workbench_get_motion_bindings",
+        "workbench_set_motion_model",
         "workbench_read_artifact"
       ]
     },
@@ -711,9 +714,14 @@
                 "type": "string",
                 "minLength": 4,
                 "maxLength": 1000
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "角色生成原图视角或朝向检查未通过/不可用时，填写实际查看的原图 SHA-256；与 note 一起确认采用。"
               }
             },
-            "description": "仅 transfer；导入与转换来源必须填写，说明实际核对的视角、初始状态、部件完整和透明背景。仅用户明确委托检查时 Agent 可提交。"
+            "description": "仅 transfer；物品导入与转换来源必须填写 note。角色生图结束后使用已配置 reviewer 做一次视角/朝向检查；未通过或不可用时必须附实际查看原图的 note 和 sha256。模型结论并非人工确认，未配置不伪称验证。"
           },
           "recipe": {
             "type": "object",
@@ -991,7 +999,7 @@
           },
           "autoExecute": {
             "type": "boolean",
-            "description": "用户已授权预算内直接制作时可启用；否则仅出方案。修改方案后需重新确认。"
+            "description": "仅 plan-motion 支持 true：用户已授权预算内直接制作时可启用。revise-motion 必须省略或传 false，否则在创建任务前拒绝；修改后查看方案，再用返回的 expectedRevision 和 planSha256 调 generate-motion。"
           },
           "motionSpec": {
             "type": "object",

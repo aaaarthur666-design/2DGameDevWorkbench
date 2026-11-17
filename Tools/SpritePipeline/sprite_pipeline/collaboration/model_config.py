@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import os
+from threading import RLock
 from typing import Literal
 from pydantic import Field, model_validator
 from ..credential_store import CredentialStore
-from ..errors import ValidationHarnessError
+from ..errors import ConflictError, ValidationHarnessError
 from ..jsonio import atomic_write_json, read_json
 from ..vision_review import VisionReviewer, PROVIDERS
-from .contracts import Contract
+from .contracts import Contract, digest
 
 ROLES = ('appearance', 'motion', 'strategy', 'coordinator', 'reviewer')
+_CONFIG_LOCK = RLock()
 
 
 class ModelProfile(Contract):
@@ -62,8 +64,24 @@ class ModelRegistry:
 
     def save(self, configuration):
         config = ModelConfiguration.model_validate(configuration)
-        atomic_write_json(self.path, config.model_dump(mode='json'))
+        with _CONFIG_LOCK:
+            atomic_write_json(self.path, config.model_dump(mode='json'))
         return config
+
+    def set_role(self, role, profile, expected_configuration_sha256):
+        """Patch one public profile atomically; never touch keys or frozen works."""
+        if role not in (*ROLES, 'structure'):
+            raise ValidationHarnessError('未知模型角色')
+        parsed = ModelProfile.model_validate(profile) if profile is not None else None
+        with _CONFIG_LOCK:
+            config = self.load()
+            if digest(config.model_dump(mode='json')) != expected_configuration_sha256:
+                raise ConflictError('模型配置已改变，请重新读取设置后更新所选角色')
+            if parsed is None:
+                config.roles.pop(role, None)
+            else:
+                config.roles[role] = parsed
+            return self.save(config)
 
     def key(self, provider):
         info = PROVIDERS['hunyuan' if provider == 'tokenhub' else 'openai']
@@ -93,12 +111,14 @@ class ModelRegistry:
     def describe(self):
         config = self.load()
         ready = {p: bool(self.key(p)) for p in ('tokenhub', 'openai')}
+        profiles = {role: config.roles.get(role, config.default) for role in (*ROLES, 'structure')}
         return {'configuration': config.model_dump(mode='json'),
+                'configuration_sha256': digest(config.model_dump(mode='json')),
                 'services': [{'id': p, 'label': label, 'endpoint': PROVIDERS[legacy]['endpoint'], 'configured': ready[p],
                               'credential_source': 'environment' if os.environ.get(PROVIDERS[legacy]['key_env'],'').strip() else 'protected_local' if ready[p] else 'missing'}
                              for p, label, legacy in [('tokenhub', '腾讯云 TokenHub', 'hunyuan'), ('openai', 'OpenAI', 'openai')]],
-                'effective_roles': {role: {**self.profile(role).model_dump(mode='json'), 'configured': ready[self.profile(role).provider]} for role in (*ROLES, 'structure')},
-                'planning_configured': all(ready[self.profile(role).provider] for role in ROLES),
+                'effective_roles': {role: {**profile.model_dump(mode='json'), 'configured': ready[profile.provider]} for role, profile in profiles.items()},
+                'planning_configured': all(ready[profiles[role].provider] for role in ROLES),
                 'provider': 'hunyuan' if config.default.provider == 'tokenhub' else 'openai', 'model': config.default.model}
 
     def send(self, role, content, schema, frame_count, *, snapshot=None, on_request=None, on_response=None, schema_name='open_motion_plan', output_format=None, interactable=False):

@@ -1,6 +1,7 @@
 """Real, hash-bound pose checkpoints. Models advise; explicit review unlocks continuation."""
 from __future__ import annotations
 import hashlib
+import uuid
 from .contracts import digest
 from .model_config import ModelRegistry
 from .visual_review import Observations, Audit, evidence_panels, grounded_audit
@@ -10,6 +11,7 @@ from ..models import CandidateStatus, utc_now
 from ..vision_evidence import image_part, raster
 from .review_inputs import prop_review_context, review_dimensions, observation_content, audit_content
 from .state_chain import confirmed_state, transition
+from .review_progress import update_progress
 
 
 def checked_plan(job):
@@ -114,6 +116,7 @@ class Checkpoints:
         return {**evidence, **({'transition': edge, 'state_image': confirmed_state(job.request.open_plan.plan, stage, run)} if edge else {}),
                 'stage_index': stage, 'candidate_index': index, 'state': run.state,
                 'definition': job.request.open_plan.plan.stages[stage].model_dump(mode='json'),
+                'review_protocol': job.request.open_plan.spec.review_protocol,
                 'fps': job.action.fps, 'review': run.review, 'accepted': run.accepted, 'state_checkpoint': run.state_checkpoint, 'repairs':run.repairs}
 
     def inspect(self, job_id, index, stage):
@@ -124,6 +127,7 @@ class Checkpoints:
                 r = self.run_record(current,index,stage)
                 r.review = {**(r.review or {}), 'state':'unknown', 'verdict':'uncertain',
                             'summary':'分段视觉请求曾被中断，未自动重发；请检查真实帧后裁决。'}
+                update_progress(current, r.review, index, stage=stage)
                 r.state = 'awaiting_review'; current.plan_control.enabled = False
                 current.plan_control.message = '分段检查曾中断，等待实际画面确认'
             return
@@ -143,7 +147,7 @@ class Checkpoints:
             r.review = {'state':'running','verdict':'uncertain','token':evidence['token'],'requests':[],'motion_evidence':metrics}
             if job.request.open_plan.spec.review_protocol == 'experts_v1':
                 r.review['protocol'] = 'experts_v1'
-            current.plan_control.message = f'正在检查第 {stage+1} 段实际姿势与运动'
+            update_progress(current, r.review, index, stage=stage, phase='prepare')
         try:
             if self.s._candidate(job,index).diagnostic_only:
                 report = {'state':'diagnostic', 'verdict':'uncertain', 'summary':'诊断片段未调用视觉模型，需确认流程。'}
@@ -190,6 +194,7 @@ class Checkpoints:
         with self.s.store.locked_job(job_id) as current:
             r = self.run_record(current,index,stage)
             r.review.update(report); r.state = 'awaiting_review'
+            update_progress(current, r.review, index, stage=stage)
             current.plan_control.enabled = False
             current.plan_control.message = f'第 {stage+1} 段已保存，等待确认实际姿势后继续'
             current.touch('open_motion_checkpoint_ready',candidate_index=index,stage=stage)
@@ -199,14 +204,25 @@ class Checkpoints:
             if review_call_count(job) >= job.request.open_plan.spec.budget.max_review_calls:
                 raise ValidationHarnessError('视觉调用达到已授权上限，未继续请求')
             profile = self.registry.profile('reviewer',job.request.open_plan.model_snapshot)
-            request = {'phase':phase,'state':'submitting','profile':profile.model_dump(mode='json')}
+            request = {'request_id': uuid.uuid4().hex, 'started_at': utc_now(),
+                       'phase':phase,'state':'submitting','profile':profile.model_dump(mode='json')}
             if job.request.open_plan.spec.review_protocol == 'experts_v1':
                 request['input_sha256'] = digest(content)
-            self.run_record(job,index,stage).review['requests'].append(request)
+            report = self.run_record(job,index,stage).review
+            request_index = len(report['requests'])
+            report['requests'].append(request)
+            update_progress(job, report, index, stage=stage, phase=phase)
         receipt = {}
+        def received(metadata):
+            receipt.update(metadata)
+            request.update(metadata)
+            with self.s.store.locked_job(job_id) as current:
+                report = self.run_record(current,index,stage).review
+                report['requests'][request_index] = request.copy()
+                update_progress(current, report, index, stage=stage, phase=phase)
         try:
             result, metadata = self.registry.send('reviewer',content,schema,count,snapshot=job.request.open_plan.model_snapshot,
-                schema_name='open_motion_checkpoint',on_response=receipt.update,
+                schema_name='open_motion_checkpoint',on_response=received,
                 **({'interactable': True} if job.request.open_plan.plan.quality.interactable else {}))
             request.update(state='complete',**metadata)
             if job.request.open_plan.spec.review_protocol == 'experts_v1':
@@ -214,8 +230,11 @@ class Checkpoints:
             return result
         finally:
             if request['state'] == 'submitting': request.update(state='failed_request' if receipt.get('http_status') else 'invalid_response' if receipt.get('response_id') or receipt.get('output_sha256') else 'failed_or_unknown',**receipt)
+            request['completed_at'] = utc_now()
             with self.s.store.locked_job(job_id) as current:
-                self.run_record(current,index,stage).review['requests'][-1] = request
+                report = self.run_record(current,index,stage).review
+                report['requests'][request_index] = request
+                update_progress(current, report, index, stage=stage, phase=phase)
 
     def decide(self, job_id, index, stage, *, token, note, decision, acknowledge=False, reviewer='user', anchor_frame=None, acknowledge_trim=False,human_seconds=None):
         if decision not in {'accept','reject','accept_state'} or len(note.strip()) < 4:

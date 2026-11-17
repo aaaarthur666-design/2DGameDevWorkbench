@@ -253,8 +253,12 @@ class VisionReviewer:
                 fields = sorted({".".join(str(part) for part in item["loc"]) + ": " + item["msg"] for item in errors})
             if schema_name == 'motion_adjustment':
                 fields=sorted({str(item['loc'][0]) for item in errors if item['loc'] and item['loc'][0] in {'goal','preserve','method','provider_prompt','conflict'}})
+            details = {'validation_fields':fields} if schema_name=='motion_adjustment' else {}
+            if schema_name == 'open_motion_plan':
+                from .collaboration.planning_recovery import validation_details
+                details = validation_details(errors)
             raise ValidationHarnessError("视觉检查未取得有效结论；结构化字段无效（"+", ".join(categories+fields)+"），未自动重试",
-                details={'validation_fields':fields} if schema_name=='motion_adjustment' else {}) from None
+                details=details) from None
         except Exception:
             raise ValidationHarnessError("视觉检查未取得有效结论；请人工检查，不会自动重新生成") from None
 

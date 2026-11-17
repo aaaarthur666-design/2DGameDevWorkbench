@@ -73,6 +73,18 @@ async function call(name, input = {}, expectError = false) {
   return r;
 }
 const value = (r) => r.structuredContent;
+async function fullResult(selection) {
+  let offset = 0, snapshot, serialized = '';
+  do {
+    const reply = await call('workbench_get_result', { ...selection, detail: true, offset, ...(snapshot ? {snapshot} : {}) });
+    const page = value(reply).detailPage;
+    assert.deepEqual(JSON.parse(reply.content[0].text).detailPage, page);
+    serialized += page.text;
+    snapshot = page.snapshot;
+    offset = page.nextOffset;
+  } while (offset !== null);
+  return JSON.parse(serialized);
+}
 const run = (input, error = false) =>
   call(
     'workbench_run_task',
@@ -173,9 +185,10 @@ try {
   assert.equal(native.presentation.state,'attention_required');
   const exact = await call('workbench_get_result',{taskId:initial.taskId,candidateIndex:candidate});
   assert(!exact.content[0].text.includes('orderedFrames'));
-  assert(exact.structuredContent.result.orderedFrames.length);
-  const detailed = await call('workbench_get_result',{taskId:initial.taskId,detail:true});
-  assert(JSON.parse(detailed.content[0].text).result.orderedFrames.length);
+  assert.equal(exact.structuredContent.result.orderedFrames, undefined);
+  assert(exact.structuredContent.result.orderedFrameCount);
+  const detailed = await fullResult({taskId:initial.taskId});
+  assert(detailed.result.orderedFrames.length);
   await call('workbench_get_result',{jobId,candidateIndex:999},true);
   await call('workbench_get_result',{taskId:initial.taskId,jobId},true);
   await client.close(); client = await connect();
@@ -183,10 +196,10 @@ try {
   assert.deepEqual(value(await call('workbench_list_tasks',{query:jobId})),beforeInspect);
   report.checks.push('precise native/task candidate links, compact and full results, reconnect/read-only inspection creates no tasks');
 
-  assert(result.result.orderedFrames.length > 0);
+  assert(result.result.orderedFrameCount > 0);
   const image = await call('workbench_read_artifact', {
     taskId: initial.taskId,
-    artifactPath: result.result.orderedFrames[0],
+    artifactPath: detailed.result.orderedFrames[0],
   });
   assert(
     image.content.some((c) => c.type === 'image' && c.mimeType === 'image/png'),
@@ -250,7 +263,7 @@ try {
       delivery.result.godotPackage &&
       delivery.result.preview,
   );
-  for (const item of delivery.artifacts) await access(item.absolutePath);
+  for (const item of (await fullResult({taskId:exported.taskId})).artifacts) await access(item.absolutePath);
   const godotZip = await JSZip.loadAsync(await readFile(path.join(root, delivery.result.godotPackage)), { checkCRC32: true });
   const godotFrames = Object.values(godotZip.files).find((file) => file.name.endsWith('/sprite_frames.tres'));
   assert(godotFrames);

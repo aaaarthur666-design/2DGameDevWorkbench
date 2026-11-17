@@ -16,7 +16,7 @@ from ..models import ExportOptions
 from ..vision_review import VisionReviewer, PROVIDERS
 from .contracts import Contract, TaskSpec, digest
 from .workspace import OpenMotionWorkspace
-from .model_config import ModelRegistry, ModelConfiguration
+from .model_config import ModelRegistry, ModelConfiguration, ModelProfile
 from .adjustments import Adjustments, AdjustmentInput
 from .local_frame_edits import LocalFrameEdit, create_local
 from .derived_assets import DerivedAssets, DerivedCreate, DerivedDecision
@@ -115,6 +115,11 @@ class Settings(Contract):
     openai_key: str | None = Field(default=None, max_length=4096)
     planning_key: str | None = Field(default=None, max_length=4096)
     pixellab_key: str | None = Field(default=None, max_length=4096)
+
+
+class RoleSettings(Contract):
+    expected_configuration_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    profile: ModelProfile | None
 
 
 class Reference(Contract):
@@ -221,6 +226,11 @@ def create_router(service):
         if body.pixellab_key:
             service.configure_pixellab_api_key(body.pixellab_key)
         registry.save(config)
+        return settings()
+
+    @router.patch("/settings/roles/{role}")
+    def configure_role(role: Literal['appearance', 'motion', 'strategy', 'coordinator', 'reviewer', 'structure'], body: RoleSettings):
+        ModelRegistry(service.settings).set_role(role, body.profile, body.expected_configuration_sha256)
         return settings()
 
     @router.get("/references")

@@ -1,14 +1,17 @@
 """Evidence-first, action-agnostic visual audit. Never regenerates or approves."""
 from __future__ import annotations
 import hashlib
+import uuid
 from typing import Literal
 from pydantic import Field
 from PIL import Image, ImageDraw
 from .contracts import QualityDimension, Contract, digest
 from .model_config import ModelRegistry
 from ..errors import ValidationHarnessError
+from ..models import utc_now
 from ..vision_evidence import raster, image_part
 from .review_inputs import prop_review_context, review_dimensions, observation_content, audit_content, TIMING_NOTE
+from .review_progress import update_progress
 
 
 class FrameObservation(Contract):
@@ -94,6 +97,7 @@ class QualityReviewer:
                 with self.s.store.locked_job(job_id) as current:
                     r = self.s._candidate(current, index).plan_execution.quality_review
                     r.update(state='unknown', verdict='uncertain', summary='视觉请求曾中断；未自动重发，请人工检查。')
+                    update_progress(current, r, index)
             return
         fingerprint = frame_digest(candidate)
         with self.s.store.locked_job(job_id) as current:
@@ -101,12 +105,15 @@ class QualityReviewer:
             r.update(state='running', frame_digest=fingerprint, verdict='uncertain', requests=[])
             if job.request.open_plan.spec.review_protocol == 'experts_v1':
                 r['protocol'] = 'experts_v1'
+            update_progress(current, r, index, phase='prepare')
         if candidate.diagnostic_only:
             with self.s.store.locked_job(job_id) as current:
-                self.s._candidate(current,index).plan_execution.quality_review.update(state='diagnostic', verdict='uncertain', summary='诊断素材未调用视觉模型，不能证明生成质量。')
+                report = self.s._candidate(current,index).plan_execution.quality_review
+                report.update(state='diagnostic', verdict='uncertain', summary='诊断素材未调用视觉模型，不能证明生成质量。')
                 if job.request.open_plan.spec.review_protocol == 'experts_v1':
                     from .production_review import diagnostic_report
-                    self.s._candidate(current,index).plan_execution.quality_review.update(diagnostic_report())
+                    report.update(diagnostic_report())
+                update_progress(current, report, index)
             return
         try:
             paths = [self.s.store.resolve_job_path(job_id, f.active_path) for f in candidate.frames]
@@ -157,12 +164,14 @@ class QualityReviewer:
                 c = self.s._candidate(current,index)
                 if frame_digest(c) != fingerprint: raise ValidationHarnessError('验收期间动画已改变')
                 c.plan_execution.quality_review.update(report)
+                update_progress(current, c.plan_execution.quality_review, index)
                 current.plan_control.message = '动画与视觉报告已保存，请人工检查后采用'
                 current.touch('open_motion_quality_reviewed', candidate_index=index, verdict=report['verdict'])
         except Exception as exc:
             with self.s.store.locked_job(job_id) as current:
                 r = self.s._candidate(current,index).plan_execution.quality_review
                 r.update(state='failed', verdict='uncertain', summary=str(exc) if isinstance(exc,ValidationHarnessError) else '视觉验收未完成，未自动重试；请人工检查。')
+                update_progress(current, r, index)
 
     def call(self, job_id, index, phase, content, schema, count):
         with self.s.store.locked_job(job_id) as job:
@@ -171,14 +180,25 @@ class QualityReviewer:
             if spent >= job.request.open_plan.spec.budget.max_review_calls:
                 raise ValidationHarnessError('视觉验收调用已达上限，未继续请求')
             profile = self.registry.profile('reviewer',job.request.open_plan.model_snapshot)
-            request = {'phase':phase, 'state':'submitting', 'profile':profile.model_dump(mode='json')}
+            request = {'request_id': uuid.uuid4().hex, 'started_at': utc_now(),
+                       'phase':phase, 'state':'submitting', 'profile':profile.model_dump(mode='json')}
             if job.request.open_plan.spec.review_protocol == 'experts_v1':
                 request['input_sha256'] = digest(content)
-            self.s._candidate(job,index).plan_execution.quality_review['requests'].append(request)
+            report = self.s._candidate(job,index).plan_execution.quality_review
+            request_index = len(report['requests'])
+            report['requests'].append(request)
+            update_progress(job, report, index, phase=phase)
         receipt = {}
+        def received(metadata):
+            receipt.update(metadata)
+            request.update(metadata)
+            with self.s.store.locked_job(job_id) as current:
+                report = self.s._candidate(current,index).plan_execution.quality_review
+                report['requests'][request_index] = request.copy()
+                update_progress(current, report, index, phase=phase)
         try:
             result, metadata = self.registry.send('reviewer',content,schema,count,snapshot=job.request.open_plan.model_snapshot,
-                schema_name='open_motion_quality',on_response=receipt.update,
+                schema_name='open_motion_quality',on_response=received,
                 **({'interactable': True} if job.request.open_plan.plan.quality.interactable else {}))
             request.update(state='complete',**metadata)
             if job.request.open_plan.spec.review_protocol == 'experts_v1':
@@ -186,5 +206,8 @@ class QualityReviewer:
             return result
         finally:
             if request['state']=='submitting': request.update(state='failed_or_unknown',**receipt)
+            request['completed_at'] = utc_now()
             with self.s.store.locked_job(job_id) as current:
-                self.s._candidate(current,index).plan_execution.quality_review['requests'][-1] = request
+                report = self.s._candidate(current,index).plan_execution.quality_review
+                report['requests'][request_index] = request
+                update_progress(current, report, index, phase=phase)

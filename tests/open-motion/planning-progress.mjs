@@ -43,4 +43,15 @@ export function verifyPlanningProgress(progress, requestKey) {
     for (const role of ['appearance', 'strategy', 'coordinator', 'validator'])
       assert.notEqual(progress(work, role).state, 'running');
   }
+  const revised = { status: 'planning', plan: null, planning_calls: [], messages: [
+    { ...reply('appearance', 'propose', 2), reused_from: { revision: 1, call: 2, request_id: 'original-call' } },
+  ] };
+  assert.deepEqual(progress(revised, 'appearance'), { state: 'complete', label: '已复用第1版建议' });
+  assert.equal(revised.planning_calls.length, 0, 'reused evidence is not a new paid call');
+  revised.planning_calls.push({ role: 'coordinator', state: 'submitting' });
+  assert.equal(progress(revised, 'appearance').state, 'complete', 'another role cannot claim the historical call number');
+  revised.planning_calls.push({ role: 'appearance', state: 'submitting' });
+  assert.equal(progress(revised, 'appearance').state, 'running', 'a new call supersedes reused evidence');
+  revised.planning_calls[1].state = 'invalid_response';
+  assert.equal(progress(revised, 'appearance').state, 'failed', 'reused evidence never hides a later failed call');
 }
