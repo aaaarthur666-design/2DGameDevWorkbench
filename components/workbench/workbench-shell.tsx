@@ -109,12 +109,15 @@ function useReducedMotion() {
 function ToolPreview({ slides }: { slides: PreviewSlide[] }) {
   const [index, setIndex] = useState(0);
   const reduced = useReducedMotion();
-  const current = slides[index % Math.max(1, slides.length)];
+  const activeIndex = index % Math.max(1, slides.length);
+  const current = slides[activeIndex];
+  const currentKey = current?.key ?? '';
+  const currentMs = current?.ms ?? 0;
   useEffect(() => {
-    if (reduced || slides.length < 2 || !current) return;
-    const timer = window.setTimeout(() => setIndex((value) => (value + 1) % slides.length), current.ms);
+    if (reduced || slides.length < 2 || !currentKey || currentMs <= 0) return;
+    const timer = window.setTimeout(() => setIndex((value) => (value + 1) % slides.length), currentMs);
     return () => window.clearTimeout(timer);
-  }, [current, reduced, slides.length]);
+  }, [activeIndex, currentKey, currentMs, reduced, slides.length]);
   return (
     <span className="wb-tool-card-preview">
       {current && <span className="wb-preview-slide" key={current.key}>{current.node}</span>}
