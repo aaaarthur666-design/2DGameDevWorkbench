@@ -15,6 +15,10 @@ const server = await createTestViteServer({
   plugins: [react(), { name: 'navigation-fixture', configureServer(vite) {
     vite.middlewares.use((request, response, next) => {
       const url = new URL(request.url, 'http://localhost');
+      if (url.pathname === '/api/workbench/assets') {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ assets: [], total: 0 })); return;
+      }
       if (url.pathname.startsWith('/api/workbench/')) {
         response.writeHead(200, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ tasks: [], jobs: [], works: [], request: null })); return;

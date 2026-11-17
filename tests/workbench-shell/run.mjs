@@ -446,6 +446,39 @@ try {
     assert.deepEqual(legacy.tasks, [{ id: 'b' }]);
   });
 
+  test('home tool previews match built-in sample strips, rotation limits and layout rules', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { interactableClips } = await server.ssrLoadModule('/components/workbench/home-samples.tsx');
+    const { previewSlides } = await server.ssrLoadModule('/components/workbench/workbench-shell.tsx');
+    assert.equal(interactableClips.length, 3);
+    for (const clip of interactableClips) {
+      const png = await readFile(resolve(process.cwd(), 'public', clip.src.replace(/^\/+/, '')));
+      assert.equal(png.readUInt32BE(16), clip.frames * 128, `${clip.src} width matches frames * 128`);
+      assert.equal(png.readUInt32BE(20), 128, `${clip.src} height is 128`);
+    }
+    const motionSlides = previewSlides('interactable-motion', {});
+    assert.equal(motionSlides.length, 3);
+    assert.ok(motionSlides.every((slide) => slide.label.startsWith('示例 · ') && slide.ms > 0));
+    const sampleAnimSlides = previewSlides('sprite-generator', {});
+    assert.equal(sampleAnimSlides.length, 1);
+    assert.equal(sampleAnimSlides[0].key, 'sample');
+    const animAsset = (id) => ({ id, title: id, kind: 'animation', previewUrl: `/p/${id}`, viewPath: `/v/${id}`, availability: 'available', width: 64, height: 64 });
+    const rotated = previewSlides('sprite-generator', { animation: [animAsset('a1'), animAsset('a2'), animAsset('a3'), animAsset('a4')] });
+    assert.deepEqual(rotated.map((slide) => slide.key), ['a1', 'a2', 'a3']);
+    assert.ok(rotated.every((slide) => slide.ms > 0));
+    const stillEditor = previewSlides('interactable-editor', {
+      interactable: [animAsset('i1'), animAsset('i2')],
+      prop: [animAsset('p1')],
+    });
+    assert.deepEqual(stillEditor.map((slide) => slide.key), ['i1']);
+    const css = await readFile('components/workbench/workbench.css', 'utf8');
+    assert.match(css, /\.wb-tool-card:hover\s+\.wb-preview-slide\b/);
+    assert.doesNotMatch(css, /\.wb-tool-card:hover\s+\.wb-tool-card-preview\s*>\s*\*/);
+    assert.match(css, /@media\s*\(max-width:\s*899px\)[\s\S]*?\.wb-tool-lines/);
+    assert.match(css, /@container\s*\(max-width:\s*224px\)[\s\S]*?\.wb-sample-strip/);
+    assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.wb-clip\s*\{[\s\S]*?--clip-frames\)\s*-\s*1/);
+  });
+
   for (const { name, run } of tests) {
     try {
       await run();

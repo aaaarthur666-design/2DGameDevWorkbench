@@ -76,7 +76,7 @@ function pixelSize(asset: HomeAsset, box: number) {
 }
 
 /** The user's own pieces come first; built-in samples fill the card when the library has none. */
-function previewSlides(toolId: string, byKind: Record<string, HomeAsset[]>): PreviewSlide[] {
+export function previewSlides(toolId: string, byKind: Record<string, HomeAsset[]>): PreviewSlide[] {
   if (toolId === 'interactable-motion')
     return interactableClips.map((clip) => ({
       key: clip.src, label: `示例 · ${clip.label}`, node: <SampleClip clip={clip} />, ms: Math.round((clip.frames / clip.fps) * 2000),
@@ -107,21 +107,26 @@ function useReducedMotion() {
 }
 
 function ToolPreview({ slides }: { slides: PreviewSlide[] }) {
-  const [index, setIndex] = useState(0);
+  const slideKeys = slides.map((slide) => slide.key).join('\0');
+  const [cursor, setCursor] = useState({ keys: slideKeys, index: 0 });
   const reduced = useReducedMotion();
-  const current = slides[index % Math.max(1, slides.length)];
+  const activeIndex = cursor.keys === slideKeys ? cursor.index : 0;
+  const safeIndex = slides.length ? activeIndex % slides.length : 0;
+  const current = slides[safeIndex];
+  const currentKey = current?.key ?? '';
+  const currentMs = current?.ms ?? 0;
   useEffect(() => {
-    if (reduced || slides.length < 2 || !current) return;
-    const timer = window.setTimeout(() => setIndex((value) => (value + 1) % slides.length), current.ms);
+    if (reduced || slides.length < 2 || !currentKey || !Number.isFinite(currentMs) || currentMs <= 0) return;
+    const timer = window.setTimeout(() => setCursor({ keys: slideKeys, index: (safeIndex + 1) % slides.length }), currentMs);
     return () => window.clearTimeout(timer);
-  }, [current, reduced, slides.length]);
+  }, [currentKey, currentMs, reduced, safeIndex, slideKeys, slides.length]);
   return (
     <span className="wb-tool-card-preview">
       {current && <span className="wb-preview-slide" key={current.key}>{current.node}</span>}
       {current?.label && <span className="wb-preview-label">{current.label}</span>}
       {slides.length > 1 && (
         <span className="wb-preview-dots" aria-hidden="true">
-          {slides.map((slide, i) => <span key={slide.key} data-active={i === index % slides.length || undefined} />)}
+          {slides.map((slide, i) => <span key={slide.key} data-active={i === safeIndex || undefined} />)}
         </span>
       )}
     </span>
