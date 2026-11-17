@@ -86,9 +86,12 @@ class ArtworkLibrary:
                     preview = self.service.store.resolve_job_path(row["job_id"], material["preview"])
                     status, actions = animation_actions(material, QA_ALGORITHM_VERSION)
                     current = material.get("qa_ready") and material.get("qa_algorithm_version") == QA_ALGORITHM_VERSION
+                    char_name = row.get('character_name') or row['character_id']
+                    action_name = row.get('action_name') or row['action_id']
+                    title = action_name if char_name and action_name and char_name.casefold() in action_name.casefold() else f"{char_name} · {action_name}"
                     result.append({
                         "id": f"animation:{row['job_id']}:{material['candidate_index']}",
-                        "kind": "animation", "title": f"{row.get('character_name') or row['character_id']} · {row.get('action_name') or row['action_id']}",
+                        "kind": "animation", "title": title,
                         "character_id": row["character_id"], "job_id": row["job_id"],
                         "candidate_index": material["candidate_index"],
                         "subtitle": f"{material['frame_count']} 帧 · 版本 {material['candidate_index']}",

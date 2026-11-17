@@ -125,3 +125,17 @@ def test_original_frames_and_godot_export_have_separate_verified_playback(tmp_pa
     sheet.write_bytes(sheet.read_bytes() + b'changed')
     assert len(catalog.detail(f'animation:{job.job_id}:1')['animationRepresentations']) == 1
     assert service.get_job(job.job_id).model_dump_json() == before
+
+
+def test_animation_title_does_not_duplicate_character_prefix(tmp_path):
+    fixture = TemporaryHarness(tmp_path)
+    service = SpritePipelineService(tmp_path)
+    job = service.create_job(fixture.create_request('import'))
+    fixture.write_sequence(tmp_path / 'incoming')
+    service.ingest_candidate(job.job_id, 1, tmp_path / 'incoming')
+    with service.store.locked_job(job.job_id) as current:
+        current.character.display_name = '红袍法师'
+        current.action.display_name = '红袍法师原地举杖施法循环'
+    assets = [a for a in AssetCatalog(service).list()['assets'] if a.get('jobId') == job.job_id]
+    assert len(assets) == 1
+    assert assets[0]['title'] == '红袍法师原地举杖施法循环'

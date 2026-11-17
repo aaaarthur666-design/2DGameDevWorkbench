@@ -12,7 +12,7 @@ import { taskViewPath, taskPresentation } from '../../lib/workbench/presentation
 import { createTestViteServer } from '../helpers/vite-server.mjs';
 import { verifyPlanningProgress } from './planning-progress.mjs';
 import { verifyMotionObjects } from './object-model.mjs';
-import { listPresets } from '../../lib/workbench/agent-api.mjs';
+import { listPresets, agentRequest } from '../../lib/workbench/agent-api.mjs';
 
 const root = path.resolve('work/test-runs', process.env.WORKBENCH_TEST_RUN, 'open-motion');
 await mkdir(root, { recursive: true });
@@ -70,6 +70,8 @@ try {
   const presentation = taskPresentation(manifest,outcome.task,{result:{work}});
   assert.equal(presentation.state,'saved'); assert.match(presentation.summary,/方案已保存/);
   assert.ok(validateInput(capability,{operation:'generate-motion',openWorkId:workId}).length);
+  assert.ok(validateInput(capability,{operation:'revise-motion',openWorkId:workId,expectedRevision:1,motionSpec,planningAuthorized:true,autoExecute:true}).length);
+  assert.deepEqual(validateInput(capability,{operation:'revise-motion',openWorkId:workId,expectedRevision:1,motionSpec,planningAuthorized:true}),[]);
   assert.ok(validateInput(capability,{operation:'target-motion-stage',openWorkId:workId,expectedRevision:1,stageIndex:0,reviewNote:'已检查目标'}).length);
   const targetPng=await readFile(path.join(root,'target-fixture','frame_002.png'));
   await runConnector(manifest,capability,{operation:'target-motion-stage',openWorkId:workId,expectedRevision:1,stageIndex:0,targetSetSha256:work.target_set_sha256,targetImageBase64:targetPng.toString('base64'),reviewNote:'真实诊断 PNG 用于末图传输检查，不代表美术效果'});
@@ -86,6 +88,22 @@ try {
       assert.ok(n<149,'checkpoint did not become ready');await delay(100);
     }
     const inspected=await runConnector(manifest,capability,{operation:'get-motion-stage',openWorkId:workId,candidateIndex,stageIndex});
+    if(candidateIndex===1&&stageIndex===0){
+      await refreshTask(manifest,generated.task.id);
+      const genCompact=await agentRequest(manifest,'result',{taskId:generated.task.id});
+      assert.equal(genCompact.detailIncluded,false);
+      assert.equal(genCompact.result.jobRecord,undefined);
+      assert.equal(genCompact.result.work?.job,undefined);
+      assert.equal(genCompact.result.openWorkId,workId);
+      assert.equal(genCompact.result.revision,1);
+      assert.equal(genCompact.result.planSha256,work.plan_sha256);
+      assert.ok(genCompact.result.pendingCheckpoints?.[0]?.stageToken);
+      const genDetailed=await agentRequest(manifest,'result',{taskId:generated.task.id,detail:true});
+      assert.equal(genDetailed.detailIncluded,true);
+      assert.ok(genDetailed.result.jobRecord);
+      assert.ok(genDetailed.result.work.job);
+      assert.ok(JSON.stringify(genCompact).length < JSON.stringify(genDetailed).length / 2);
+    }
     const evidence=JSON.parse(await readFile(inspected.task.outputs.find(p=>p.endsWith('/result.json')),'utf8'));
     assert.equal(evidence.orderedFrames.length,4);assert.equal(evidence.stage.state,'awaiting_review');
     assert.equal(evidence.stage.review.protocol,'experts_v1');
