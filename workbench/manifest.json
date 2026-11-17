@@ -325,6 +325,7 @@
         "workbench_restore_document",
         "workbench_validate_document",
         "workbench_simulate_document",
+        "workbench_get_motion_bindings",
         "workbench_adopt_document_image",
         "workbench_inspect_image_target",
         "workbench_resolve_image_region",

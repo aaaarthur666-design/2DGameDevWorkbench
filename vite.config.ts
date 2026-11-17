@@ -22,6 +22,62 @@ function workbenchUiManifest(): Plugin {
   };
 }
 
+// vinext's vite-plugin-commonjs and vinext:jsx-in-js only treat paths under
+// `node_modules` as pre-bundled dependencies. When WORKBENCH_TEST_RUN moves
+// cacheDir into `work/test-runs/<id>/vite-cache`, skip vite-plugin-commonjs
+// and gate vinext:jsx-in-js on files under cacheDir just like `node_modules/.vite`.
+function isolateViteCacheTransforms(): Plugin {
+  return {
+    name: 'workbench-isolate-vite-cache',
+    configResolved(resolved) {
+      const normalizedCacheDir = resolved.cacheDir
+        .replaceAll('\\', '/')
+        .replace(/\/+$/, '');
+      if (!normalizedCacheDir || normalizedCacheDir.includes('/node_modules/')) {
+        return;
+      }
+      const cachePrefix = `${normalizedCacheDir}/`;
+      const isCachedDep = (id: string) =>
+        id.split(/[?#]/, 1)[0].replaceAll('\\', '/').startsWith(cachePrefix);
+
+      for (const plugin of resolved.plugins) {
+        if (plugin.name === 'vite-plugin-commonjs' && plugin.transform) {
+          if (typeof plugin.transform === 'function') {
+            const orig = plugin.transform;
+            plugin.transform = function (code, id, ...rest) {
+              if (isCachedDep(id)) return;
+              return orig.call(this, code, id, ...rest);
+            };
+          } else if (typeof plugin.transform.handler === 'function') {
+            const orig = plugin.transform.handler;
+            plugin.transform.handler = function (code, id, ...rest) {
+              if (isCachedDep(id)) return;
+              return orig.call(this, code, id, ...rest);
+            };
+          }
+        } else if (
+          plugin.name === 'vinext:jsx-in-js' &&
+          plugin.transform &&
+          typeof plugin.transform === 'object' &&
+          typeof plugin.transform.handler === 'function'
+        ) {
+          const orig = plugin.transform.handler;
+          plugin.transform.handler = function (code, id, ...rest) {
+            if (
+              isCachedDep(id) &&
+              !code.includes('use client') &&
+              !code.includes('use server')
+            ) {
+              return;
+            }
+            return orig.call(this, code, id, ...rest);
+          };
+        }
+      }
+    },
+  };
+}
+
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
 
@@ -85,6 +141,7 @@ export default defineConfig(async () => {
       },
     },
     plugins: [
+      isolateViteCacheTransforms(),
       workbenchUiManifest(),
       vinext(),
       sites(),
