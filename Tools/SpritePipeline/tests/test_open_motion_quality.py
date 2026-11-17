@@ -285,3 +285,33 @@ def test_role_model_patch_preserves_other_roles_and_rejects_stale_configuration(
     assert cleared.status_code==200
     assert 'coordinator' not in registry.load().roles
     assert client.patch('/v1/open-motion/settings/roles/invalid',json=payload).status_code==422
+
+
+def test_post_settings_does_not_clobber_concurrent_role_patch(setup, monkeypatch):
+    import threading
+    from fastapi.testclient import TestClient
+    from sprite_pipeline.api_app import create_api
+    s,_,_,_,_=setup
+    registry=ModelRegistry(s.settings)
+    registry.save(ModelConfiguration())
+    client=TestClient(create_api(service=s))
+    original_load=ModelRegistry.load
+    entered=threading.Event();proceed=threading.Event();loads=[0]
+    def slow_load(self):
+        loads[0]+=1
+        cfg=original_load(self)
+        if loads[0]==1:
+            entered.set()
+            proceed.wait(timeout=2)
+        return cfg
+    monkeypatch.setattr(ModelRegistry,'load',slow_load)
+    worker=threading.Thread(target=lambda:client.post('/v1/open-motion/settings',json={}))
+    worker.start()
+    assert entered.wait(timeout=2)
+    monkeypatch.setattr(ModelRegistry,'load',original_load)
+    snap=registry.describe()['configuration_sha256']
+    patched=client.patch('/v1/open-motion/settings/roles/coordinator',json={'expected_configuration_sha256':snap,'profile':{'provider':'tokenhub','model':'kimi-k3.1-pro','reasoning_effort':'max'}})
+    assert patched.status_code==200
+    proceed.set()
+    worker.join(timeout=3)
+    assert registry.load().roles['coordinator'].model=='kimi-k3.1-pro'

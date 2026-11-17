@@ -173,13 +173,26 @@ try {
   assert.equal(completed.task.status, 'completed');
   for (const output of completed.task.outputs)
     assert.ok((await stat(path.join(repositoryRoot, output))).isFile());
+  const completedResult = JSON.parse(
+    await readFile(path.join(repositoryRoot, completed.task.outputs.find((output) => output.endsWith('result.json'))), 'utf8'),
+  );
+  await assert.rejects(
+    runConnector(manifest, capability, {
+      operation: 'transfer',
+      sourceTaskId: task.id,
+    }),
+    /视角与朝向需要人工核对/,
+  );
+  const confirmation = { sha256: completedResult.sha256, note: '已查看原图，确认为侧视朝左' };
   const first = await runConnector(manifest, capability, {
     operation: 'transfer',
     sourceTaskId: task.id,
+    confirmation,
   });
   const second = await runConnector(manifest, capability, {
     operation: 'transfer',
     sourceTaskId: task.id,
+    confirmation,
   });
   const result = JSON.parse(
     await readFile(path.join(repositoryRoot, first.task.outputs[0]), 'utf8'),
@@ -283,7 +296,7 @@ try {
   assert.equal(coarseDone.task.status,'completed');
   const coarseResult = JSON.parse(await readFile(path.join(repositoryRoot,coarseDone.task.outputs.find(p=>p.endsWith('result.json'))),'utf8'));
   assert.equal(coarseResult.width,64); assert.equal(coarseResult.height,64);
-  await runConnector(manifest,capability,{operation:'transfer',sourceTaskId:coarse.task.id});
+  await runConnector(manifest,capability,{operation:'transfer',sourceTaskId:coarse.task.id,confirmation:{sha256:coarseResult.sha256,note:'已查看 64px 原图，确认为侧视朝左'}});
   assert.equal(received.at(-1).body.size,64);
   assert.equal(received.at(-1).body.reuseIdentity,true);
   assert.ok(received.at(-1).body.prompt.length < 300);

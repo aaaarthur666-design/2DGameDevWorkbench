@@ -446,6 +446,46 @@ try {
     assert.deepEqual(legacy.tasks, [{ id: 'b' }]);
   });
 
+  test('unsubmitted PixelLab tasks are filtered even with local job or open-work IDs', () => {
+    const workId = 'a'.repeat(32);
+    const items = taskWorkItems([
+      {
+        id: 'ref-not-submitted',
+        capabilityId: 'reference-art',
+        status: 'not_submitted',
+        input: { operation: 'generate' },
+        adapter: { submissionState: 'not_submitted' },
+        outputs: ['outputs/ref-not-submitted/result.json'],
+      },
+      {
+        id: 'sprite-not-submitted',
+        capabilityId: 'sprite-generator',
+        status: 'not_submitted',
+        input: { operation: 'generate-motion', openWorkId: workId },
+        adapter: { remoteJobId: '20261117_hero_001', openWorkId: workId, submissionState: 'not_submitted' },
+        outputs: ['outputs/sprite-not-submitted/result.json'],
+      },
+      {
+        id: 'sprite-legacy-quota',
+        capabilityId: 'sprite-generator',
+        status: 'failed',
+        error: 'PixelLab 额度不足',
+        input: { operation: 'create-and-generate' },
+        adapter: { remoteJobId: '20261117_hero_002' },
+        outputs: ['outputs/sprite-legacy-quota/result.json'],
+      },
+      {
+        id: 'sprite-unknown-kept',
+        capabilityId: 'sprite-generator',
+        status: 'attention_required',
+        error: '提交结果无法确认，结果未知',
+        input: { operation: 'create-and-generate' },
+        adapter: { remoteJobId: '20261117_hero_003', remoteStatus: 'submission_unknown' },
+      },
+    ], modules);
+    assert.deepEqual(items.map((item) => item.id), ['sprite:20261117_hero_003']);
+  });
+
   for (const { name, run } of tests) {
     try {
       await run();

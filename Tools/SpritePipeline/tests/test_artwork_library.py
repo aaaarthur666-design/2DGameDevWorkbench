@@ -10,6 +10,7 @@ from sprite_pipeline.artwork_library import ArtworkLibrary, animation_actions
 from sprite_pipeline.errors import ValidationHarnessError
 from sprite_pipeline.models import CandidateStatus
 from sprite_pipeline.service import QA_ALGORITHM_VERSION, SpritePipelineService
+from sprite_pipeline.store import _JOB_SUMMARY_SCHEMA_VERSION
 from test_harness_integration import TemporaryHarness
 
 
@@ -62,7 +63,7 @@ def test_old_summary_backfills_materials_once(library_setup):
     summary.pop('artworks')
     path.write_text(json.dumps(summary))
     assert any(row['kind'] == 'animation' for row in library.list_artworks())
-    assert json.loads(path.read_text())['summary_schema_version'] == 3
+    assert json.loads(path.read_text())['summary_schema_version'] == _JOB_SUMMARY_SCHEMA_VERSION
     with patch.object(service.store, 'load', side_effect=AssertionError('second list should use summary')):
         assert any(row['kind'] == 'animation' for row in library.list_artworks())
 

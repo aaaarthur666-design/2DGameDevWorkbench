@@ -308,10 +308,10 @@ try {
   );
   disconnect = true;
   const count = submits;
-  await assert.rejects(
-    runConnector(manifest, capability, input),
-    /未自动重试|无法确认/,
-  );
+  const ambiguous = await runConnector(manifest, capability, input);
+  assert.equal(ambiguous.task.status, 'attention_required');
+  assert.equal(ambiguous.task.adapter.submissionState, 'unknown');
+  assert.match(ambiguous.task.error, /未自动重试|无法确认/);
   assert.equal(submits, count + 1);
   console.log(
     JSON.stringify(

@@ -81,6 +81,8 @@ def test_documented_pixflux_submit_poll_and_no_secret_response(service, monkeypa
     def handler(request):
         calls.append(request)
         assert request.headers['authorization'] == 'Bearer private-test-key'
+        if request.method == 'GET' and request.url.path == '/v2/balance':
+            return httpx.Response(200, json={'subscription': {'generations': 5, 'secret': 'private-test-key'}})
         if request.method == 'POST':
             assert request.url.path == '/v2/create-image-pixflux-background'
             assert json.loads(request.content) == {'description': 'pixel ranger', 'image_size': {'width': 128, 'height': 128}, 'no_background': True, 'view': 'side', 'direction': 'west', 'seed': 42}
@@ -90,11 +92,11 @@ def test_documented_pixflux_submit_poll_and_no_secret_response(service, monkeypa
     with TestClient(create_api(service=service)) as client:
         monkeypatch.setattr(reference_art.httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
         submitted = client.post('/v1/reference-art/jobs', json={'prompt': 'pixel ranger', 'facing': 'left', 'seed': 42})
-        assert submitted.status_code == 202 and submitted.json()['jobId'] == 'test-job'
-        polled = client.get('/v1/reference-art/jobs/test-job')
+        assert submitted.status_code == 202 and submitted.json()['remoteJobId'] == 'test-job'
+        polled = client.get(f"/v1/reference-art/jobs/{submitted.json()['jobId']}")
         assert polled.json()['status'] == 'completed'
         assert 'private-test-key' not in submitted.text + polled.text
-        assert [r.method for r in calls] == ['POST', 'GET']
+        assert [r.method for r in calls] == ['GET', 'POST', 'GET']
 
 
 @pytest.mark.parametrize('response', ['timeout', 401, 402, 429, 500])
@@ -104,14 +106,40 @@ def test_rejected_or_ambiguous_submission_never_retries_or_echoes_body(service, 
     calls = []
     def handler(request):
         calls.append(request)
+        if request.method == 'GET' and request.url.path == '/v2/balance':
+            return httpx.Response(200, json={'subscription': {'generations': 5}})
         if response == 'timeout':
             raise httpx.ReadTimeout('secret-never-log', request=request)
         return httpx.Response(response, json={'error': 'secret-never-log'})
     with TestClient(create_api(service=service)) as client:
         monkeypatch.setattr(reference_art.httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
         result = client.post('/v1/reference-art/jobs', json={'prompt': 'ranger'})
-        assert result.status_code == 502 and 'secret-never-log' not in result.text
-        assert len(calls) == 1
+        assert result.status_code == 202 and 'secret-never-log' not in result.text
+        body = result.json()
+        if response in ('timeout', 500):
+            assert body['status'] == 'attention_required' and body['submissionState'] == 'unknown'
+        else:
+            assert body['status'] == 'not_submitted' and body['submissionState'] == 'not_submitted'
+        assert [r.method for r in calls] == ['GET', 'POST']
+
+
+def test_balance_preflight_zero_quota_and_openapi_attach_recovery(service, monkeypatch):
+    service.settings = replace(service.settings, pixellab_api_key='secret-never-log')
+    real_client = httpx.Client
+    posts = []
+    def handler(request):
+        if request.method == 'GET' and request.url.path == '/v2/balance':
+            return httpx.Response(200, json={'subscription': {'generations': 0}})
+        posts.append(request)
+        return httpx.Response(500)
+    with TestClient(create_api(service=service)) as client:
+        schema = client.get('/openapi.json')
+        assert schema.status_code == 200
+        assert '/v1/reference-art/jobs/{job_id}/attach-provider-job' in schema.json()['paths']
+        monkeypatch.setattr(reference_art.httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+        result = client.post('/v1/reference-art/jobs', json={'prompt': 'ranger'})
+        assert result.status_code == 202 and result.json()['status'] == 'not_submitted'
+        assert posts == []
 
 
 def test_missing_key_and_invalid_payload_do_not_call_provider(service, monkeypatch):
@@ -164,18 +192,22 @@ def test_transfer_rejects_invalid_references(service, encoded):
         assert result.status_code == 422
 
 def test_native_64_reference_preserves_size_through_generation_and_transfer(service, monkeypatch):
+    service.settings = replace(service.settings, pixellab_api_key='test-key')
     encoded = image_base64((64, 64))
     calls = []
     def provider(_service, method, route, payload=None):
         calls.append((method, route, payload))
+        if method == 'GET' and route == '/balance':
+            return {'subscription': {'generations': 5}}
         if method == 'POST':
             assert payload['image_size'] == {'width': 64, 'height': 64}
             return {'background_job_id': 'coarse-64'}
         return {'id': 'coarse-64', 'status': 'completed', 'last_response': {'image': {'base64': encoded}}}
     monkeypatch.setattr(reference_art, '_provider_request', provider)
     with TestClient(create_api(service=service)) as client:
-        assert client.post('/v1/reference-art/jobs', json={'prompt': 'coarse keeper', 'size': 64}).status_code == 202
-        polled = client.get('/v1/reference-art/jobs/coarse-64')
+        submitted = client.post('/v1/reference-art/jobs', json={'prompt': 'coarse keeper', 'size': 64})
+        assert submitted.status_code == 202
+        polled = client.get(f"/v1/reference-art/jobs/{submitted.json()['jobId']}")
         assert polled.json()['status'] == 'completed'
         body = {'characterId': 'reference_' + 'c' * 24, 'image': polled.json()['image'], 'name': 'Coarse keeper', 'prompt': 'coarse keeper', 'size': 64}
         assert client.post('/v1/reference-art/import', json=body).status_code == 200
@@ -186,7 +218,7 @@ def test_native_64_reference_preserves_size_through_generation_and_transfer(serv
     character, preset_path = service.presets.load_character(body['characterId'])
     with Image.open(preset_path.parent / character.reference_frame) as image:
         assert image.size == (64, 64)
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 def test_prop_transfer_only_admits_verified_registered_png(service, tmp_path, monkeypatch):
@@ -341,3 +373,38 @@ def test_conversion_preview_replay_tampering_and_palette(service, tmp_path, monk
         monkeypatch.setattr(pixel_prop_gateway,'ALGORITHM_VERSION',999)
         assert client.post('/v1/reference-art/transfer-prop',json=body).status_code == 409
     reference_art._provider_request.assert_not_called()
+
+
+def test_account_queue_attach_and_404_release(service, monkeypatch):
+    from sprite_pipeline.errors import ProviderTemporaryError
+    from sprite_pipeline.models import CandidateStatus
+    from sprite_pipeline.pixellab_account import PixelLabAccountQueue
+
+    service.configure_pixellab_api_key('test-key-123456')
+    queue = PixelLabAccountQueue(service.store, 'test-key-123456', service.settings.pixellab_base_url)
+    job = service.create_job({'character_id': 'diagnostic_dummy', 'action_id': 'idle', 'provider': 'pixellab', 'candidate_count': 1})
+    with pytest.raises(ProviderTemporaryError):
+        queue.submit(
+            f'{job.job_id}:candidate:1',
+            lambda _: 'completed',
+            lambda: {'subscription': {'generations': 5}},
+            lambda: (_ for _ in ()).throw(ProviderTemporaryError('timeout', details={'submission_unknown': True})),
+            lambda result: result,
+        )
+    with service.store.locked_job(job.job_id) as locked:
+        locked.candidates[0].status = CandidateStatus.submission_unknown
+    service.attach_provider_job_id(job.job_id, 1, 'remote-job-123')
+    assert queue._load()['active'] == {'request_key': f'{job.job_id}:candidate:1', 'state': 'pending', 'provider_job_id': 'remote-job-123'}
+
+    def expired_poll(_job_id):
+        raise reference_art.ProviderPermanentError('missing', details={'http_status': 404})
+
+    submitted, _ = queue.submit(
+        f'{job.job_id}:candidate:2',
+        expired_poll,
+        lambda: {'subscription': {'generations': 5}},
+        lambda: 'remote-job-456',
+        lambda result: result,
+    )
+    assert submitted == 'remote-job-456'
+    assert queue._load()['active']['provider_job_id'] == 'remote-job-456'
