@@ -135,6 +135,24 @@ assert(
     artifacts: [{ path: "outputs/example/preview.gif" }],
   }).preview,
 );
+assert.equal(
+  taskPresentation(manifest, sprite, {
+    result: {
+      character: { display_name: "红袍法师" },
+      action: { display_name: "红袍法师原地举杖施法循环" },
+    },
+  }).title,
+  "红袍法师原地举杖施法循环",
+);
+assert.equal(
+  taskPresentation(manifest, sprite, {
+    result: {
+      character: { display_name: "骑士" },
+      action: { display_name: "攻击" },
+    },
+  }).title,
+  "骑士 · 攻击",
+);
 console.log(
   "Presentation: exact identities, honest states, missing artifacts, animated preview and compact/full fallback passed.",
 );

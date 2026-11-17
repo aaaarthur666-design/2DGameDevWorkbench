@@ -1,5 +1,6 @@
 import { interactableMotionRoute } from './motion-routes';
 import type { WorkbenchModule } from './modules';
+import { animationTitle } from './presentation.mjs';
 export function operationLabel(operation: unknown): string {
   const labels: Record<string, string> = { generate: '生成素材', import: '导入素材', transfer: '导入角色', 'save-project': '保存项目', 'export-godot': '导出 Godot', create: '创建作业', submit: '提交生成', get: '更新状态', review: '检查素材', export: '导出素材', approve: '确认素材', prepare: '准备输入' };
   return typeof operation === 'string' ? labels[operation] || '制作步骤' : '制作';
@@ -121,10 +122,14 @@ export function spriteState(
 }
 
 export function spriteWorkItem(job: SpriteJob, href: string): WorkItem {
+  const title = animationTitle(
+    job.character_name || job.character_id || '角色',
+    job.action_name || job.action_id || '动作',
+  );
   return {
     id: job.open_work_id ? `motion:${job.open_work_id}` : `sprite:${job.job_id}`,
     capabilityId: 'sprite-generator',
-    title: `${job.character_name || job.character_id || '角色'} · ${job.action_name || job.action_id || '动作'}`,
+    title,
     updatedAt: job.updated_at,
     savedAt: job.updated_at,
     href: job.open_work_id ? `${href}?work=${job.open_work_id}` : `${href}?job=${encodeURIComponent(job.job_id)}`,

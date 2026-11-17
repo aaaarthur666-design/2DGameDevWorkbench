@@ -18,7 +18,11 @@ _REQUEST = r"""
 REQUEST_GODOT_EXPORT_JS = "(jobId, candidateIndex, available, filename) => {" + _REQUEST + "}"
 EXPORTED_GODOT_JS = """(details) => {
     if (!details?.ok) return [];
-    const filename = [details.job?.character?.display_name, details.job?.action?.display_name || details.job?.action?.action_id].filter(Boolean).join(' · ');
+    const characterName = String(details.job?.character?.display_name || '').trim();
+    const actionName = String(details.job?.action?.display_name || details.job?.action?.action_id || '').trim();
+    const filename = characterName && actionName
+        ? (actionName.toLowerCase().includes(characterName.toLowerCase()) ? actionName : `${characterName} · ${actionName}`)
+        : (actionName || characterName);
     const jobId = details.job?.job_id;
     const candidateIndex = details.job?.export?.candidate_index;
     const available = details.job?.export?.godot_package_path;

@@ -246,6 +246,19 @@ try {
       assert.equal(item.title, '主角 · 待机');
       assert.equal(item.href, '/tools/sprite-generator?job=job%201');
     }
+    assert.equal(
+      spriteWorkItem(
+        {
+          job_id: 'job-mage',
+          status: 'approved',
+          updated_at: at,
+          character_name: '红袍法师',
+          action_name: '红袍法师原地举杖施法循环',
+        },
+        '/tools/sprite-generator',
+      ).title,
+      '红袍法师原地举杖施法循环',
+    );
   });
   test('execution attempts for one sprite merge while different sprites stay separate', () => {
     const items = taskWorkItems(
