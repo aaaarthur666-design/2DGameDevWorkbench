@@ -242,6 +242,20 @@ def test_revision_publication_does_not_leave_wrong_generation_enabled(setup, mon
         assert len(provider.requests) == 1
 
 
+def test_revision_conflict_leaves_no_orphan_version_or_reference(setup):
+    service, workspace, _, provider, _ = setup
+    work = ready(workspace)
+    work = workspace.start(work.id, work.revision, work.plan_sha256)
+    provider.pending = True
+    PlanGeneration(service).advance(work.job_id, provider)
+    work_dir = workspace.directory(work.id)
+    before_files = {path.name for path in work_dir.iterdir()}
+    with pytest.raises(ConflictError, match='尚未结束'):
+        workspace.revise(work.id, 1, spec('A different motion spec'), uuid.uuid4().hex, planning_authorized=True)
+    assert {path.name for path in work_dir.iterdir()} == before_files
+    assert workspace.load(work.id).revision == 1
+
+
 def test_pause_restart_multiple_candidates_and_ambiguous_request(setup):
     s, ws, model, p, _ = setup
     w = ready(ws, spec(candidate_count=2)); w = ws.start(w.id, 1, w.plan_sha256)

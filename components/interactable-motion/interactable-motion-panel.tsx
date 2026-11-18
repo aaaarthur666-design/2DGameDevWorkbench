@@ -291,9 +291,17 @@ function InteractableMotionPanel({ workId, version, objectId: initialObject, ini
       }
       throw e;
     }
+    if (!work) {
+      transferred.current = true;
+      localStorage.removeItem(draftKey);
+    }
     if (value.request_key === attempt.requestKey) {
       const committed = committedDraft(pending, value);
-      saveBrowserDraft(browserDraftKey(value.id), committed);
+      try {
+        saveBrowserDraft(browserDraftKey(value.id), committed);
+      } catch (storageError) {
+        if (work) throw storageError;
+      }
       if (work) setDraftSession(committed);
     }
     if (work) {
@@ -301,8 +309,6 @@ function InteractableMotionPanel({ workId, version, objectId: initialObject, ini
       setEditing(false);
       setSelection(null);
     } else {
-      transferred.current = true;
-      localStorage.removeItem(draftKey);
       await wb.navigate(panelHref({ work: value.id }, context));
     }
   });

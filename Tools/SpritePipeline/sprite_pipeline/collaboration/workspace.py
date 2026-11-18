@@ -215,27 +215,27 @@ class OpenMotionWorkspace:
             from .structure_control import freeze_structure
             structure=freeze_structure(self.service,spec.visual_structure,hashlib.sha256(data).hexdigest(), object_type=spec.object_type)
             previous_job_id = work.job_id
-            snapshot = work.model_dump(mode="json"); snapshot.pop("history")
-            atomic_write_json(self.directory(work.id) / f"version-{work.revision}.json", snapshot)
-            work.history.append({"revision": work.revision, "title": work.plan.title if work.plan else work.spec.description[:60], "job_id": work.job_id})
-            work.revision += 1; work.spec = spec; work.request_key = request_key; work.request_sha256 = fingerprint
-            work.version = 3
-            work.character = self.service.presets.object_snapshot(character); work.reference_sha256 = hashlib.sha256(data).hexdigest()
-            work.plan = None; work.plan_sha256 = None; work.job_id = None
-            work.end_targets = []
-            work.frame_budget = None
-            work.planning_calls = []; work.messages = []; work.status = "planning"
-            work.message = "正在按新要求制定方案"; work.auto_execute = False
-            work.planning_config = planning_config
-            work.planning_format_version = PLANNING_FORMAT_VERSION
-            work.generation_policy_version = DEFAULT_GENERATION_POLICY if spec.provider != 'fixture' else None
-            work.visibility_review_version = DEFAULT_VISIBILITY_REVIEW if spec.provider != 'fixture' and spec.review_protocol=='experts_v1' else None
-            work.visual_structure=structure
-            self.service._atomic_write_bytes(self.directory(work.id) / f"reference-{work.revision}.png", data)
             with self.store.locked_job(previous_job_id) if previous_job_id else nullcontext() as previous_job:
                 if previous_job and any(c.status.value in {'submitting', 'submission_unknown', 'provider_pending', 'saving'}
                                         for c in previous_job.candidates):
                     raise ConflictError('已有请求尚未结束，请先核对结果；不会覆盖原任务')
+                snapshot = work.model_dump(mode="json"); snapshot.pop("history")
+                atomic_write_json(self.directory(work.id) / f"version-{work.revision}.json", snapshot)
+                work.history.append({"revision": work.revision, "title": work.plan.title if work.plan else work.spec.description[:60], "job_id": work.job_id})
+                work.revision += 1; work.spec = spec; work.request_key = request_key; work.request_sha256 = fingerprint
+                work.version = 3
+                work.character = self.service.presets.object_snapshot(character); work.reference_sha256 = hashlib.sha256(data).hexdigest()
+                work.plan = None; work.plan_sha256 = None; work.job_id = None
+                work.end_targets = []
+                work.frame_budget = None
+                work.planning_calls = []; work.messages = []; work.status = "planning"
+                work.message = "正在按新要求制定方案"; work.auto_execute = False
+                work.planning_config = planning_config
+                work.planning_format_version = PLANNING_FORMAT_VERSION
+                work.generation_policy_version = DEFAULT_GENERATION_POLICY if spec.provider != 'fixture' else None
+                work.visibility_review_version = DEFAULT_VISIBILITY_REVIEW if spec.provider != 'fixture' and spec.review_protocol=='experts_v1' else None
+                work.visual_structure=structure
+                self.service._atomic_write_bytes(self.directory(work.id) / f"reference-{work.revision}.png", data)
                 self.save(work)
                 if previous_job and previous_job.plan_control and previous_job.plan_control.enabled:
                     previous_job.plan_control.enabled = False

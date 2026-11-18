@@ -3534,7 +3534,7 @@ class SpritePipelineService:
                     kind: relative_posix(staging / destination.name, self.store.job_dir(job_id))
                     for kind, destination in destinations.items()
                 },
-                sha256=sha256_file(destinations["sheet"]),
+                sha256=recipe["sheet_sha256"],
             )
             job.status = JobStatus.exported
             job.touch("candidate_exported", candidate_index=candidate_index, columns=columns)

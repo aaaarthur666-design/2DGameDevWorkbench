@@ -155,6 +155,9 @@ try {
   const query = `/v1/tasks?commandId=${encodeURIComponent(body.commandId)}`;
   assert.equal((await jsonFetch(baseUrl + query)).task.input.image, undefined);
   assert.equal((await jsonFetch(baseUrl + query + '&detail=true')).task.input.image, image);
+  const invalidTask = await fetch(`${baseUrl}/v1/tasks/invalid!id`);
+  assert.equal(invalidTask.status, 400);
+  assert.equal((await invalidTask.json()).code, 'INVALID_TASK_ID');
   const artifact = task.outputs.find((value) =>
     value.endsWith('/image.png'),
   );
