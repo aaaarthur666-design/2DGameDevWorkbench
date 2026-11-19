@@ -519,9 +519,9 @@ def create_api(
     def generate(job_id: str, body: GenerateBody) -> dict[str, Any]:
         try:
             job = service.generate_job(job_id, wait=body.wait, candidate_index=body.candidate_index)
-        except ValidationHarnessError:
+        except ValidationHarnessError as exc:
             job = service.get_job(job_id)
-            if job.status.value != "not_submitted":
+            if exc.details.get("submission_created") is not False or job.status.value != "not_submitted":
                 raise
         return {"schema_version": 1, "ok": True, "data": {"job": _job(job)}}
 

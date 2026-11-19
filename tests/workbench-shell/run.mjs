@@ -217,6 +217,17 @@ try {
       );
     }
     assert.match(taskWorkItems([task()], modules)[0].detail, /尚未执行/);
+    assert.equal(
+      taskWorkItems([
+        task({
+          capabilityId: 'reference-art',
+          status: 'running',
+          input: { operation: 'generate', prompt: 'hero' },
+          adapter: { orientationPending: '0'.repeat(64) },
+        }),
+      ], modules)[0].detail,
+      '正在核对视角与朝向',
+    );
   });
   test('sprite states distinguish saved, review, generation and actual export', () => {
     const expected = {

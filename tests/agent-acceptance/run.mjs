@@ -302,6 +302,14 @@ try {
     body: JSON.stringify({ taskId: exported.taskId }),
   });
   assert.deepEqual(await httpResult.json(), delivery);
+  for (const badOffset of [-5, null, 'abc']) {
+    const badPage = await fetch(`${bridgeUrl}/v1/agent/result`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskId: initial.taskId, detail: true, offset: badOffset, snapshot: detailed.snapshot }),
+    });
+    assert.equal(badPage.status, 400);
+  }
   const cli = spawn(
     process.execPath,
     ['scripts/workbench.mjs', 'agent', 'environment', '--json'],

@@ -106,6 +106,7 @@ export const workStateLabels: Record<WorkItemState, string> = {
 export function referenceProgress(task: StoredTask): string | undefined {
   if (task.status !== 'running') return undefined;
   const adapter = task.adapter;
+  if (adapter?.orientationPending) return '正在核对视角与朝向';
   if (adapter?.referenceStage === 'queued') return adapter.referenceMessage || '等待 PixelLab 账户空位';
   if (adapter?.referenceStage === 'submitting') return '正在提交至 PixelLab';
   if (adapter?.referenceStage === 'checking_receipt') return '正在核对原图提交记录';
